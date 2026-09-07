@@ -170,6 +170,13 @@ const Snd = {
     this.tone({ f: 1200, f2: 210, d: 0.24, v: 0.12, type: 'sawtooth', t: t });
     this.tone({ f: 600, f2: 120, d: 0.2, v: 0.07, type: 'square', t: t + 0.03 });
   },
+  /* the flip and the roll cut: a blade going right round */
+  spinCut() {
+    const t = this.t();
+    this.noise({ fc: 900, fc2: 3600, d: 0.20, v: 0.16, q: 1.1, filt: 'bandpass', t: t });
+    this.tone({ f: 320, f2: 1250, d: 0.18, v: 0.09, type: 'sawtooth', t: t });
+    this.tone({ f: 640, f2: 2400, d: 0.12, v: 0.05, type: 'square', t: t + 0.05, echo: true });
+  },
   pierceHit() {
     const t = this.t();
     this.noise({ fc: 400, fc2: 110, d: 0.2, v: 0.32, q: 0.6, filt: 'lowpass', t: t });

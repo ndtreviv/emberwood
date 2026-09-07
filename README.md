@@ -107,6 +107,8 @@ page in Settings.
 | Arrow down | Crouch. Also drops you through a wooden platform, or climbs down a ladder |
 | Arrow down + left / right | **Roll**: a low, fast tumble that shrugs off the first blow |
 | Arrow up + left / right | Jump diagonally — the direction throws you along it at once |
+| Sword, in the air with a direction held | **Flip cut**: a front flip that carries you along, blade out |
+| Sword, part way through a roll | **Roll cut**: a low sweep that keeps the roll going |
 | Walk into a ladder | Climb it. Keep holding to go up, hold down to descend, jump to let go |
 | Space, X, Z or left click | Swing the sword |
 | D | Dash toward the cursor (has a cooldown) |
@@ -150,6 +152,21 @@ you down until you are clear of it.
 Jumping while a direction is held throws you along that direction at once, so a jump out of
 a run and a jump from standing both leave at the same diagonal.
 
+## The spinning cuts
+
+Two swings come out of a move rather than a standing stance. Both pay **double coins** on
+a kill, both carry you along **faster than you can run**, and a blow taken during either
+one **does not knock you back** — it still costs you a heart, but your momentum and the
+move both survive it.
+
+| Cut | How | What it does |
+| --- | --- | --- |
+| **Flip cut** | Swing in the air with a direction held | A front flip. The blade goes right round, so every side of you bites, and it reaches below your boots. You hang a little longer than a plain fall |
+| **Roll cut** | Swing part way through a roll | The roll runs on under it, the body stays low, and the blade sweeps out ahead |
+
+Swinging in the air with **no** direction held is still a plain swing, as is any swing with
+your feet on the ground. Each cut has a short cooldown, so neither can be chained.
+
 ## Getting hit
 
 A struck creature turns white for a moment and is shoved back along the line of the blow.
@@ -157,7 +174,8 @@ Stone idols, spiders on their threads and the guardians hold their ground — th
 they do not move.
 
 A blow against you knocks you back too, mildly: enough to feel it, and your own steering is
-muted for a sixth of a second before you get control again.
+muted for a sixth of a second before you get control again. The one exception is a spinning
+cut, which carries straight through a hit.
 
 ## The tutorial
 

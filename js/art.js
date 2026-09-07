@@ -288,6 +288,32 @@ function poseCrouch(i) {
     swordAng: -0.25, swordLen: 8, flutter: 0.8
   };
 }
+/* the flip cut: the body turns right over, the blade swung out wide */
+function poseFlip(i) {
+  const t = i / 4 * TAU;
+  const sweep = Math.sin(t);
+  return {
+    bob: 3, lean: 0,
+    feet: [[HERO_AX - 4 - sweep, H_FEET - 4], [HERO_AX + 4, H_FEET - 5 + sweep]],
+    hands: [[HERO_AX - 4, H_TORT + 5], [HERO_AX + 5 + sweep, H_TORT + 3]],
+    bend: [4, -4], abend: [3, -3],
+    swordAng: -0.15 + sweep * 0.55, swordLen: 11,
+    flutter: 7
+  };
+}
+/* the roll cut: still tucked, the blade thrown out low and ahead */
+function poseRollCut(i) {
+  const t = i / 4 * TAU;
+  const sweep = Math.sin(t);
+  return {
+    bob: 5, lean: 1,
+    feet: [[HERO_AX - 3, H_FEET - 1], [HERO_AX + 3, H_FEET - 2]],
+    hands: [[HERO_AX - 2, H_TORT + 8], [HERO_AX + 5, H_TORT + 7 - sweep]],
+    bend: [5, -5], abend: [4, -4],
+    swordAng: 0.4 + sweep * 0.35, swordLen: 10,
+    flutter: 5
+  };
+}
 /* the roll: knees and elbows tucked into a ball, spun by the draw code */
 function poseRoll(i) {
   const t = i / 4 * TAU;
@@ -2839,7 +2865,9 @@ Art.buildGold = function () {
     swim: frames(6, i => heroFrame(poseSwim(i))),
     swimIdle: frames(4, i => heroFrame(poseSwimIdle(i))),
     crouch: frames(4, i => heroFrame(poseCrouch(i))),
-    roll: frames(4, i => heroFrame(poseRoll(i)))
+    roll: frames(4, i => heroFrame(poseRoll(i))),
+    flip: frames(4, i => heroFrame(poseFlip(i))),
+    rollcut: frames(4, i => heroFrame(poseRollCut(i)))
   };
   const T = { anchor: Art.top.anchor, walk: [], idle: [], atk: [] };
   for (let d = 0; d < 4; d++) {
@@ -2883,6 +2911,8 @@ Art.steps = function () {
     Art.hero.atk = frames(6, i => heroFrame(poseAtk(i)));
     Art.hero.crouch = frames(4, i => heroFrame(poseCrouch(i)));
     Art.hero.roll = frames(4, i => heroFrame(poseRoll(i)));
+    Art.hero.flip = frames(4, i => heroFrame(poseFlip(i)));
+    Art.hero.rollcut = frames(4, i => heroFrame(poseRollCut(i)));
   });
   push('HERO', () => {
     Art.top.anchor = { x: 13, y: 13 };

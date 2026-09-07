@@ -97,6 +97,7 @@ class Player {
     this.pierceT = 0; this.pierceHit = null; this.pierceWarnT = 0; this.pierceCd = 0;
     this.swimming = false; this.swimT = 0;
     this.crouching = false; this.rollT = 0; this.rollCd = 0; this.rollDir = 1;
+    this.spinT = 0; this.spinKind = null; this.spinDir = 1; this.spinHit = null; this.spinSaid = false;
     this.hurtT = 0;
     this.onLadder = false; this.climbT = 0; this.ladderOffT = 0;
     this.invuln = 0; this.landT = 0;
@@ -113,6 +114,7 @@ class Player {
   place(x, y) {
     this.h = PH;
     this.crouching = false; this.rollT = 0; this.rollCd = 0; this.hurtT = 0;
+    this.spinT = 0; this.spinKind = null; this.spinHit = null;
     this.x = x - this.w / 2; this.y = y - this.h;
     this.vx = this.vy = 0; this.trail.length = 0; this.spawnFlash = 0.4;
   }
@@ -158,10 +160,16 @@ class Player {
     this.invuln = 1.15;
     const dx = this.cx - fromX, dy = this.cy - fromY;
     const l = Math.hypot(dx, dy) || 1;
-    /* mild knockback: enough to feel the blow, short enough to recover from */
-    this.vx = dx / l * 2.8; this.vy = G.room.mode === 'top' ? dy / l * 2.8 : -2.3;
-    this.hurtT = 0.17;                 /* your own steering is muted this long */
-    this.rollT = 0; this.crouching = false;
+    if (this.spinT > 0) {
+      /* a spinning cut carries straight through: the blow still hurts, but it
+         neither shoves you nor takes the move away */
+      this.crouching = false;
+    } else {
+      /* mild knockback: enough to feel the blow, short enough to recover from */
+      this.vx = dx / l * 2.8; this.vy = G.room.mode === 'top' ? dy / l * 2.8 : -2.3;
+      this.hurtT = 0.17;               /* your own steering is muted this long */
+      this.rollT = 0; this.crouching = false;
+    }
     G.shake(5); G.hitStop(0.09);
     Snd.hurt();
     for (let i = 0; i < 14; i++) G.particles.push(new Particle({
@@ -188,6 +196,85 @@ class Player {
     }));
   }
 
+  /* The two spinning cuts. Both carry you along faster than you can run,
+     both shrug off the knock of a blow, and both pay double coins.
+     In the air with a direction held: a front flip.
+     Part way through a roll: a low cut that keeps the roll going. */
+  get spinning() { return this.spinT > 0; }
+  beginSpin(kind, dir, dur, cd) {
+    this.spinT = dur; this.spinKind = kind; this.spinDir = dir;
+    this.spinHit = new Set(); this.spinSaid = false;
+    this.face = dir;
+    this.atkT = 0; this.atkHit = null; this.atkCd = cd;
+    Snd.swing(); Snd.spinCut(); G.shake(2);
+    for (let i = 0; i < 14; i++) {
+      const a = i / 14 * TAU;
+      G.particles.push(new Particle({
+        x: this.cx + Math.cos(a) * 10, y: this.cy + Math.sin(a) * 10,
+        vx: Math.cos(a) * rr(0.6, 2) + dir * 0.8, vy: Math.sin(a) * rr(0.6, 2),
+        life: rr(0.16, 0.36), col: '#dff0ff', col2: '#8fb6e8', size: rr(1, 2.2), grav: 0.02, drag: 0.9
+      }));
+    }
+  }
+  startFlip(dir) {
+    if (this.dead || this.spinT > 0 || this.atkCd > 0) return false;
+    if (G.room.mode !== 'side' || this.grounded) return false;
+    if (this.dashT > 0 || this.pierceT > 0 || this.onLadder || this.swimming || this.inWater) return false;
+    this.beginSpin('flip', dir, 0.42, 0.30);
+    this.vx = dir * this.speedMax * 1.55;
+    this.vy = Math.min(this.vy, -1.9);        /* a little lift into the turn */
+    return true;
+  }
+  startRollCut() {
+    if (this.dead || this.spinT > 0 || this.rollT <= 0) return false;
+    if (G.room.mode !== 'side') return false;
+    this.beginSpin('rollcut', this.rollDir, 0.34, 0.28);
+    this.rollT = Math.max(this.rollT, 0.34);  /* the roll runs on under the cut */
+    this.vx = this.rollDir * this.speedMax * 1.75;
+    return true;
+  }
+  spinBox() {
+    if (this.spinT <= 0) return null;
+    if (this.spinKind === 'flip') {
+      /* the blade goes right round, so every side of the body bites. It reaches
+         about as far as a standing swing, and well below the boots. */
+      const rx = 20 + this.up.sword * 2.5, ry = 18 + this.up.sword * 1.5;
+      return { x: this.cx - rx, y: this.cy - ry, w: rx * 2, h: ry * 2 };
+    }
+    const reach = 22 + this.up.sword * 3;
+    return { x: this.spinDir > 0 ? this.x - 2 : this.x + this.w + 2 - reach,
+             y: this.y - 3, w: reach, h: this.h + 5 };
+  }
+  doSpinHit() {
+    const box = this.spinBox();
+    if (!box) return;
+    let struck = false;
+    for (const e of G.enemies) {
+      if (e.dead || this.spinHit.has(e)) continue;
+      if (!rectsOverlap(box, e.box())) continue;
+      this.spinHit.add(e);
+      e.hurt(this.atkDmg, this.cx, this.cy, 2);      /* 2 = double the coin drop */
+      struck = true; G.tutMark('fight');
+    }
+    /* a shot caught on a spinning blade goes back the same way */
+    for (const pr of G.projectiles) {
+      if (pr.dead || pr.friendly || typeof pr.vx !== 'number') continue;
+      if (this.spinHit.has(pr)) continue;
+      if (!rectsOverlap(box, { x: pr.x - 8, y: pr.y - 8, w: 16, h: 16 })) continue;
+      this.spinHit.add(pr);
+      deflectShot(pr, this.atkDmg * 2);
+      G.addCombo(); G.tutMark('parry');
+      Snd.parry(); G.shake(4); G.hitStop(0.06);
+    }
+    if (struck) {
+      G.hitStop(0.05);
+      if (!this.spinSaid) {
+        this.spinSaid = true;
+        G.texts.push(new FloatText(this.cx, this.y - 4,
+          this.spinKind === 'flip' ? 'FLIP X2' : 'ROLL CUT X2', '#ffe98a'));
+      }
+    }
+  }
   startAttack() {
     if (this.atkT > 0 || this.atkCd > 0 || this.dead) return;
     if (G.room.mode === 'top') {
@@ -320,7 +407,15 @@ class Player {
     const U = Input.act('up'), D = Input.act('down');
     if (Input.actHit('dash')) this.startDash();
     if (Input.actHit('pierce')) this.startPierce();
-    if (this.rollT <= 0 && (Input.actHit('attack') || G.clickAttack)) this.startAttack();
+    if (Input.actHit('attack') || G.clickAttack) {
+      const dir = (Rk ? 1 : 0) - (L ? 1 : 0);
+      /* mid roll it becomes a roll cut; in the air with a way held, a flip */
+      if (this.spinT > 0) { /* one cut at a time */ }
+      else if (this.rollT > 0) this.startRollCut();
+      else if (dir && !this.grounded && room.mode === 'side' && !this.inWater &&
+               this.dashT <= 0 && this.pierceT <= 0 && !this.onLadder) this.startFlip(dir);
+      else this.startAttack();
+    }
 
     /* --- attack timing --- */
     if (this.atkT > 0) {
@@ -470,10 +565,25 @@ class Player {
       const dir = (Rk ? 1 : 0) - (L ? 1 : 0);
       const canLow = G.room.mode === 'side' && !this.inWater;
 
+      /* --- the spinning cuts, which drive you along themselves --- */
+      if (this.spinT > 0) {
+        this.spinT -= dt;
+        this.doSpinHit();
+        const drive = this.spinKind === 'flip' ? 1.40 : 1.55;
+        this.vx = approach(this.vx, this.spinDir * this.speedMax * drive, 0.18 * s);
+        this.face = this.spinDir;
+        if (Math.random() < 0.7) G.particles.push(new Particle({
+          x: this.cx - this.spinDir * 6 + rr(-4, 4), y: this.cy + rr(-7, 7),
+          vx: -this.spinDir * rr(0.4, 1.8), vy: rr(-0.7, 0.7), life: rr(0.14, 0.32),
+          col: '#dff0ff', col2: '#7fb6e8', size: rr(1, 2), grav: 0, drag: 0.9
+        }));
+        if (this.spinT <= 0) { this.spinKind = null; this.spinHit = null; }
+      }
+
       /* --- the roll: hold the crouch and press a direction --- */
       if (this.rollT > 0) {
         this.rollT -= dt;
-        this.vx = approach(this.vx, this.rollDir * 1.2, 0.09 * s);
+        if (this.spinT <= 0) this.vx = approach(this.vx, this.rollDir * 1.2, 0.09 * s);
         this.face = this.rollDir;
         if (this.grounded && Math.random() < 0.5) G.particles.push(new Particle({
           x: this.cx - this.rollDir * 5, y: this.y + this.h - 1,
@@ -484,7 +594,7 @@ class Player {
       }
 
       /* --- the crouch --- */
-      const holdLow = D && this.grounded && canLow && this.hurtT <= 0;
+      const holdLow = D && this.grounded && canLow && this.hurtT <= 0 && this.spinT <= 0;
       if (this.rollT <= 0 && holdLow && dir && this.rollCd <= 0) this.startRoll(dir);
       this.crouching = this.rollT <= 0 && holdLow;
 
@@ -497,7 +607,7 @@ class Player {
       /* horizontal */
       const accel = this.grounded ? 0.30 : 0.20;
       const fric = this.grounded ? 0.62 : 0.86;
-      const steer = this.rollT > 0 ? 0 : (this.hurtT > 0 ? 0.35 : 1);
+      const steer = (this.rollT > 0 || this.spinT > 0) ? 0 : (this.hurtT > 0 ? 0.35 : 1);
       if (dir && steer > 0 && !this.crouching) {
         this.vx = approach(this.vx, dir * this.speedMax * (this.inWater ? 0.62 : 1), accel * steer * s);
         this.face = dir;
@@ -509,7 +619,7 @@ class Player {
         this.vx = approach(this.vx, 0, (1 - fric) * 1.6 * s);
       }
       /* gravity */
-      const g = this.inWater ? 0.13 : 0.36;
+      const g = this.inWater ? 0.13 : ((this.spinT > 0 && this.spinKind === 'flip') ? 0.25 : 0.36);
       this.vy = Math.min(this.vy + g * s, this.inWater ? 1.6 : 7);
 
       /* jump */
@@ -559,6 +669,7 @@ class Player {
        stands back up as soon as there is headroom for it */
     if (this.pierceT > 0 || this.onLadder || this.swimming || this.dashT > 0) {
       this.crouching = false; this.rollT = 0;
+      this.spinT = 0; this.spinKind = null; this.spinHit = null;
     }
     if (this.rollT <= 0 && !this.crouching && this.h !== PH && this.canStand()) this.setHeight(PH);
 
@@ -759,6 +870,7 @@ class Player {
     const room = G.room;
     let a, spd = 1;
     if (this.pierceT > 0) a = 'pierce';
+    else if (this.spinT > 0) a = this.spinKind === 'flip' ? 'flip' : 'rollcut';
     else if (this.rollT > 0) a = 'roll';
     else if (this.atkT > 0) a = (room.mode === 'top') ? 'tatk' : 'atk';
     else if (this.dashT > 0) a = 'dash';
@@ -777,9 +889,10 @@ class Player {
     this.animT += dt * spd;
     const rate = { idle: 0.14, walk: 0.085, run: 0.062, twalk: 0.085, tidle: 0.42,
                    jump: 1, fall: 1, land: 1, dash: 0.08, atk: 0.056, tatk: 0.066, pierce: 0.07,
-                   swim: 0.085, swimIdle: 0.19, climb: 0.12, crouch: 0.20, roll: 0.055 }[a] || 0.1;
+                   swim: 0.085, swimIdle: 0.19, climb: 0.12, crouch: 0.20, roll: 0.055,
+                   flip: 0.05, rollcut: 0.05 }[a] || 0.1;
     this.frame = Math.floor(this.animT / rate);
-    const len = { idle: 8, walk: 8, run: 8, twalk: 8, tidle: 2, jump: 1, fall: 1, land: 1, dash: 2, atk: 6, tatk: 5, pierce: 2, swim: 6, swimIdle: 4, climb: 6, crouch: 4, roll: 4 }[a] || 1;
+    const len = { idle: 8, walk: 8, run: 8, twalk: 8, tidle: 2, jump: 1, fall: 1, land: 1, dash: 2, atk: 6, tatk: 5, pierce: 2, swim: 6, swimIdle: 4, climb: 6, crouch: 4, roll: 4, flip: 4, rollcut: 4 }[a] || 1;
     if (a === 'atk') this.frame = Math.min(5, this.frame);
     else if (a === 'tatk') this.frame = Math.min(4, this.frame);
     else this.frame %= len;
@@ -800,6 +913,8 @@ class Player {
       case 'climb': return H.climb[this.frame % 6];
       case 'crouch': return (H.crouch || H.idle)[this.frame % 4];
       case 'roll': return (H.roll || H.dash)[this.frame % (H.roll ? 4 : 2)];
+      case 'flip': return (H.flip || H.atk)[this.frame % (H.flip ? 4 : 6)];
+      case 'rollcut': return (H.rollcut || H.atk)[this.frame % (H.rollcut ? 4 : 6)];
       case 'swim': return H.swim[this.frame % 6];
       case 'swimIdle': return H.swimIdle[this.frame % 4];
       case 'atk': return H.atk[this.frame];
@@ -829,10 +944,15 @@ class Player {
     const img = this.currentSprite();
     const flip = isTopAnim ? false : this.face < 0;
     /* the roll spins a full turn, so the tucked body reads as tumbling */
-    if (this.anim === 'roll') {
-      /* pivot on the middle of the tuck, not on the boots */
-      const rot = this.rollDir * (1 - clamp(this.rollT / 0.42, 0, 1)) * TAU;
-      blit(c2, img, sx, sy - 5, anchor.x, anchor.y - 5, flip, 1, 1, rot);
+    if (this.anim === 'roll' || this.anim === 'flip' || this.anim === 'rollcut') {
+      /* pivot on the middle of the body, not on the boots */
+      let turn, dir;
+      if (this.anim === 'roll') { turn = 1 - clamp(this.rollT / 0.42, 0, 1); dir = this.rollDir; }
+      else {
+        const dur = this.anim === 'flip' ? 0.42 : 0.34;
+        turn = 1 - clamp(this.spinT / dur, 0, 1); dir = this.spinDir;
+      }
+      blit(c2, img, sx, sy - 5, anchor.x, anchor.y - 5, flip, 1, 1, dir * turn * TAU);
       return;
     }
     blit(c2, img, sx, sy, anchor.x, anchor.y, flip, 1, 1, 0);
