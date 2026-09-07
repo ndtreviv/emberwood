@@ -641,6 +641,16 @@ function exitPromptText(locked) {
 }
 /* the prompt over a doorway is a button in its own right. A maze arch and
    the cavern mouths carry no door sprite, so the words are all there is. */
+/* the corner icons the doorway button must not cover */
+function hudBlockers() {
+  const out = [{ x: 4, y: 4, w: 22, h: 22 }];                 /* the shop sign */
+  if (G.roomId === 'tutorial') out.push(SKIP_RECT);
+  else {
+    out.push({ x: 4, y: 30, w: 22, h: 22 });                  /* the codes panel */
+    out.push({ x: VW - 26, y: 4, w: 22, h: 22 });             /* the chart */
+  }
+  return out;
+}
 function exitPromptRect(ex, locked) {
   if (!ex) return null;
   const w = textWidth(exitPromptText(locked)) + 8;
@@ -649,9 +659,20 @@ function exitPromptRect(ex, locked) {
      camera has already stopped following. Hold it inside the view. On a phone
      it also stays above the touch pad, so the two never fight for a finger. */
   const maxY = G.mobile ? 96 : VH - 26;
-  return { x: Math.round(clamp(px - w / 2, 2, VW - w - 2)),
-           y: Math.round(clamp(py - 3, 2, maxY)),
-           w: Math.round(w), h: 13 };
+  const r = { x: Math.round(clamp(px - w / 2, 2, VW - w - 2)),
+              y: Math.round(clamp(py - 3, 2, maxY)),
+              w: Math.round(w), h: 13 };
+  /* the maze arch sits in the top right corner, right under the chart icon.
+     Drop the button clear of anything it would cover. */
+  for (let guard = 0; guard < 4; guard++) {
+    let moved = false;
+    for (const ic of hudBlockers()) {
+      if (rectsOverlap(r, ic)) { r.y = ic.y + ic.h + 2; moved = true; }
+    }
+    if (!moved) break;
+  }
+  r.y = Math.round(clamp(r.y, 2, VH - 24));
+  return r;
 }
 /* a click, or any finger that lands here and not on a touch button */
 function tapInWorld(r) {
@@ -681,6 +702,12 @@ function updatePlay(dt) {
   G.flashAmt = Math.max(0, G.flashAmt - dt * 2.2);
   G.shakeAmt = Math.max(0, G.shakeAmt - dt * 26);
 
+  /* a tap on the doorway button belongs to the doorway, never to an icon
+     underneath it */
+  const exitBtn = (G.nearExit && !G.nearExitLocked && !G.trans)
+    ? exitPromptRect(G.nearExit, false) : null;
+  const tapOnExitBtn = !!exitBtn && Input.tap(exitBtn);
+
   /* the shop opens from the icon in the corner, or with ESC */
   const iconR = { x: 4, y: 4, w: 22, h: 22 };
   const overIcon = Input.mx >= iconR.x && Input.mx <= iconR.x + iconR.w &&
@@ -696,7 +723,7 @@ function updatePlay(dt) {
     G.overSkip = Input.over(SKIP_RECT);
     if (Input.tap(SKIP_RECT)) { Snd.ui(); G.banner('TUTORIAL SKIPPED', 2.2); G.finishTutorial(); return; }
   }
-  if (G.roomId !== 'tutorial' && G.state === 'play' && !G.shopOpen && !G.codesOpen && (Input.tap(codeR) || Input.actHit('codes'))) {
+  if (G.roomId !== 'tutorial' && G.state === 'play' && !G.shopOpen && !G.codesOpen && ((Input.tap(codeR) && !tapOnExitBtn) || Input.actHit('codes'))) {
     G.codesOpen = true; G.codeBuf = ''; G.codeMsgT = 0; Snd.ui(); Snd.musicLevel(0.16, 0.3);
     return;
   }
@@ -705,10 +732,10 @@ function updatePlay(dt) {
   const overMap = Input.mx >= mapR.x && Input.mx <= mapR.x + mapR.w &&
                   Input.my >= mapR.y && Input.my <= mapR.y + mapR.h;
   G.overMapIcon = overMap && !G.shopOpen && G.roomId !== 'tutorial';
-  if (G.state === 'play' && G.roomId !== 'tutorial' && !G.shopOpen && !G.trans && (Input.tap(mapR) || Input.actHit('map'))) {
+  if (G.state === 'play' && G.roomId !== 'tutorial' && !G.shopOpen && !G.trans && ((Input.tap(mapR) && !tapOnExitBtn) || Input.actHit('map'))) {
     G.leaveLevel(); return;
   }
-  if (G.state === 'play' && !G.shopOpen && (Input.actHit('shop') || Input.hit('Escape') || Input.tap(iconR))) {
+  if (G.state === 'play' && !G.shopOpen && (Input.actHit('shop') || Input.hit('Escape') || (Input.tap(iconR) && !tapOnExitBtn))) {
     G.shopOpen = true; G.shopSel = -1; Snd.ui();
     Snd.musicLevel(0.16, 0.3);
     return;
