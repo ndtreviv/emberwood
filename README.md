@@ -62,7 +62,7 @@ sets how faint.
   and how you roll
 - on the right: **CUT** (sword icon), **DSH** (dash), **PRC** (air pierce), and a
   **swimmer** for swimming
-- there is no door button: tap the doorway itself
+- there is no door button: tap the doorway, or the **TAP TO ENTER** button over it
 - the codes box brings its own keyboard, so no code needs a real one
 
 Multiple fingers work at once, so you can run, jump and cut together. The buttons hide
@@ -100,7 +100,7 @@ page in Settings.
 | F, in the air, two tiles up | Air pierce: stab straight down. No cooldown, double coins |
 | S (hold), in water | Swim freely in any direction |
 | Arrow up again, in mid-air | Double jump, once you own the Wings |
-| Click the door | Enter it. E also works |
+| Click the doorway, or its **CLICK TO ENTER** button | Enter it. E also works |
 | Esc, or click the shop sign (top left) | Open the shop |
 | Click the chart (top right), or Backspace | Leave the realm, back to the map |
 | Click the codes panel (left edge), or C | Open the codes box |
@@ -110,6 +110,17 @@ Directions are read one at a time, so any two of them hold together — up and l
 diagonally, down and right to roll.
 
 On a phone, tap the on-screen buttons instead; see **Settings** above.
+
+## Doorways
+
+Stand in a doorway and a button appears over it, reading **CLICK TO ENTER** or **TAP TO
+ENTER**, with the name of the place beyond underneath. Click or tap either the door or that
+button. `E` works too, and can be rebound.
+
+The button matters, because four ways out carry no door sprite to aim at: both maze arches,
+the cavern mouth and the way back from the mineshaft. It also stays on screen when a doorway
+sits in a far corner and the camera has stopped following, and on a phone it keeps clear of
+the touch pad, so the two never fight for a finger.
 
 ## Crouching and rolling
 

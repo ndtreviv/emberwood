@@ -635,14 +635,26 @@ function doorScreenRect(ex) {
   if (!ex || !ex.door) return null;
   return { x: ex.door.x - 22 - G.cam.x, y: ex.door.y - 46 - G.cam.y, w: 44, h: 50 };
 }
-function overNearDoor() {
-  if (!G.nearExit || G.nearExitLocked) return false;
-  const r = doorScreenRect(G.nearExit);
-  return !!r && Input.over(r);
+function exitPromptText(locked) {
+  if (locked) return 'SEALED';
+  return G.mobile ? 'TAP TO ENTER' : 'CLICK TO ENTER';
 }
-/* a click, or any finger that lands on the door and not on a touch button */
-function tapOnDoor(ex) {
-  const r = doorScreenRect(ex);
+/* the prompt over a doorway is a button in its own right. A maze arch and
+   the cavern mouths carry no door sprite, so the words are all there is. */
+function exitPromptRect(ex, locked) {
+  if (!ex) return null;
+  const w = textWidth(exitPromptText(locked)) + 8;
+  const px = ex.x + ex.w / 2 - G.cam.x, py = ex.y - 12 - G.cam.y;
+  /* a doorway in a far corner would push the button off the screen, and the
+     camera has already stopped following. Hold it inside the view. On a phone
+     it also stays above the touch pad, so the two never fight for a finger. */
+  const maxY = G.mobile ? 96 : VH - 26;
+  return { x: Math.round(clamp(px - w / 2, 2, VW - w - 2)),
+           y: Math.round(clamp(py - 3, 2, maxY)),
+           w: Math.round(w), h: 13 };
+}
+/* a click, or any finger that lands here and not on a touch button */
+function tapInWorld(r) {
   if (!r) return false;
   for (const t of Input.taps) {
     if (t.x < r.x || t.x > r.x + r.w || t.y < r.y || t.y > r.y + r.h) continue;
@@ -650,6 +662,11 @@ function tapOnDoor(ex) {
     return true;
   }
   return false;
+}
+function overNearExit() {
+  if (!G.nearExit || G.nearExitLocked) return false;
+  return Input.over(exitPromptRect(G.nearExit, false)) ||
+         (!!doorScreenRect(G.nearExit) && Input.over(doorScreenRect(G.nearExit)));
 }
 /* the way out of the tutorial for anyone who does not want it */
 const SKIP_RECT = { x: VW - 58, y: 4, w: 54, h: 15 };
@@ -707,7 +724,7 @@ function updatePlay(dt) {
     return;
   }
 
-  if (Input.mhit && !overIcon && !overMap && !overCode && !overNearDoor() && !G.overSkip && !G.mobile) G.clickAttack = true;
+  if (Input.mhit && !overIcon && !overMap && !overCode && !overNearExit() && !G.overSkip && !G.mobile) G.clickAttack = true;
   if (Input.actHit('mute')) { const m = Snd.toggleMute(); G.banner(m ? 'SOUND OFF' : 'SOUND ON', 1.2); }
 
   /* hit stop gives every sword blow some weight */
@@ -768,9 +785,11 @@ function updatePlay(dt) {
   if (!G.trans) updateCamera(dt);
 }
 
-/* click the door with the cursor, tap it with a finger, or press the key */
+/* click the door or its prompt with the cursor, tap either with a finger,
+   or press the key */
 function enterPressed(ex) {
-  return tapOnDoor(ex) || Input.actHit('interact');
+  return tapInWorld(exitPromptRect(ex, false)) || tapInWorld(doorScreenRect(ex)) ||
+         Input.actHit('interact');
 }
 function checkExits() {
   if (G.trans) return;
@@ -1868,20 +1887,25 @@ function drawHUD() {
     ctx.restore();
   }
   if (G.nearExit && !G.trans) {
-    const ex = G.nearExit;
-    const px = ex.x + ex.w / 2 - G.cam.x, py = ex.y - 12 - G.cam.y;
-    const txt = G.nearExitLocked ? 'SEALED'
-              : (G.mobile ? 'TAP THE DOOR' : 'CLICK THE DOOR');
-    const w = textWidth(txt) + 8;
+    const ex = G.nearExit, locked = G.nearExitLocked;
+    const txt = exitPromptText(locked);
+    const r = exitPromptRect(ex, locked);
+    const hot = !locked && Input.over(r);
     ctx.save();
     ctx.globalAlpha = 0.85 + Math.sin(G.t * 4) * 0.15;
-    ctx.fillStyle = 'rgba(10,8,18,0.78)';
-    ctx.fillRect(Math.round(px - w / 2), Math.round(py - 3), Math.round(w), 13);
-    ctx.fillStyle = G.nearExitLocked ? '#c9403a' : '#c68e3f';
-    ctx.fillRect(Math.round(px - w / 2), Math.round(py - 3), Math.round(w), 1);
-    drawText(ctx, txt, px, py, G.nearExitLocked ? '#ff9a8a' : '#f2e2b8', 1, 'center');
+    ctx.fillStyle = hot ? 'rgba(74,56,34,0.92)' : 'rgba(10,8,18,0.78)';
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.fillStyle = locked ? '#c9403a' : (hot ? '#ffd04a' : '#c68e3f');
+    ctx.fillRect(r.x, r.y, r.w, 1); ctx.fillRect(r.x, r.y + r.h - 1, r.w, 1);
+    ctx.fillRect(r.x, r.y, 1, r.h); ctx.fillRect(r.x + r.w - 1, r.y, 1, r.h);
+    drawText(ctx, txt, r.x + r.w / 2, r.y + 3, locked ? '#ff9a8a' : '#f2e2b8', 1, 'center');
     ctx.restore();
-    if (!G.nearExitLocked) drawText(ctx, ex.label || '', px, py + 11, '#9aa8c4', 1, 'center', '#000000');
+    if (!locked && ex.label) {
+      /* the label follows the button, and is held on screen the same way */
+      const lw = textWidth(ex.label);
+      const lx = clamp(r.x + r.w / 2, lw / 2 + 3, VW - lw / 2 - 3);
+      drawText(ctx, ex.label, lx, r.y + 14, '#9aa8c4', 1, 'center', '#000000');
+    }
   }
   /* the way out of the tutorial, top right */
   if (G.roomId === 'tutorial' && G.state === 'play') {
