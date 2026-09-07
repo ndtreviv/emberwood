@@ -591,7 +591,7 @@ function buildTutorial(seed) {
    ============================================================ */
 function buildGullet(seed) {
   const rng = new RNG(seed);
-  const W = 40, H = 58;
+  const W = 28, H = 58;
   const room = new Room({ id: 'gullet', name: 'THE GULLET', mode: 'side',
                           w: W, h: H, music: 'bossDeep', bg: 'abyss', ambient: 0.1, dark: 0.42 });
   room.fillRect(0, 0, W, H, T_EMPTY);
@@ -619,13 +619,15 @@ function buildGullet(seed) {
   const ledges = [];
   let side = 1;
   for (let y = H - 5, n = 0; y > 5; y -= 3, n++) {
-    const wide = 20;
+    /* narrow shelves, and narrower the higher you climb */
+    const wide = clamp(12 - Math.floor(n / 4), 11, 12);
     const x0 = side > 0 ? L + 1 : R - 1 - wide;
     const x1 = x0 + wide;
     if (n > 0 && n % 3 === 0) {
-      /* a dash gap: two shelves with five clear tiles between them */
-      put(x0, x0 + 7, y);
-      put(x0 + 12, x1, y);
+      /* a gap through the middle: dash it, or carry a run into the jump */
+      const half = Math.floor(wide / 2) - 1;
+      put(x0, x0 + half, y);
+      put(x0 + half + 4, x1, y);
       ledges.push({ x: x0, y: y, w: wide, gap: true });
     } else {
       put(x0, x1, y);
@@ -639,7 +641,7 @@ function buildGullet(seed) {
 
   /* the way out, on the topmost shelf */
   const top = ledges[ledges.length - 1];
-  const dx = (top.x + 4) * TILE;
+  const dx = (top.x + Math.floor(top.w / 2)) * TILE;
   room.exits.push({ x: dx - 18, y: (top.y - 3) * TILE, w: 36, h: 3 * TILE,
                     to: 'gulletOut', label: 'CUT YOUR WAY OUT', kind: 'arch',
                     door: { x: dx, y: top.y * TILE } });
@@ -648,12 +650,12 @@ function buildGullet(seed) {
   ledges.forEach((l, i) => {
     if (i === 0) return;
     room.spawns.push({ type: 'coin', x: (l.x + 2) * TILE, y: (l.y - 2) * TILE });
-    if (i % 2 === 0) room.spawns.push({ type: 'coin', x: (l.x + l.w - 3) * TILE, y: (l.y - 2) * TILE });
+    if (i % 2 === 0) room.spawns.push({ type: 'coin', x: (l.x + l.w - 2) * TILE, y: (l.y - 2) * TILE });
     if (i % 3 === 0) room.decor.push({ kind: 'crystal', idx: rng.i(0, 2), x: (l.x + l.w - 1) * TILE, y: (l.y - 1) * TILE, layer: 1 });
   });
 
-  /* the acid starts under the first shelf and climbs after you */
-  room.acid = { y: (H - 2) * TILE, rate: 11 };
+  /* the acid starts under the first shelf and climbs hard after you */
+  room.acid = { y: (H - 2) * TILE, rate: 26 };
   return room;
 }
 
@@ -957,39 +959,43 @@ function buildMushBoss(seed) {
    ============================================================ */
 function buildLair(seed) {
   const rng = new RNG(seed);
-  const W = 46, H = 24;
+  /* The hall is only a little taller than the view, so the windows and the
+     light they throw are both on screen at once. */
+  const W = 46, H = 18;
+  /* A throne room, not a cave: swept stone, tall windows, and nothing in it
+     but the armour standing watch. It plays no music until the dragon comes. */
   const room = new Room({ id: 'lair', name: 'THE EMBER THRONE', mode: 'side',
-                          w: W, h: H, music: 'boss', bg: 'lair', ambient: 0.1, dark: 0.5 });
+                          w: W, h: H, music: 'silence', bg: 'lair', ambient: 0, dark: 0.30 });
   room.fillRect(0, 0, W, H, T_ROCK);
-  room.fillRect(3, 3, W - 6, H - 8, T_EMPTY);
-  /* floor */
-  for (let x = 3; x < W - 3; x++) {
-    const fy = H - 5 + (Math.sin(x * 0.4) > 0.75 ? -1 : 0);
-    for (let y = fy; y < H; y++) room.set(x, y, y === fy ? T_ROCKTOP : T_ROCK);
+  room.fillRect(3, 2, W - 6, H - 5, T_EMPTY);
+  /* one long swept floor, so the fight has room */
+  const FY = H - 4;
+  for (let x = 3; x < W - 3; x++) for (let y = FY; y < H; y++) room.set(x, y, y === FY ? T_MARBLE : T_ROCK);
+  room.surface = new Int16Array(W);
+  for (let x = 0; x < W; x++) room.surface[x] = FY;
+
+  /* the windows, and the light they throw down onto the floor */
+  room.windows = [];
+  for (let k = 0; k < 5; k++) {
+    const wx = 7 + k * 8;
+    room.windows.push({ x: wx * TILE + 8, y: 5 * TILE, w: 5 * TILE, h: 6 * TILE, seed: 300 + k });
   }
-  /* side ledges */
-  const ledges = [[6, H - 10, 6], [W - 12, H - 10, 6], [W / 2 - 4, H - 14, 8], [10, H - 16, 4], [W - 14, H - 16, 4]];
-  for (const [lx, ly, lw] of ledges) {
-    for (let i = 0; i < lw; i++) { room.set(Math.round(lx) + i, Math.round(ly), T_ROCKTOP); room.set(Math.round(lx) + i, Math.round(ly) + 1, T_ROCK); }
+  /* pillars between the windows, drawn behind everything */
+  for (let k = 0; k < 6; k++) {
+    const px = (4 + k * 8) * TILE;
+    room.decor.push({ kind: 'column', idx: rng.i(0, 1), x: px, y: FY * TILE, layer: 0 });
   }
-  room.start = { x: 6 * TILE, y: (H - 6) * TILE };
-  room.spawns.push({ type: 'dragon', x: (W - 12) * TILE, y: (H - 8) * TILE });
-  for (let ty = 2; ty < H - 2; ty++) for (let tx = 2; tx < W - 2; tx++) {
-    if (room.get(tx, ty) === T_EMPTY) continue;
-    if (room.get(tx, ty + 1) === T_EMPTY && rng.bool(0.12))
-      room.decor.push({ kind: 'stal', idx: rng.i(0, 3), x: tx * TILE + 8, y: (ty + 1) * TILE - 2, layer: 1 });
-    if (room.get(tx, ty - 1) === T_EMPTY && rng.bool(0.09))
-      room.decor.push({ kind: 'crystal', idx: 0, x: tx * TILE + 8, y: ty * TILE + 2, layer: 1, glow: true });
-    if (room.get(tx, ty - 1) === T_EMPTY && rng.bool(0.08))
-      room.decor.push({ kind: 'torch', x: tx * TILE + 8, y: ty * TILE - 4, layer: 1 });
-  }
-  /* a hoard of gold on the floor */
-  for (let k = 0; k < 40; k++) {
-    room.decor.push({ kind: 'hoard', x: rng.r(10, W - 6) * TILE, y: (H - 5) * TILE + rng.r(-2, 3), layer: 1, r: rng.r(1.5, 3.5) });
-  }
+  /* the dais and the throne at the far end */
+  for (let x = W - 12; x < W - 4; x++) { room.set(x, FY - 1, T_MARBLE); room.set(x, FY, T_ROCK); }
+  room.decor.push({ kind: 'statue', x: (W - 8) * TILE, y: (FY - 1) * TILE, layer: 1 });
+
+  room.start = { x: 6 * TILE, y: FY * TILE };
+  /* the armour stands watch on the dais steps; the dragon comes later */
+  room.spawns.push({ type: 'armour', x: (W - 16) * TILE, y: FY * TILE });
+  room.spawns.push({ type: 'armour', x: 20 * TILE, y: FY * TILE });
+  room.dragonDrop = { x: (W - 14) * TILE, y: 3 * TILE };
   return room;
 }
-
 
 /* ============================================================
    CHAPTERS TWO AND THREE — one generator per theme, run three
@@ -1032,6 +1038,54 @@ function buildChapterRoom(o) {
       surf[x] = top;
     }
   }
+  /* ---- traps and moving ground, so the walk is not one flat line ----
+     Each feature asks for a different piece of movement: a pit wants a jump
+     or a dash, a lift wants patience or a roll across, a spike bed wants a
+     jump, and a sweeping block wants you to time the gap. */
+  const feats = o.hazards || 0;
+  let fx = 24;
+  for (let n = 0; n < feats && fx < W - 30; n++) {
+    const kind = n % 4;
+    if (kind === 0) {
+      /* a pit, spiked at the bottom, with a lift running across it */
+      const pw = rng.i(6, 9), floor = H - 3;
+      for (let x = fx; x < fx + pw; x++) {
+        for (let y = surf[x]; y < floor; y++) room.set(x, y, T_EMPTY);
+        for (let y = floor; y < H; y++) room.set(x, y, y === floor ? groundTop : ground);
+        surf[x] = floor;
+      }
+      room.spawns.push({ type: 'spikes', x: fx * TILE, y: floor * TILE - 10, w: pw * TILE, dmg: 3 });
+      const ly = (floor - rng.i(4, 6)) * TILE;
+      room.spawns.push({ type: 'lift', x: fx * TILE, y: ly, w: 40,
+                         bx: (fx + pw - 3) * TILE, by: ly, speed: 40, wait: 0.6 });
+      room.spawns.push({ type: 'coin', x: (fx + Math.floor(pw / 2)) * TILE, y: ly - 20 });
+      fx += pw + rng.i(8, 13);
+    } else if (kind === 1) {
+      /* a bed of spikes on open ground: jump it, dash it or roll over */
+      const sw = rng.i(3, 5);
+      let flat = surf[fx];
+      for (let x = fx; x < fx + sw; x++) { room.set(x, flat, groundTop); for (let y = flat + 1; y < H; y++) room.set(x, y, ground); surf[x] = flat; }
+      room.spawns.push({ type: 'spikes', x: fx * TILE, y: flat * TILE - 10, w: sw * TILE, dmg: 2 });
+      fx += sw + rng.i(9, 15);
+    } else if (kind === 2) {
+      /* a lift rising to a shelf of coins above */
+      const top = surf[fx] - rng.i(7, 10);
+      for (let i = 0; i < 5; i++) { room.set(fx + i, top, plat); room.set(fx + i, top + 1, ground); }
+      for (let k = 0; k < 4; k++) room.spawns.push({ type: 'coin', x: (fx + k) * TILE + 8, y: (top - 2) * TILE });
+      room.spawns.push({ type: 'lift', x: (fx - 3) * TILE, y: (surf[fx] - 2) * TILE, w: 38,
+                         bx: (fx - 3) * TILE, by: (top + 1) * TILE, speed: 30, wait: 0.9,
+                         col: '#c68e3f', col2: '#6d5a2a' });
+      fx += rng.i(11, 16);
+    } else {
+      /* a block sweeping the ground you want to run along */
+      const gy = surf[fx];
+      room.spawns.push({ type: 'crusher', x: fx * TILE + 8, y: (gy - 7) * TILE,
+                         bx: fx * TILE + 8, by: gy * TILE - 12, w: 24, h: 24,
+                         speed: 74, dmg: 3, phase: rng.r(0, 1) });
+      fx += rng.i(9, 14);
+    }
+  }
+
   /* dressing */
   for (let x = 2; x < W - 2; x++) {
     const gy = surf[x];
@@ -1191,13 +1245,13 @@ World.build = function () {
   const seaDecor = [{ kind: 'coral', n: 3, p: 0.22 }, { kind: 'kelp', n: 3, p: 0.26 },
                     { kind: 'rock', n: 3, p: 0.06 }, { kind: 'crystal', n: 3, p: 0.05 }];
   const deepRooms = [
-    { id: 'shore', music: 'tide', name: 'TIDEWRACK SHORE', seed: 4101, w: 150, pools: 4, ambient: 0.4, dark: 0,
+    { id: 'shore', hazards: 5, music: 'tide', name: 'TIDEWRACK SHORE', seed: 4101, w: 150, pools: 4, ambient: 0.4, dark: 0,
       spawns: [{ type: 'crab', n: 14 }, { type: 'jelly', n: 12, air: true }, { type: 'angler', n: 6, air: true }],
       to: 'shoreEnd', toLabel: 'THE WARDEN', boss: 'tideWarden' },
-    { id: 'drowned', music: 'deep', name: 'THE DROWNED HALL', seed: 4102, w: 158, pools: 7, ambient: 0.3, dark: 0.3,
+    { id: 'drowned', hazards: 7, music: 'deep', name: 'THE DROWNED HALL', seed: 4102, w: 158, pools: 7, ambient: 0.3, dark: 0.3,
       spawns: [{ type: 'crab', n: 12 }, { type: 'jelly', n: 16, air: true }, { type: 'angler', n: 10, air: true }],
       to: 'drownedEnd', toLabel: 'THE KRAKEN MAW', boss: 'kraken' },
-    { id: 'abyss', music: 'trench', name: 'THE ABYSSAL TRENCH', seed: 4103, w: 166, pools: 9, ambient: 0.2, dark: 0.45,
+    { id: 'abyss', hazards: 9, music: 'trench', name: 'THE ABYSSAL TRENCH', seed: 4103, w: 166, pools: 9, ambient: 0.2, dark: 0.45,
       spawns: [{ type: 'crab', n: 12 }, { type: 'jelly', n: 18, air: true }, { type: 'angler', n: 14, air: true }],
       to: 'abyssEnd', toLabel: 'THE LEVIATHAN', boss: 'leviathan' }
   ];
@@ -1217,13 +1271,13 @@ World.build = function () {
   const ashDecor = [{ kind: 'pillar', n: 2, p: 0.14 }, { kind: 'rock', n: 3, p: 0.10 },
                     { kind: 'crystal', n: 3, p: 0.06 }, { kind: 'torch', p: 0.05 }];
   const ashRooms = [
-    { id: 'cinder', name: 'THE CINDER FIELDS', seed: 4201, w: 158, pools: 0, ambient: 0.26, dark: 0.3,
+    { id: 'cinder', hazards: 7, name: 'THE CINDER FIELDS', seed: 4201, w: 158, pools: 0, ambient: 0.26, dark: 0.3,
       spawns: [{ type: 'emberling', n: 16 }, { type: 'cinderwing', n: 10, air: true }, { type: 'golem', n: 4 }],
       to: 'cinderEnd', toLabel: 'THE FORGEFIEND', boss: 'forgefiend' },
-    { id: 'obsidian', name: 'THE OBSIDIAN STEPS', seed: 4202, w: 166, pools: 0, ambient: 0.22, dark: 0.4,
+    { id: 'obsidian', hazards: 9, name: 'THE OBSIDIAN STEPS', seed: 4202, w: 166, pools: 0, ambient: 0.22, dark: 0.4,
       spawns: [{ type: 'emberling', n: 16 }, { type: 'cinderwing', n: 14, air: true }, { type: 'golem', n: 7 }],
       to: 'obsidianEnd', toLabel: 'THE ASHEN TITAN', boss: 'ashTitan' },
-    { id: 'molten', name: 'THE MOLTEN CROWN', seed: 4203, w: 174, pools: 0, ambient: 0.2, dark: 0.45,
+    { id: 'molten', hazards: 11, name: 'THE MOLTEN CROWN', seed: 4203, w: 174, pools: 0, ambient: 0.2, dark: 0.45,
       spawns: [{ type: 'emberling', n: 18 }, { type: 'cinderwing', n: 16, air: true }, { type: 'golem', n: 10 }],
       to: 'moltenEnd', toLabel: 'IFRIT', boss: 'ifrit' }
   ];
@@ -1274,6 +1328,7 @@ World.LEVELS = [
     node: { x: 194, y: 74 } },
   { name: 'SPOREWOOD', taker: 'THE SPORES TAKE', sub: 'THE MOTHER SPORE', theme: 'mush',
     rooms: ['mush1', 'mushboss'], start: 'mush1', boss: 'mushboss', coinScale: 2,
+    enemyHp: 2, enemyDmg: 2,
     node: { x: 310, y: 148 } },
 
   /* the deep and the ash: guardians many times hardier, and kills that pay

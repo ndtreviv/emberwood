@@ -2197,6 +2197,58 @@ function leviathanFrame(mode, i, n) {           /* level 6 */
   g.shade({ top: 0.14, bot: 0.18 }); g.outline(DPP.out);
   return g;
 }
+/* ============================================================
+   THE LIVING ARMOUR — a suit that stands still until you come
+   too near, then comes down off its plinth swinging.
+   ============================================================ */
+const ARM = { steel: C('#8a94a6'), steelL: C('#c9d4e8'), steelD: C('#4a5165'),
+              trim: C('#c68e3f'), glow: C('#ff8b4a'), out: C('#20182c') };
+function armourFrame(mode, i) {
+  const g = new Pix(26, 34);
+  const cx = 13, base = 32;
+  const wake = mode !== 'idle';
+  const sw = wake ? Math.sin(i / 4 * TAU) * 2 : 0;
+  const bob = wake ? Math.round(Math.sin(i / 4 * TAU) * 1) : 0;
+  /* legs */
+  for (const sdir of [-1, 1]) {
+    const lx = cx + sdir * 4 + (wake ? sdir * sw * 0.5 : 0);
+    g.rect(lx - 2, base - 12 + bob, 4, 11, ARM.steelD);
+    g.rect(lx - 2, base - 12 + bob, 4, 2, ARM.steel);
+    g.rect(lx - 3, base - 2, 6, 3, ARM.steel);
+  }
+  /* the skirt of plates */
+  g.rect(cx - 7, base - 16 + bob, 14, 6, ARM.steel);
+  g.rect(cx - 7, base - 16 + bob, 14, 1, ARM.steelL);
+  for (let k = -2; k <= 2; k++) g.rect(cx + k * 3, base - 15 + bob, 1, 5, ARM.steelD);
+  /* the breastplate */
+  g.rect(cx - 6, base - 26 + bob, 12, 11, ARM.steel);
+  g.rect(cx - 6, base - 26 + bob, 12, 2, ARM.steelL);
+  g.rect(cx - 5, base - 22 + bob, 10, 1, ARM.trim);
+  g.ell(cx, base - 21 + bob, 3, 3, ARM.steelD);
+  if (wake) g.ell(cx, base - 21 + bob, 2, 2, ARM.glow);
+  /* pauldrons */
+  for (const sdir of [-1, 1]) {
+    g.ell(cx + sdir * 7, base - 25 + bob, 3.6, 3.2, ARM.steel);
+    g.ell(cx + sdir * 7, base - 26 + bob, 3.2, 2, ARM.steelL);
+  }
+  /* the helm, empty but for two coals */
+  g.rect(cx - 4, base - 33 + bob, 8, 8, ARM.steel);
+  g.rect(cx - 4, base - 33 + bob, 8, 2, ARM.steelL);
+  g.rect(cx - 4, base - 28 + bob, 8, 2, ARM.steelD);
+  g.rect(cx - 3, base - 30 + bob, 6, 2, ARM.out);
+  if (wake) { g.set(cx - 2, base - 29 + bob, ARM.glow); g.set(cx + 1, base - 29 + bob, ARM.glow); }
+  g.rect(cx - 1, base - 36 + bob, 2, 3, ARM.trim);          /* crest */
+  /* the arm and its blade */
+  const swing = mode === 'attack' ? [-2.4, -2.9, -1.4, -0.2, 0.4, 0.2][i % 6] : -Math.PI / 2 - 0.2;
+  const hx = cx + 7, hy = base - 22 + bob;
+  g.rect(hx - 2, base - 25 + bob, 4, 8, ARM.steelD);
+  drawSword(g, hx + 1, hy, swing, mode === 'attack' ? 11 : 9,
+            { hilt: ARM.trim, blade: ARM.steelL, bladeD: ARM.steel, bladeE: C('#ffffff') });
+  g.shade({ top: 0.16, bot: 0.2 });
+  g.outline(ARM.out);
+  return g;
+}
+
 /* --- chapter three --- */
 function forgefiendFrame(mode, i, n) {          /* level 7 */
   const g = new Pix(GB_W, GB_H), p = i / n * TAU;
@@ -3168,6 +3220,10 @@ Art.steps = function () {
     Art.tideWarden = mk(tideWardenFrame);
     Art.kraken = mk(krakenFrame);
     Art.leviathan = mk(leviathanFrame);
+    Art.armour = { anchor: { x: 13, y: 32 },
+                   idle: frames(4, i => armourFrame('idle', i)),
+                   walk: frames(4, i => armourFrame('walk', i)),
+                   attack: frames(6, i => armourFrame('attack', i)) };
   });
   push('THE GUARDIANS', () => {
     const anch = { x: GB_AX, y: GB_AY };

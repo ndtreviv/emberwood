@@ -236,6 +236,9 @@ class Player {
 
   hurt(dmg, fromX, fromY) {
     if (this.invuln > 0 || this.dashT > 0 || this.dead) return false;
+    /* a blow with no number behind it once turned the hero's health to NaN,
+       and NaN is never at or below zero, so they could not die again */
+    if (!isFinite(dmg)) dmg = 1;
     dmg = Math.max(1, dmg - (this.up.armour > 0 && Math.random() < this.up.armour * 0.2 ? 1 : 0));
     this.hp -= dmg;
     G.breakCombo();
@@ -284,6 +287,7 @@ class Player {
      Part way through a roll: a low cut that keeps the roll going. */
   get spinning() { return this.spinT > 0; }
   beginSpin(kind, dir, dur, cd) {
+    G.stats.specials = (G.stats.specials || 0) + 1;
     this.spinT = dur; this.spinKind = kind; this.spinDir = dir;
     this.spinHit = new Set(); this.spinSaid = false;
     this.face = dir;
@@ -413,6 +417,7 @@ class Player {
       return;
     }
     this.pierceT = 0.001; this.pierceHit = new Set();
+    G.stats.specials = (G.stats.specials || 0) + 1;
     this.linkChain('pierce');
     if (G.bossFightOn()) this.pierceCd = 1.0;     /* rationed against a guardian */
     this.atkT = 0; this.atkHit = null;
@@ -782,6 +787,8 @@ class Player {
       }));
     }
 
+    this.rideLift();
+
     /* footsteps and running dust */
     if (this.grounded && Math.abs(this.vx) > 0.5) {
       this.stepT -= dt * Math.abs(this.vx);
@@ -833,6 +840,23 @@ class Player {
     }
   }
 
+  /* A lift is a floor that moves. Land on it and it carries you along. */
+  rideLift() {
+    this.onLift = null;
+    if (!G.lifts || !G.lifts.length || this.dead || G.room.mode !== 'side') return;
+    if (this.dropThrough || this.onLadder || this.swimming || this.pierceT > 0) return;
+    const feet = this.y + this.h;
+    for (const L of G.lifts) {
+      if (this.x + this.w <= L.x + 1 || this.x >= L.x + L.w - 1) continue;
+      if (this.vy < -0.2) continue;                 /* rising: pass under it */
+      if (feet < L.y - 3 || feet > L.y + 11) continue;
+      this.y = L.y - this.h;
+      this.vy = 0; this.grounded = true; this.coyote = 0.11;
+      this.onLift = L;
+      if (L.dx) this.moveX(L.dx);
+      break;
+    }
+  }
   ladderAt() {
     const room = G.room;
     if (!room || room.mode !== 'side') return null;
@@ -1551,6 +1575,81 @@ class Sporeling extends Enemy {
 }
 
 /* a stone idol that spits fire and can only be broken by its own fire returned */
+/* A suit of armour standing watch. It sleeps on its plinth until you come
+   near, then steps down and comes at you with the blade. */
+class Armour extends Enemy {
+  constructor(x, y) {
+    super({ x: x, y: y, w: 20, h: 30, hp: 9, damage: 2, coinDrop: ri(8, 14), blood: '#8a94a6' });
+    this.state = 'stand'; this.stateT = 0; this.awake = false; this.face = -1;
+    this.swingT = 0; this.hitSet = null;
+  }
+  wake() {
+    if (this.awake) return;
+    this.awake = true; this.state = 'rouse'; this.stateT = 0.9;
+    Snd.slam(); G.shake(4);
+    for (let i = 0; i < 22; i++) G.particles.push(new Particle({
+      x: this.cx + rr(-9, 9), y: this.cy + rr(-14, 14), vx: rr(-1.6, 1.6), vy: rr(-2, 0.4),
+      life: rr(0.3, 0.8), col: '#c9d4e8', col2: '#4a5165', size: rr(1, 2.6), grav: 0.14
+    }));
+  }
+  hurt(dmg, fx, fy, mult) { this.wake(); super.hurt(dmg, fx, fy, mult); }
+  swordBox() {
+    if (this.state !== 'swing' || this.swingT < 0.16 || this.swingT > 0.34) return null;
+    return { x: this.face > 0 ? this.x + this.w - 4 : this.x - 22, y: this.y + 2, w: 26, h: this.h - 6 };
+  }
+  update(dt) {
+    this.flash = Math.max(0, this.flash - dt);
+    this.animT += dt;
+    const p = G.player;
+    const d = Math.abs(p.cx - this.cx);
+    if (!this.awake) {
+      this.frame = 0;
+      if (d < 96 && Math.abs(p.cy - this.cy) < 70 && !p.dead) this.wake();
+      this.physics(dt);
+      return;
+    }
+    this.stateT -= dt;
+    if (d > 6) this.face = p.cx > this.cx ? 1 : -1;
+
+    if (this.state === 'rouse') {
+      this.vx = 0;
+      this.frame = Math.floor(this.animT / 0.12) % 4;
+      if (this.stateT <= 0) { this.state = 'walk'; this.stateT = 1.6; }
+    } else if (this.state === 'walk') {
+      this.frame = Math.floor(this.animT / 0.13) % 4;
+      this.vx = approach(this.vx, this.face * 1.15, 0.08 * dt * 60);
+      if (this.grounded && this.edgeAhead()) { this.turn(); this.vx = 0; }
+      if (d < 34 || this.stateT <= 0) {
+        this.state = 'swing'; this.swingT = 0; this.hitSet = new Set(); this.vx = 0;
+        Snd.swing();
+      }
+    } else if (this.state === 'swing') {
+      this.swingT += dt;
+      this.frame = Math.min(5, Math.floor(this.swingT / 0.075));
+      this.vx = approach(this.vx, 0, 0.2 * dt * 60);
+      const box = this.swordBox();
+      if (box && !p.dead && !this.hitSet.has('p') &&
+          rectsOverlap(box, { x: p.x, y: p.y, w: p.w, h: p.h })) {
+        this.hitSet.add('p');
+        if (p.hurt(this.damage, this.cx, this.cy)) G.shake(4);
+      }
+      if (this.swingT > 0.52) { this.state = 'walk'; this.stateT = rr(0.8, 1.5); }
+    }
+    this.physics(dt);
+    this.touchPlayer(1);
+  }
+  draw(c2) {
+    const set = Art.armour;
+    const a = set.anchor;
+    let img;
+    if (!this.awake) img = set.idle[0];
+    else if (this.state === 'swing') img = set.attack[this.frame % 6];
+    else if (this.state === 'rouse') img = set.idle[this.frame % 4];
+    else img = set.walk[this.frame % 4];
+    this.drawFlash(c2, img, this.x, this.y, a.x, a.y, this.face > 0);
+  }
+}
+
 class Idol extends Enemy {
   constructor(x, y) {
     super({ x: x, y: y, w: 24, h: 26, hp: 3, damage: 2, coinDrop: 6, blood: '#5b5b71' });
@@ -2556,6 +2655,136 @@ class Guardian extends Enemy {
   }
 }
 
+/* ============================================================
+   THE FURNITURE OF A LEVEL — lifts to ride, spikes to clear,
+   and blocks that sweep the ground you want to stand on.
+   ============================================================ */
+
+/* A platform that runs a line, back and forth, and carries what stands on it. */
+class Lift {
+  constructor(o) {
+    this.x = o.x; this.y = o.y; this.w = o.w || 48; this.h = 6;
+    this.ax = o.x; this.ay = o.y;
+    this.bx = o.bx === undefined ? o.x : o.bx;
+    this.by = o.by === undefined ? o.y : o.by;
+    this.speed = o.speed || 34;
+    this.wait = o.wait || 0.5;
+    this.t = o.phase || 0; this.dir = 1; this.hold = 0;
+    this.dx = 0; this.dy = 0; this.dead = false;
+    this.col = o.col || '#8a94a6'; this.col2 = o.col2 || '#4a5165';
+  }
+  update(dt) {
+    const px = this.x, py = this.y;
+    if (this.hold > 0) { this.hold -= dt; this.dx = 0; this.dy = 0; return; }
+    const len = Math.hypot(this.bx - this.ax, this.by - this.ay) || 1;
+    this.t += this.dir * (this.speed / len) * dt;
+    if (this.t >= 1) { this.t = 1; this.dir = -1; this.hold = this.wait; }
+    if (this.t <= 0) { this.t = 0; this.dir = 1; this.hold = this.wait; }
+    this.x = lerp(this.ax, this.bx, this.t);
+    this.y = lerp(this.ay, this.by, this.t);
+    this.dx = this.x - px; this.dy = this.y - py;
+  }
+  draw(c2) {
+    const x = Math.round(this.x), y = Math.round(this.y);
+    c2.fillStyle = this.col2; c2.fillRect(x, y, this.w, this.h);
+    c2.fillStyle = this.col;  c2.fillRect(x, y, this.w, 2);
+    c2.fillStyle = '#20182c';
+    c2.fillRect(x, y + this.h - 1, this.w, 1);
+    c2.fillRect(x, y, 1, this.h); c2.fillRect(x + this.w - 1, y, 1, this.h);
+    /* studs, so the movement reads */
+    c2.fillStyle = this.col2;
+    for (let i = 4; i < this.w - 3; i += 8) c2.fillRect(x + i, y + 3, 2, 2);
+  }
+}
+
+/* A bed of spikes. Standing in it costs you, so you clear it or ride over. */
+class Spikes {
+  constructor(o) {
+    this.x = o.x; this.y = o.y; this.w = o.w || 32; this.h = 10;
+    this.dmg = o.dmg || 2; this.up = o.up === undefined ? true : o.up;
+    this.cd = 0; this.dead = false;
+  }
+  box() { return { x: this.x, y: this.up ? this.y : this.y, w: this.w, h: this.h }; }
+  update(dt) {
+    this.cd = Math.max(0, this.cd - dt);
+    const p = G.player;
+    if (p.dead || this.cd > 0) return;
+    if (!rectsOverlap(this.box(), { x: p.x, y: p.y, w: p.w, h: p.h })) return;
+    this.cd = 0.7;
+    if (p.hurt(this.dmg, p.cx, this.y + (this.up ? 12 : -12))) {
+      /* thrown clear of the bed, so you are not pinned in it */
+      p.vy = this.up ? -4.6 : 3.2;
+      G.shake(4);
+    }
+  }
+  draw(c2) {
+    const x = Math.round(this.x), y = Math.round(this.y);
+    for (let i = 0; i < this.w; i += 6) {
+      const h = this.h - 2;
+      for (let k = 0; k < h; k++) {
+        const wdt = Math.max(1, Math.round(5 - k * 5 / h));
+        const yy = this.up ? y + this.h - 1 - k : y + k;
+        c2.fillStyle = k > h * 0.6 ? '#8a94a6' : '#e6edf6';
+        c2.fillRect(x + i + Math.round((5 - wdt) / 2), yy, wdt, 1);
+      }
+    }
+    c2.fillStyle = '#4a5165';
+    c2.fillRect(x, this.up ? y + this.h - 2 : y, this.w, 2);
+  }
+}
+
+/* A block that sweeps a line. It will not crush you, but it shoves you off
+   whatever you were standing on. */
+class Crusher {
+  constructor(o) {
+    this.ax = o.x; this.ay = o.y;
+    this.bx = o.bx === undefined ? o.x : o.bx;
+    this.by = o.by === undefined ? o.y : o.by;
+    this.w = o.w || 22; this.h = o.h || 22;
+    this.speed = o.speed || 62; this.dmg = o.dmg || 2;
+    this.x = this.ax; this.y = this.ay;
+    this.t = o.phase || 0; this.dir = 1; this.cd = 0; this.dead = false;
+    this.col = o.col || '#6d5a4a'; this.col2 = o.col2 || '#3a2f28';
+  }
+  box() { return { x: this.x - this.w / 2, y: this.y - this.h / 2, w: this.w, h: this.h }; }
+  update(dt) {
+    this.cd = Math.max(0, this.cd - dt);
+    const len = Math.hypot(this.bx - this.ax, this.by - this.ay) || 1;
+    this.t += this.dir * (this.speed / len) * dt;
+    if (this.t >= 1) { this.t = 1; this.dir = -1; }
+    if (this.t <= 0) { this.t = 0; this.dir = 1; }
+    /* it eases at each end, so there is a beat to slip past it */
+    const e = 0.5 - Math.cos(this.t * Math.PI) * 0.5;
+    this.x = lerp(this.ax, this.bx, e);
+    this.y = lerp(this.ay, this.by, e);
+    const p = G.player;
+    if (!p.dead && this.cd <= 0 &&
+        rectsOverlap(this.box(), { x: p.x, y: p.y, w: p.w, h: p.h })) {
+      this.cd = 0.8;
+      if (p.hurt(this.dmg, this.x, this.y)) {
+        const dir = Math.sign(p.cx - this.x) || 1;
+        p.vx = dir * 6.2; p.vy = -3.4; p.hurtT = 0.28;
+        G.shake(5);
+      }
+    }
+  }
+  draw(c2) {
+    const b = this.box();
+    const x = Math.round(b.x), y = Math.round(b.y);
+    c2.fillStyle = this.col2; c2.fillRect(x, y, this.w, this.h);
+    c2.fillStyle = this.col;  c2.fillRect(x + 1, y + 1, this.w - 2, this.h - 3);
+    c2.fillStyle = '#20182c';
+    c2.fillRect(x, y, this.w, 1); c2.fillRect(x, y + this.h - 1, this.w, 1);
+    c2.fillRect(x, y, 1, this.h); c2.fillRect(x + this.w - 1, y, 1, this.h);
+    /* a row of teeth on the leading face */
+    c2.fillStyle = '#e6edf6';
+    for (let i = 2; i < this.w - 2; i += 5) {
+      c2.fillRect(x + i, y + this.h - 4, 3, 3);
+      c2.fillRect(x + i, y + 1, 3, 3);
+    }
+  }
+}
+
 /* The wide arc of air a special swing throws off. It is the swipe you see,
    and it carries the blow well past the blade itself. */
 class AirSlash {
@@ -2801,8 +3030,9 @@ class Wave {
 
 /* ---------- the Mother Spore ---------- */
 class SporeShot {
-  constructor(x, y, vx, vy) {
+  constructor(x, y, vx, vy, dmg) {
     this.x = x; this.y = y; this.vx = vx; this.vy = vy;
+    this.dmg = dmg || 2;
     this.life = 3.4; this.dead = false; this.t = 0;
   }
   update(dt) {
@@ -2814,7 +3044,7 @@ class SporeShot {
       x: this.x + rr(-3, 3), y: this.y + rr(-3, 3), vx: rr(-0.3, 0.3), vy: rr(-0.4, 0),
       life: rr(0.2, 0.5), col: '#f6efdc', col2: '#9be89a', size: rr(1, 2.4), grav: -0.01
     }));
-    if (projImpact(this, 5, 5)) this.burst();
+    if (projImpact(this, 8, 8)) this.burst();
     if (G.room.solidPx(this.x, this.y) || this.life <= 0) this.burst();
   }
   burst() {
@@ -2902,7 +3132,16 @@ class MotherSpore extends Enemy {
           const n = 5 + this.phase * 2;
           for (let k = 0; k < n; k++) {
             const a = -Math.PI * 0.92 + (k / (n - 1)) * Math.PI * 0.84;
-            G.projectiles.push(new SporeShot(this.x, this.y - 48, Math.cos(a) * 2.5, Math.sin(a) * 2.5));
+            G.projectiles.push(new SporeShot(this.x, this.y - 48, Math.cos(a) * 2.5, Math.sin(a) * 2.5, 2));
+          }
+          /* and two thrown straight at where you stand, so the fan is not
+             the whole of it */
+          for (let k = -1; k <= 1; k += 2) {
+            const dx = p.cx - this.x, dy = (p.cy - 6) - (this.y - 48);
+            const l = Math.hypot(dx, dy) || 1;
+            const sp2 = 3.1;
+            G.projectiles.push(new SporeShot(this.x, this.y - 48,
+              (dx / l) * sp2 + k * 0.22, (dy / l) * sp2 - 0.5, 2));
           }
           Snd.spore();
         }

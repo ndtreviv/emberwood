@@ -506,7 +506,8 @@ const Snd = {
     if (!this.ready) { this.pending = name; return; }
     if (this.trackName === name) return;
     this.trackName = name;
-    this.track = this.MUSIC[name] || null;
+    /* a room may ask for silence by name, and get no track at all */
+    this.track = (name === 'silence') ? null : (this.MUSIC[name] || null);
     this.seqStep = 0;
     this.nextNote = this.t() + 0.1;
   },

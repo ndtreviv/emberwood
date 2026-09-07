@@ -8,6 +8,7 @@ const G = {
   room: null, roomId: null,
   player: null,
   enemies: [], coins: [], projectiles: [], particles: [], texts: [], items: [],
+  lifts: [], hazards: [],
   cam: { x: 0, y: 0, ax: 0, ay: 0 },
   shakeAmt: 0, flashAmt: 0, hitStopT: 0,
   stats: { coins: 0, kills: 0, time: 0, deaths: 0 },
@@ -16,7 +17,7 @@ const G = {
   roomFlags: {},
   flags: {},
   bannerTxt: '', bannerT: 0,
-  trans: null, swallowed: null, escaped: null, acid: null, acidBurnT: 0,
+  trans: null, swallowed: null, escaped: null, acid: null, acidBurnT: 0, throne: null,
   relicShow: null,
   shopOpen: false, shopSel: -1,
   level: 0, unlocked: 1, cleared: [false, false, false], levelState: {},
@@ -25,7 +26,7 @@ const G = {
   waves: [],
   codes: { found: {}, used: {}, tickets: 0, admin: false },
   codesOpen: false, codeBuf: '', codeMsg: '', codeMsgT: 0, codeMsgOk: false,
-  questsOpen: false, questSel: -1, questMsg: '', questMsgT: 0,
+  questsOpen: false, questSel: -1, questTab: 0, questMsg: '', questMsgT: 0,
   quests: { claimed: {} },
   codeKeyHit: null, codeKeyFlash: 0, codeKeyOver: null,
   mobile: false, settingsOpen: false, padOn: {},
@@ -111,7 +112,8 @@ function packSave() {
     maxHp: p ? p.maxHp : 6, hp: p ? p.hp : 6, hasKey: p ? p.hasKey : false,
     codes: { found: G.codes.found, used: G.codes.used, tickets: G.codes.tickets,
              admin: G.codes.admin },
-    quests: { claimed: (G.quests && G.quests.claimed) || {} },
+    quests: { claimed: (G.quests && G.quests.claimed) || {},
+              daily: (G.quests && G.quests.daily) || null },
     comboBest: G.comboBest || 0,
     tut: G.tut, stats: G.stats
   };
@@ -148,7 +150,8 @@ function applySave(d) {
   G.codes.used = d.codes && d.codes.used || {};
   G.codes.tickets = (d.codes && d.codes.tickets) || 0;
   G.codes.admin = !!(d.codes && d.codes.admin);
-  G.quests = { claimed: (d.quests && d.quests.claimed) || {} };
+  G.quests = { claimed: (d.quests && d.quests.claimed) || {},
+               daily: (d.quests && d.quests.daily) || null };
   G.comboBest = d.comboBest || 0;
   G.tut = Object.assign({ move: 0, fight: 0, swim: 0, dash: 0, pierce: 0, climb: 0, parry: 0 }, d.tut || {});
   G.stats = Object.assign({ coins: 0, kills: 0, time: 0, deaths: 0 }, d.stats || {});
@@ -315,6 +318,7 @@ G.enterRoom = function (id, spawn) {
   G.room = room; G.roomId = id;
   G.enemies.length = 0; G.coins.length = 0; G.projectiles.length = 0; G.waves.length = 0;
   G.particles.length = 0; G.texts.length = 0; G.items.length = 0;
+  G.lifts.length = 0; G.hazards.length = 0;
   G.boss = null; G.bossFight = false;
   if (!G.roomFlags[id]) G.roomFlags[id] = { coins: new Set() };
   const flags = G.roomFlags[id];
@@ -322,8 +326,10 @@ G.enterRoom = function (id, spawn) {
   /* some realms breed hardier creatures; bosses set their own health */
   const lv = World.LEVELS[room.level];
   const hpScale = (lv && lv.enemyHp) || 1;
+  const dmgScale = (lv && lv.enemyDmg) || 1;
   const tough = (e) => {
     if (hpScale !== 1) { e.hp = Math.round(e.hp * hpScale); e.maxHp = e.hp; }
+    if (dmgScale !== 1) e.damage = Math.max(1, Math.round((e.damage || 1) * dmgScale));
     G.enemies.push(e);
     return e;
   };
@@ -344,6 +350,10 @@ G.enterRoom = function (id, spawn) {
 
   room.spawns.forEach((sp, i) => {
     switch (sp.type) {
+      case 'armour': tough(new Armour(sp.x, sp.y)); break;
+      case 'lift': G.lifts.push(new Lift(sp)); break;
+      case 'spikes': G.hazards.push(new Spikes(sp)); break;
+      case 'crusher': G.hazards.push(new Crusher(sp)); break;
       case 'snake': tough(new Snake(sp.x, sp.y, !!sp.top)); break;
       case 'bear': tough(new Bear(sp.x, sp.y)); break;
       case 'bat': tough(new Bat(sp.x, sp.y, !!sp.top)); break;
@@ -373,13 +383,17 @@ G.enterRoom = function (id, spawn) {
   G.player.place(s.x, room.mode === 'top' ? s.y + G.player.h / 2 : s.y);
   G.player.dashT = 0; G.player.atkT = 0;
   G.exitLock = true; G.nearExit = null;
+  /* the throne room holds its breath: no music, no wind, and no dragon
+     until the armour has had its say */
+  G.throne = room.dragonDrop ? { t: 0, phase: 'hush', drop: room.dragonDrop } : null;
   G.acid = room.acid ? { y: room.acid.y } : null;
   G.acidBurnT = 0;
   G.aimX = clamp(VW / 2 + 60, 20, VW - 20); G.aimY = VH * 0.42; G.aimDrag = null;
   snapCamera();
   Snd.play(room.music);
   Snd.ambienceLevel(room.ambient, 1.4);
-  G.banner(room.name, 2.4);
+  if (G.throne) { Snd.musicLevel(0, 0.2); Snd.ambienceLevel(0, 0.6); }
+  else G.banner(room.name, 2.4);
   G.checkRelics();
   G.saveGame();                 /* every new area is a point worth keeping */
 };
@@ -614,7 +628,7 @@ function startGame(slot) {
   G.codes = { found: {}, used: {}, tickets: 0, admin: false };
   G.tut = { move: 0, fight: 0, swim: 0, dash: 0, pierce: 0, climb: 0, parry: 0 };
   G.relicSeen = {}; G.relicShow = null; G.swallowed = null; G.acid = null;
-  G.quests = { claimed: {} }; G.comboBest = 0; G.questsOpen = false;
+  G.quests = { claimed: {}, daily: null }; G.comboBest = 0; G.questsOpen = false;
   const d = readSlot(G.slot);
   if (d && d.used) applySave(d);
   G.mapMode = G.tutorialDone ? 'realm' : 'tutorial';
@@ -834,8 +848,10 @@ function updatePlay(dt) {
   /* hit stop gives every sword blow some weight */
   if (G.hitStopT > 0) { G.hitStopT -= dt; dt = Math.min(dt, 0.0005); }
 
+  for (const L of G.lifts) L.update(dt);
   const p = G.player;
   p.update(dt);
+  for (const hz of G.hazards) hz.update(dt);
   if (p.dead && G.state === 'play') { G.breakCombo(); G.state = 'dead'; G.deathT = 0; G.stats.deaths++; Snd.musicLevel(0.08, 1.2); }
 
   for (const e of G.enemies) if (!e.dead) { e.update(dt); e.applyKnock(dt); }
@@ -885,9 +901,139 @@ function updatePlay(dt) {
     }));
   }
 
+  updateThrone(dt);
   updateAcid(dt);
   checkExits();
   if (!G.trans) updateCamera(dt);
+}
+
+/* The throne room. Silence, then the armour, then the dragon out of the roof. */
+function updateThrone(dt) {
+  const th = G.throne;
+  if (!th) return;
+  th.t += dt;
+  const p = G.player;
+  if (th.phase === 'hush') {
+    /* nothing but your own footsteps until you are well into the hall */
+    if (th.t > 1.2 && !th.named) { th.named = true; G.banner(G.room.name, 2.6); }
+    const roused = G.enemies.some(e => e instanceof Armour && e.awake);
+    if (roused || p.cx > G.room.w * TILE * 0.45) {
+      th.phase = 'watch'; th.t = 0;
+      G.banner('SOMETHING IS AWAKE', 2.2);
+    }
+    return;
+  }
+  if (th.phase === 'watch') {
+    /* it comes once the armour is down, or once you have stood here long enough */
+    const left = G.enemies.filter(e => e instanceof Armour && !e.dead).length;
+    if (left === 0 || th.t > 26) {
+      th.phase = 'drop'; th.t = 0;
+      Snd.dragonRoar(); G.shake(10); G.flash(0.4);
+      G.banner('IT COMES FROM ABOVE', 2.6);
+    }
+    return;
+  }
+  if (th.phase === 'drop') {
+    /* dust and stone shaken loose from the roof, then the dragon itself */
+    if (Math.random() < dt * 60) G.particles.push(new Particle({
+      x: th.drop.x + rr(-70, 70), y: G.cam.y + 6, vx: rr(-0.4, 0.4), vy: rr(1.4, 3.4),
+      life: rr(0.5, 1.2), col: '#8a7d5c', col2: '#4a3220', size: rr(1, 2.6), grav: 0.14
+    }));
+    if (th.t > 1.5 && !G.boss) {
+      const d = new Dragon(th.drop.x, th.drop.y);
+      d.y = th.drop.y;
+      /* the same hardening the room would have given it on entry */
+      const lv = World.LEVELS[G.level];
+      const sc = (lv && lv.bossHp !== undefined) ? lv.bossHp
+               : ((G.level === World.LEVELS.length - 1) ? 10 : 3);
+      d.hp = Math.round(d.hp * sc); d.maxHp = d.hp;
+      G.boss = d; G.enemies.push(d);
+      if (typeof d.wake === 'function') d.wake();
+      Snd.dragonRoar(); G.shake(14); G.flash(0.7);
+      for (let i = 0; i < 80; i++) G.particles.push(new Particle({
+        x: th.drop.x + rr(-40, 40), y: th.drop.y, vx: rr(-5, 5), vy: rr(-2, 4),
+        life: rr(0.4, 1.1), col: '#c9d4e8', col2: '#4a5165', size: rr(1.4, 3.6), grav: 0.18
+      }));
+      /* and the music finally starts */
+      Snd.play('boss'); Snd.musicLevel(0.34, 1.2); Snd.ambienceLevel(0.1, 2);
+      th.phase = 'fight';
+    }
+    return;
+  }
+}
+/* each window keeps to a few colours, so it reads as glass and not confetti */
+const WINDOW_PALETTES = [
+  ['#f0c93a', '#e08a2a', '#c9403a', '#7a2430'],
+  ['#9fe8ff', '#3f6fd8', '#2f4a9a', '#8f5fc0'],
+  ['#c0f08a', '#4f9a3f', '#2f6f37', '#f0c93a'],
+  ['#ffd6e4', '#c9403a', '#8f5fc0', '#3f6fd8'],
+  ['#fff4d6', '#f0c93a', '#4f9a3f', '#3f6fd8']
+];
+/* The light the windows throw across the floor. Drawn inside the camera
+   translate, so these are world coordinates, not screen ones. */
+function drawWindows(camX, camY) {
+  const wins = G.room.windows;
+  if (!wins) return;
+  ctx.save();
+  for (const w of wins) {
+    const x = Math.round(w.x), y = Math.round(w.y);
+    if (w.x < camX - 80 || w.x > camX + VW + 80) continue;
+    /* a lancet of leaded glass, ringed about a rose at its heart */
+    const pal = WINDOW_PALETTES[w.seed % WINDOW_PALETTES.length];
+    ctx.fillStyle = '#1a1626';
+    ctx.fillRect(x - w.w / 2 - 3, y - 3, w.w + 6, w.h + 6);
+    ctx.fillStyle = '#3a3350';
+    ctx.fillRect(x - w.w / 2 - 3, y - 3, w.w + 6, 2);
+    const half = w.w / 2;
+    const rcx = 0, rcy = w.h * 0.36;
+    for (let py = 0; py < w.h; py += 7) {
+      for (let px = 0; px < w.w; px += 7) {
+        const t = py / w.h, dx = px + 3 - half;
+        /* an arch, so the head of the window is stone, not glass */
+        if (t < 0.26 && Math.abs(dx) > half * (0.3 + t * 2.7)) continue;
+        const d = Math.hypot(dx - rcx, (py + 3 - rcy) * 0.85);
+        const ring = Math.floor(d / 9);
+        const col = pal[ring % pal.length];
+        ctx.fillStyle = col;
+        ctx.fillRect(x - half + px, y + py, 6, 6);
+        /* the light catching the top of each pane, and the lead below it */
+        ctx.fillStyle = 'rgba(255,255,255,0.22)';
+        ctx.fillRect(x - half + px, y + py, 6, 1);
+        ctx.fillStyle = 'rgba(20,16,30,0.55)';
+        ctx.fillRect(x - half + px, y + py + 6, 7, 1);
+        ctx.fillRect(x - half + px + 6, y + py, 1, 7);
+      }
+    }
+    /* the mullion down the middle */
+    ctx.fillStyle = '#2a2438';
+    ctx.fillRect(x - 1, y + Math.round(w.h * 0.26), 2, Math.round(w.h * 0.74));
+    /* the shaft of light, falling to the floor and pooling there */
+    const gy = (G.room.surface ? G.room.surface[Math.floor(w.x / TILE)] : 22) * TILE;
+    const shaft = ctx.createLinearGradient(0, y + w.h, 0, gy);
+    shaft.addColorStop(0, 'rgba(255,255,255,0.20)');
+    shaft.addColorStop(1, 'rgba(255,255,255,0.02)');
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = shaft;
+    const spread = 10;
+    ctx.beginPath();
+    ctx.moveTo(x - w.w / 2, y + w.h);
+    ctx.lineTo(x + w.w / 2, y + w.h);
+    ctx.lineTo(x + w.w / 2 + spread, gy);
+    ctx.lineTo(x - w.w / 2 - spread, gy);
+    ctx.closePath(); ctx.fill();
+    /* and the colours it lays across the stone */
+    for (let k = 0; k < pal.length; k++) {
+      ctx.globalAlpha = 0.30 + Math.sin(G.t * 0.7 + k + w.seed) * 0.06;
+      ctx.fillStyle = pal[k];
+      const bw = (w.w + spread * 2) / pal.length;
+      ctx.fillRect(Math.round(x - w.w / 2 - spread + k * bw), Math.round(gy - 5), Math.ceil(bw) + 1, 6);
+      ctx.globalAlpha = 0.14 + Math.sin(G.t * 0.7 + k + w.seed) * 0.04;
+      ctx.fillRect(Math.round(x - w.w / 2 - spread * 0.5 + k * bw * 0.86), Math.round(gy - 24), Math.ceil(bw), 19);
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  ctx.restore();
 }
 
 /* the acid in the gullet, climbing while you climb */
@@ -1351,7 +1497,7 @@ function drawMap() {
       ctx.fillStyle = '#ffd66a'; ctx.beginPath(); ctx.arc(43, VH - 35, 16, 0, TAU); ctx.fill(); ctx.restore();
     }
     blit(ctx, Art.ui.quests, 43, VH - 35, 5, 5);
-    const ready = questsReady();
+    const ready = questsReady() + dailyReady();
     if (ready > 0) {
       ctx.fillStyle = '#6fc46a'; ctx.fillRect(48, VH - 44, 6, 6);
       drawText(ctx, String(Math.min(9, ready)), 50, VH - 43, '#12200e', 1, 'left');
@@ -1905,7 +2051,10 @@ function drawWorld() {
   drawDecor(0, camX, camY);
   drawTiles(camX, camY);
   drawDoors(camX);
+  drawWindows(camX, camY);
   drawDecor(1, camX, camY);
+  for (const L of G.lifts) L.draw(ctx);
+  for (const hz of G.hazards) hz.draw(ctx);
   for (const c of G.coins) c.draw(ctx);
   for (const it of G.items) it.draw(ctx);
   for (const e of G.enemies) e.draw(ctx);
@@ -2856,6 +3005,74 @@ const QUESTS = [
   { id: 'up12',    name: 'WELL ARMED',     goal: 12,  coins: 900,  stat: 'upgrades', unit: 'UPGRADES' },
   { id: 'chain10', name: 'TEN IN A ROW',   goal: 10,  tickets: 1,  stat: 'combo',    unit: 'HIT CHAIN' }
 ];
+/* ---- the day's tasks, five of them, new every morning ---- */
+const DAILY_POOL = [
+  { id: 'dKill',  name: 'CULL THE WILDS',   stat: 'kills',    goal: 40,   coins: 400,  unit: 'FELLED' },
+  { id: 'dCoin',  name: 'FILL THE PURSE',   stat: 'earned',   goal: 1200, coins: 500,  unit: 'COINS' },
+  { id: 'dSpec',  name: 'CUT AND TUMBLE',   stat: 'specials', goal: 25,   coins: 450,  unit: 'SPECIALS' },
+  { id: 'dPaper', name: 'A SCRAP OF PAPER', stat: 'papers',   goal: 1,    tickets: 1,  unit: 'PAPERS' },
+  { id: 'dRealm', name: 'TAKE A REALM',     stat: 'realms',   goal: 1,    tickets: 2,  unit: 'CLEARED' },
+  { id: 'dUp',    name: 'VISIT THE PEDLAR', stat: 'bought',   goal: 3,    coins: 350,  unit: 'BOUGHT' }
+];
+/* the player's own day, not the clock's */
+function todayKey() {
+  const d = new Date();
+  return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
+}
+/* the same five for everyone on the same day, and different ones tomorrow */
+function dailyPick() {
+  const key = todayKey();
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 16777619); }
+  const rng = new RNG(h >>> 0);
+  const pool = DAILY_POOL.slice();
+  for (let i = pool.length - 1; i > 0; i--) { const j = rng.i(0, i); const t = pool[i]; pool[i] = pool[j]; pool[j] = t; }
+  return pool.slice(0, 5);
+}
+function rawStat(stat) {
+  switch (stat) {
+    case 'kills': return G.stats.kills || 0;
+    case 'earned': return G.stats.coins || 0;
+    case 'specials': return G.stats.specials || 0;
+    case 'papers': return Object.keys(G.codes.found || {}).length;
+    case 'realms': return (G.cleared || []).filter(Boolean).length;
+    case 'bought': return G.stats.bought || 0;
+  }
+  return 0;
+}
+/* roll the day over, taking a reading of every counter to measure against */
+function refreshDaily() {
+  if (!G.quests.daily) G.quests.daily = { day: '', base: {}, claimed: {} };
+  const d = G.quests.daily;
+  if (d.day === todayKey()) return;
+  d.day = todayKey();
+  d.claimed = {};
+  d.base = {};
+  for (const q of DAILY_POOL) d.base[q.stat] = rawStat(q.stat);
+}
+function dailyList() { refreshDaily(); return dailyPick(); }
+function dailyValue(q) {
+  refreshDaily();
+  const base = G.quests.daily.base[q.stat] || 0;
+  return Math.max(0, rawStat(q.stat) - base);
+}
+function dailyDone(q) { return dailyValue(q) >= q.goal; }
+function dailyClaimed(q) { refreshDaily(); return !!G.quests.daily.claimed[q.id]; }
+function dailyReady() {
+  let n = 0;
+  for (const q of dailyList()) if (dailyDone(q) && !dailyClaimed(q)) n++;
+  return n;
+}
+function claimDaily(q) {
+  if (!dailyDone(q) || dailyClaimed(q)) { Snd.uiBad(); return; }
+  G.quests.daily.claimed[q.id] = true;
+  if (q.tickets) G.codes.tickets += q.tickets;
+  else if (G.player) G.player.coins += q.coins;
+  Snd.buy(); G.flash(0.3);
+  G.questMsg = 'TAKEN - ' + questReward(q); G.questMsgT = 2.6;
+  G.saveGame();
+}
+
 function questValue(stat) {
   const p = G.player;
   switch (stat) {
@@ -2897,20 +3114,30 @@ const QUEST_BOX_MOB = { x: 4, y: 6, w: 376, h: 204 };
 function questBox() { return G.mobile ? QUEST_BOX_MOB : QUEST_BOX_PC; }
 function questRowRect(i) {
   const B = questBox();
-  return { x: B.x + 8, y: B.y + 26 + i * 15, w: B.w - 16, h: 14 };
+  return { x: B.x + 8, y: B.y + 40 + i * 15, w: B.w - 16, h: 14 };
 }
 function questCloseRect() { const B = questBox(); return { x: B.x + B.w - 18, y: B.y + 5, w: 13, h: 13 }; }
+const QUEST_TABS = ['STANDING', 'TODAY'];
+function questTabRect(i) { const B = questBox(); return { x: B.x + 10 + i * 74, y: B.y + 22, w: 70, h: 13 }; }
+function questRows() { return G.questTab ? dailyList() : QUESTS; }
 function updateQuests(dt) {
   G.questMsgT = Math.max(0, (G.questMsgT || 0) - dt);
   if (Input.hit('Escape')) { G.questsOpen = false; Snd.ui(); return; }
   const cr = questCloseRect();
   G.questOverClose = Input.over(cr);
   if (Input.tap(cr)) { G.questsOpen = false; Snd.ui(); return; }
+  for (let i = 0; i < QUEST_TABS.length; i++) {
+    if (Input.tap(questTabRect(i))) { G.questTab = i; G.questSel = -1; Snd.ui(); return; }
+  }
+  const rows = questRows();
   G.questSel = -1;
-  for (let i = 0; i < QUESTS.length; i++) {
+  for (let i = 0; i < rows.length; i++) {
     const r = questRowRect(i);
     if (Input.over(r)) G.questSel = i;
-    if (Input.tap(r)) { claimQuest(QUESTS[i]); return; }
+    if (Input.tap(r)) {
+      if (G.questTab) claimDaily(rows[i]); else claimQuest(rows[i]);
+      return;
+    }
   }
 }
 function drawQuests() {
@@ -2919,7 +3146,8 @@ function drawQuests() {
   ctx.fillStyle = 'rgba(8,6,16,0.76)'; ctx.fillRect(0, 0, VW, VH);
   panel(ctx, B.x, B.y, B.w, B.h);
   drawText(ctx, 'QUESTS', B.x + 10, B.y + 9, '#f2e2b8', 1, 'left', '#000000');
-  const ready = questsReady();
+  const daily = !!G.questTab;
+  const ready = daily ? dailyReady() : questsReady();
   drawText(ctx, ready ? ready + ' READY TO TAKE' : 'TICKETS ' + G.codes.tickets,
            B.x + B.w - 24, B.y + 9, ready ? '#6fc46a' : '#a9b3c9', 1, 'right');
   const cr = questCloseRect();
@@ -2927,9 +3155,25 @@ function drawQuests() {
   ctx.fillRect(cr.x, cr.y, cr.w, cr.h);
   drawText(ctx, 'X', cr.x + 4, cr.y + 3, '#f2e2b8', 1, 'left');
 
-  QUESTS.forEach((q, i) => {
+  for (let i = 0; i < QUEST_TABS.length; i++) {
+    const r = questTabRect(i), on = (G.questTab || 0) === i;
+    const n = i ? dailyReady() : questsReady();
+    ctx.fillStyle = on ? '#3a3350' : '#1d1930';
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.fillStyle = on ? '#c68e3f' : '#2b2740';
+    ctx.fillRect(r.x, r.y, r.w, 1);
+    drawText(ctx, QUEST_TABS[i], r.x + r.w / 2 - (n ? 5 : 0), r.y + 3,
+             on ? '#ffeec0' : '#7f8aa3', 1, 'center');
+    if (n) { ctx.fillStyle = '#6fc46a'; ctx.fillRect(r.x + r.w - 13, r.y + 3, 7, 7);
+             drawText(ctx, String(Math.min(9, n)), r.x + r.w - 11, r.y + 4, '#12200e', 1, 'left'); }
+  }
+  if (daily) drawText(ctx, 'NEW TASKS EACH DAY', B.x + B.w / 2 + 40, B.y + 25, '#6d7994', 1, 'center');
+
+  questRows().forEach((q, i) => {
     const r = questRowRect(i);
-    const have = questValue(q.stat), done = have >= q.goal, taken = questClaimed(q);
+    const have = daily ? dailyValue(q) : questValue(q.stat);
+    const done = have >= q.goal;
+    const taken = daily ? dailyClaimed(q) : questClaimed(q);
     const hot = G.questSel === i;
     ctx.fillStyle = taken ? '#1a2418' : (done ? (hot ? '#3c5a40' : '#2f4a34') : (hot ? '#332c4c' : '#211c32'));
     ctx.fillRect(r.x, r.y, r.w, r.h);
@@ -2953,12 +3197,16 @@ function drawQuests() {
   });
 
   let foot;
+  const rows = questRows();
   if (G.questMsgT > 0) foot = G.questMsg;
-  else if (G.questSel >= 0) {
-    const q = QUESTS[G.questSel];
-    foot = (questDone(q) && !questClaimed(q)) ? 'CLICK TO TAKE ' + questReward(q)
-         : questValue(q.stat) + ' OF ' + q.goal + ' ' + q.unit + '   -   ' + questReward(q);
-  } else foot = ready ? 'GREEN ROWS ARE READY - CLICK ONE' : 'COME BACK AS YOU GO';
+  else if (G.questSel >= 0 && rows[G.questSel]) {
+    const q = rows[G.questSel];
+    const have = daily ? dailyValue(q) : questValue(q.stat);
+    const done = have >= q.goal, taken = daily ? dailyClaimed(q) : questClaimed(q);
+    foot = (done && !taken) ? 'CLICK TO TAKE ' + questReward(q)
+         : have + ' OF ' + q.goal + ' ' + q.unit + '   -   ' + questReward(q);
+  } else foot = ready ? 'GREEN ROWS ARE READY - CLICK ONE'
+       : (daily ? 'THESE FIVE CHANGE TOMORROW' : 'COME BACK AS YOU GO');
   drawText(ctx, foot, B.x + B.w / 2, B.y + B.h - 13,
            G.questMsgT > 0 ? '#6fc46a' : '#a9b3c9', 1, 'center');
   ctx.restore();
@@ -3100,6 +3348,7 @@ function updateShop(dt) {
   if (it.key === 'heart') { p.up.heart = (p.up.heart || 0) + 1; p.maxHp += 2; p.hp = p.maxHp; }
   else if (it.key === 'tonic') p.heal(p.maxHp);
   else p.up[it.key] = (p.up[it.key] || 0) + 1;
+  if (it.key !== 'tonic') G.stats.bought = (G.stats.bought || 0) + 1;
   G.saveGame();
 }
 function drawShop() {

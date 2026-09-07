@@ -105,11 +105,21 @@ var iv=setInterval(function(){
       Input.mx=(phaseTick*11)%380; Input.my=(phaseTick*5)%210;
       G.player.hp=G.player.maxHp;
       if(phaseTick>150){ Input.touches=[]; G.mobile=false; note('room '+id+' ok, enemies='+G.enemies.length+' particles='+G.particles.length+' coins='+G.coins.length); phase++; phaseTick=0; }
-    } else if(phase===24){                            // kill the dragon
-      if(phaseTick===1){ G.trans=null; G.level=0; G.enterRoom('lair',null); G.boss.wake(); }
+    } else if(phase===24){                            // the throne room, then the dragon
+      if(phaseTick===1){ G.trans=null; G.level=0; G.enterRoom('lair',null); G.exitLock=false; }
       G.player.hp=G.player.maxHp; G.player.invuln=0.3;
+      /* the hall holds its silence until the armour is down */
+      if(phaseTick===40){
+        note('throne room: music="'+G.room.music+'" windows='+(G.room.windows||[]).length
+             +' armour='+G.enemies.filter(function(e){return e instanceof Armour;}).length
+             +' boss='+(G.boss?'present':'none')+' phase='+(G.throne?G.throne.phase:'-'));
+      }
+      if(phaseTick===60) G.enemies.forEach(function(e){ if(e instanceof Armour) e.hurt(99,0,0); });
+      if(phaseTick===160 && !G.boss) note('WARNING: no dragon 100 ticks after the armour fell, phase='+(G.throne?G.throne.phase:'-'));
+      if(phaseTick===170) note('dragon arrived: '+(G.boss?G.boss.constructor.name+' hp '+G.boss.hp:'NONE')
+             +'  music now "'+(G.room.music)+'" -> track '+(Snd.trackName||'(none)'));
       if(phaseTick%4===0&&G.boss) G.boss.hurt(4,G.player.cx,G.player.cy);
-      if(G.state==='victory'||phaseTick>1500){ note('boss phase ok, state='+G.state); phase=25; phaseTick=0; }
+      if(G.state==='victory'||phaseTick>1600){ note('boss phase ok, state='+G.state); phase=25; phaseTick=0; }
     } else if(phase===25){                            // death and respawn
       if(phaseTick===1){ G.state='play'; G.enterRoom('glade',null); G.player.dead=false; G.player.hp=1; G.player.hurt(9,0,0); }
       if(phaseTick>140) Input.hitKeys['Space']=true;

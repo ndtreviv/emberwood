@@ -255,6 +255,20 @@ sounds nothing like the walk in.
 | `bossDeep` | the three guardians of the deep | D minor, driving |
 | `bossAsh` | the three guardians of the ash | C minor, lower and faster than anything before |
 
+### What the later realms put in your way
+
+The realms of the deep and the ash are no longer flat walks. Each carries a handful of
+obstacles that ask for the movement you have learned:
+
+| Obstacle | What it asks |
+| --- | --- |
+| **Pitfall** | A hole with spikes at the bottom, and a lift running across it. Ride it, dash it, or carry a run into the jump |
+| **Spike bed** | A run of spikes on open ground. Jump it, dash over it, or roll across |
+| **Rising lift** | A platform that climbs to a shelf of coins and comes back down. Wait for it |
+| **Sweeping block** | A block that runs the ground you want. It eases at each end, so there is a beat to slip past |
+
+Tidewrack has five, and the Molten Crown eleven.
+
 ### Chapter Two — The Sunken Depths
 
 | Realm | Guardian |
@@ -289,6 +303,16 @@ rationed to one dive a second; a bar under the dash meter shows when it is back.
 
 Dying costs you a fifth of your coins, and each realm claims them in its own words.
 
+## The Ember Throne
+
+The first guardian is not met in a cave. It is a swept hall of marble with tall lancets of
+leaded glass down one wall, throwing rings of colour across the floor. **There is no music
+in it, and no wind** — only your own footsteps.
+
+Two **suits of armour** stand watch. They sleep on their feet until you come near, then step
+down and come at you with the blade. Cut them both down and the roof breaks: the Ember Wyrm
+drops into the hall, and only then does the music begin.
+
 ## Quests
 
 The chart carries a **quest roll** beside the codes panel. It holds ten standing tasks —
@@ -298,6 +322,9 @@ when you take it.
 
 A green row is ready; click it to take the reward. A badge on the roll counts what is
 waiting. Quests are kept per save file, and each pays once.
+
+**TODAY** holds five more, drawn fresh each day from a pool of six and measured only against
+what you do that day. They pay coins and tickets like the rest, and reset tomorrow.
 
 | Quest | Asks for | Pays |
 | --- | --- | --- |
