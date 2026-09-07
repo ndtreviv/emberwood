@@ -146,21 +146,30 @@ function applySave(d) {
   G.stats = Object.assign({ coins: 0, kills: 0, time: 0, deaths: 0 }, d.stats || {});
   if (G.codes.admin) { try { Art.buildGold(); } catch (e) { /* art may not be up yet */ } }
 }
+/* What a file is worth, counted over the whole game: every realm of all
+   three chapters, the two papers hidden in each of them, and every upgrade
+   level at its full nine-realm cap, relics included. */
+function slotTally(d) {
+  const realms = World.LEVELS.length;              /* 3 chapters x 3 realms */
+  const papers = World.CODES.length;               /* 2 in every realm */
+  let cap = 0, have = 0;
+  for (const it of SHOP_ITEMS) {
+    if (it.key === 'tonic') continue;              /* a drink, not progress */
+    const m = it.relic ? it.max : it.max + (realms - 1) * 2;
+    cap += m;
+    have += Math.min(m, (d && d.up && d.up[it.key]) || 0);
+  }
+  return {
+    realms: (d && d.cleared || []).filter(Boolean).length, realmsMax: realms,
+    papers: Math.min(papers, Object.keys(d && d.codes && d.codes.found || {}).length), papersMax: papers,
+    upgrades: have, upgradesMax: cap
+  };
+}
 /* 100% is every realm cleared, every paper found and every upgrade maxed */
 function slotPercent(d) {
   if (!d) return 0;
-  const realms = World.LEVELS.length;
-  const cleared = (d.cleared || []).filter(Boolean).length;
-  const papers = World.CODES.length;
-  const found = Object.keys(d.codes && d.codes.found || {}).length;
-  let cap = 0, have = 0;
-  for (const it of SHOP_ITEMS) {
-    if (it.key === 'tonic') continue;
-    const m = it.relic ? it.max : it.max + (realms - 1) * 2;
-    cap += m;
-    have += Math.min(m, (d.up && d.up[it.key]) || 0);
-  }
-  const f = (cleared / realms + Math.min(1, found / papers) + (cap ? have / cap : 0)) / 3;
+  const t = slotTally(d);
+  const f = (t.realms / t.realmsMax + t.papers / t.papersMax + t.upgrades / t.upgradesMax) / 3;
   return Math.round(clamp(f, 0, 1) * 100);
 }
 
@@ -2377,7 +2386,7 @@ function drawSettings() {
 /* ============================================================
    SAVE FILES — pick one of three, each showing how far it has gone
    ============================================================ */
-function fileRect(i) { return { x: 24 + i * 116, y: 62, w: 104, h: 96 }; }
+function fileRect(i) { return { x: 16 + i * 118, y: 58, w: 112, h: 104 }; }
 function fileEraseRect(i) { const r = fileRect(i); return { x: r.x + r.w - 40, y: r.y + r.h - 15, w: 34, h: 11 }; }
 function fileBackRect() { return { x: 10, y: VH - 22, w: 58, h: 15 }; }
 function fileGearRect() { return { x: VW - 28, y: 6, w: 22, h: 22 }; }
@@ -2463,11 +2472,13 @@ function drawFiles() {
     ctx.fillStyle = pct >= 100 ? '#ffd04a' : '#6fc46a';
     ctx.fillRect(bx, by, Math.round(bw * pct / 100), 5);
 
-    const realms = (d.cleared || []).filter(Boolean).length;
-    const papers = Object.keys(d.codes && d.codes.found || {}).length;
-    drawText(ctx, 'REALMS ' + realms + '/' + World.LEVELS.length, r.x + 8, r.y + 52, '#e0d0aa', 1, 'left');
-    drawText(ctx, 'PAPERS ' + papers + '/' + World.CODES.length, r.x + 8, r.y + 62, '#e0d0aa', 1, 'left');
-    drawText(ctx, 'COINS ' + (d.codes && d.codes.admin ? INF : (d.coins || 0)), r.x + 8, r.y + 72, '#e0d0aa', 1, 'left');
+    /* the three things the percentage is made of, each shown against its total */
+    const t = slotTally(d);
+    const part = (n, m) => (n >= m ? '#9be89a' : '#e0d0aa');
+    drawText(ctx, 'REALMS ' + t.realms + '/' + t.realmsMax, r.x + 8, r.y + 52, part(t.realms, t.realmsMax), 1, 'left');
+    drawText(ctx, 'PAPERS ' + t.papers + '/' + t.papersMax, r.x + 8, r.y + 62, part(t.papers, t.papersMax), 1, 'left');
+    drawText(ctx, 'UPGRADES ' + t.upgrades + '/' + t.upgradesMax, r.x + 8, r.y + 72, part(t.upgrades, t.upgradesMax), 1, 'left');
+    drawText(ctx, 'COINS ' + (d.codes && d.codes.admin ? INF : (d.coins || 0)), r.x + 8, r.y + 82, '#e0d0aa', 1, 'left');
 
     const er = fileEraseRect(i);
     const armed = G.eraseArm === i;

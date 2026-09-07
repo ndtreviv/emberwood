@@ -14,8 +14,21 @@ save files, then pick a realm on the map.
 START opens a rack of three files. Each one keeps its own realms, papers, coins, upgrades
 and codes, and each shows how far it has gone:
 
-**100% is every realm cleared, every paper found and every upgrade at its full cap.**
-The three count for a third each. A file also lists its realms, its papers and its purse.
+**100% is every realm cleared, every paper found and every upgrade at its full cap**, taken
+over the whole game — all nine realms of all three chapters, the two papers hidden in each
+of them, and all 118 upgrade levels at their full nine-realm caps, the three relics
+included. The three count for a third each.
+
+Every card shows all three parts against their totals, so you can see what the number is
+made of, and each part turns green once it is finished:
+
+```
+FILE 2                          FILE 1
+   100%                            26%
+REALMS   9/9                    REALMS   3/9
+PAPERS  18/18                   PAPERS   5/18
+UPGRADES 118/118                UPGRADES 21/118
+```
 
 The game writes the file whenever you enter an area, buy an upgrade, find a paper, redeem
 a code, kill a guardian or leave a realm. **ERASE** on a file asks once, then wipes it.
