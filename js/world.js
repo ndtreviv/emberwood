@@ -490,18 +490,18 @@ function buildCave(seed) {
 }
 
 /* ============================================================
-   THE PROVING GROUND — one corridor that teaches every move
+   THE TUTORIAL — one corridor that teaches every move
    ============================================================ */
 function buildTutorial(seed) {
   const rng = new RNG(seed);
   const W = 132, H = 28;
-  const room = new Room({ id: 'tutorial', name: 'THE PROVING GROUND', mode: 'side',
+  const room = new Room({ id: 'tutorial', name: 'TUTORIAL', mode: 'side',
                           w: W, h: H, music: 'forest', bg: 'forest', ambient: 0.4 });
   const GY = 18;
   const surf = new Int16Array(W);
   for (let x = 0; x < W; x++) surf[x] = GY;
-  /* a step to hop up and back down */
-  for (let x = 24; x < 30; x++) surf[x] = GY - 2;
+  /* a step to hop up and back down: three tiles, so only a held jump clears it */
+  for (let x = 24; x < 30; x++) surf[x] = GY - 3;
   for (let x = 0; x < W; x++) {
     room.set(x, surf[x], T_GRASS);
     for (let y = surf[x] + 1; y < H; y++) room.set(x, y, T_DIRT);
@@ -535,26 +535,31 @@ function buildTutorial(seed) {
     surf[x] = upper;
   }
   for (let y = upper - 1; y <= GY - 1; y++) room.set(wallX - 1, y, T_LADDER);
-  /* the door out */
+  /* the door out — it stands on the high ground past the wall, not on the
+     old floor level, which would bury it under the hillside */
   const doorX = W - 12;
+  const doorY = surf[doorX];
   room.surface = surf;
 
   room.start = { x: 4 * TILE, y: (GY - 3) * TILE };
-  room.exits.push({ x: doorX * TILE - 16, y: (GY - 3) * TILE, w: 34, h: 3 * TILE,
+  room.exits.push({ x: doorX * TILE - 16, y: (doorY - 3) * TILE, w: 34, h: 3 * TILE,
                     to: 'tutorialDone', label: 'INTO THE REALM', kind: 'arch',
-                    door: { x: doorX * TILE, y: GY * TILE } });
+                    door: { x: doorX * TILE, y: doorY * TILE } });
 
   /* what it teaches, in order */
+  /* a name in braces is filled in with the key the player has bound */
   const signs = [
-    { x: 7,  key: 'move',  pc: 'ARROWS TO WALK   UP TO JUMP', mob: 'USE THE PAD TO WALK AND JUMP' },
-    { x: 26, key: 'move',  pc: 'HOLD UP FOR A HIGHER JUMP', mob: 'HOLD UP FOR A HIGHER JUMP' },
-    { x: 34, key: 'fight', pc: 'SPACE OR CLICK TO SWING', mob: 'TAP CUT TO SWING' },
-    { x: 43, key: 'swim',  pc: 'HOLD S TO SWIM ACROSS', mob: 'HOLD THE SWIMMER TO SWIM' },
-    { x: 63, key: 'dash',  pc: 'JUMP, THEN D TO DASH THE GAP', mob: 'JUMP, THEN TAP DSH' },
-    { x: 75, key: 'pierce', pc: 'TWO TILES UP, F TO DIVE', mob: 'HIGH UP, TAP PRC TO DIVE' },
+    { x: 7,  key: 'move',  pc: '{left} {right} TO WALK   {up} TO JUMP', mob: 'USE THE PAD TO WALK AND JUMP' },
+    { x: 14, key: 'move',  pc: 'HOLD {down} TO CROUCH', mob: 'HOLD DOWN TO CROUCH' },
+    { x: 21, key: 'move',  pc: '{down} AND A WAY TO ROLL', mob: 'DOWN AND A WAY TO ROLL' },
+    { x: 26, key: 'move',  pc: 'HOLD {up} FOR A HIGHER JUMP', mob: 'HOLD UP FOR A HIGHER JUMP' },
+    { x: 34, key: 'fight', pc: '{attack} OR CLICK TO SWING', mob: 'TAP CUT TO SWING' },
+    { x: 43, key: 'swim',  pc: 'HOLD {swim} TO SWIM ACROSS', mob: 'HOLD THE SWIMMER TO SWIM' },
+    { x: 63, key: 'dash',  pc: 'JUMP, THEN {dash} TO DASH THE GAP', mob: 'JUMP, THEN TAP DSH' },
+    { x: 75, key: 'pierce', pc: 'TWO TILES UP, {pierce} TO DIVE', mob: 'HIGH UP, TAP PRC TO DIVE' },
     { x: 84, key: 'climb', pc: 'WALK INTO THE LADDER TO CLIMB', mob: 'HOLD TOWARD THE LADDER TO CLIMB' },
     { x: 93, key: 'parry', pc: 'SWING AT ITS FIRE TO TURN IT', mob: 'TAP CUT AT ITS FIRE' },
-    { x: doorX - 8, key: 'door', pc: 'STOP HERE AND PRESS E', mob: 'STOP HERE AND TAP THE DOOR' }
+    { x: doorX - 8, key: 'door', pc: 'STAND HERE AND CLICK THE DOOR', mob: 'STAND HERE AND TAP THE DOOR' }
   ];
   for (const s of signs)
     room.decor.push({ kind: 'sign', x: s.x * TILE + 8, y: (surf[s.x] + 1) * TILE, layer: 1,
@@ -1242,7 +1247,7 @@ World.codeByName = function (name) {
   return null;
 };
 
-World.TUTORIAL = { name: 'THE PROVING GROUND', sub: 'LEARN THE MOVES', start: 'tutorial',
+World.TUTORIAL = { name: 'TUTORIAL', sub: 'LEARN THE MOVES', start: 'tutorial',
                    rooms: ['tutorial'], node: { x: VW / 2, y: 118 } };
 
 World.CHAPTERS = [

@@ -364,6 +364,52 @@ function drawText(ctx, str, x, y, col, scale, align, shadow) {
 }
 
 /* ============================================================
+   keybinds — every game control is named, so a key can be swapped
+   ============================================================ */
+const DEFAULT_KEYS = {
+  left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: 'ArrowDown',
+  attack: 'Space', dash: 'KeyD', pierce: 'KeyF', swim: 'KeyS', interact: 'KeyE',
+  inhale: 'KeyO', spit: 'KeyI', shop: 'Escape', codes: 'KeyC', map: 'Backspace', mute: 'KeyM'
+};
+/* extra keys that keep working whatever the player binds */
+const ALT_KEYS = { attack: ['KeyX', 'KeyZ'] };
+const KEYS = Object.assign(Object.create(null), DEFAULT_KEYS);
+/* the order the settings panel lists them in */
+const ACTIONS = [
+  { key: 'left', name: 'MOVE LEFT' },
+  { key: 'right', name: 'MOVE RIGHT' },
+  { key: 'up', name: 'JUMP / CLIMB UP' },
+  { key: 'down', name: 'CROUCH / DROP' },
+  { key: 'attack', name: 'SWORD' },
+  { key: 'dash', name: 'DASH' },
+  { key: 'pierce', name: 'AIR PIERCE' },
+  { key: 'swim', name: 'SWIM' },
+  { key: 'interact', name: 'ENTER A DOOR' },
+  { key: 'shop', name: 'SHOP' },
+  { key: 'codes', name: 'CODES BOX' },
+  { key: 'map', name: 'LEAVE THE REALM' },
+  { key: 'mute', name: 'MUTE' },
+  { key: 'inhale', name: 'INHALE (PUFF)' },
+  { key: 'spit', name: 'SPIT (PUFF)' }
+];
+/* a short name a player recognises, from the raw event code */
+function keyLabel(code) {
+  if (!code) return '--';
+  if (code.indexOf('Key') === 0) return code.slice(3);
+  if (code.indexOf('Digit') === 0) return code.slice(5);
+  if (code.indexOf('Numpad') === 0) return 'NUM ' + code.slice(6);
+  if (code.indexOf('Arrow') === 0) return code.slice(5).toUpperCase();
+  const named = {
+    Space: 'SPACE', Escape: 'ESC', Backspace: 'BKSP', Enter: 'ENTER', Tab: 'TAB',
+    ShiftLeft: 'L SHIFT', ShiftRight: 'R SHIFT', ControlLeft: 'L CTRL', ControlRight: 'R CTRL',
+    AltLeft: 'L ALT', AltRight: 'R ALT', Comma: ',', Period: '.', Slash: '/',
+    Semicolon: ';', Quote: "'", BracketLeft: '(', BracketRight: ')', Backslash: '/',
+    Minus: '-', Equal: '=', Backquote: '`'
+  };
+  return named[code] || code.toUpperCase();
+}
+
+/* ============================================================
    input
    ============================================================ */
 const Input = {
@@ -373,30 +419,127 @@ const Input = {
   mdown: false, mhit: false, mrelease: false,
   wheel: 0, typed: '',
   touches: [], touchDown: false,
+  /* every finger and click that began this frame, so a second finger can
+     press a thing while the first one holds the pad */
+  taps: [],
   anyKey: false,
+  lastCode: '',
+  /* the touch pad writes action state straight in */
+  padHeld: Object.create(null), padHitAct: Object.create(null),
   down(k) { return !!this.held[k]; },
   hit(k) { return !!this.hitKeys[k]; },
-  endFrame() { this.hitKeys = Object.create(null); this.mhit = false; this.mrelease = false; this.wheel = 0; this.typed = ''; this.anyKey = false; }
+  /* named controls, so a rebound key and a touch button read the same */
+  act(a) {
+    if (this.padHeld[a]) return true;
+    if (this.held[KEYS[a]]) return true;
+    const alt = ALT_KEYS[a];
+    if (alt) for (const k of alt) if (this.held[k]) return true;
+    return false;
+  },
+  actHit(a) {
+    if (this.padHitAct[a]) return true;
+    if (this.hitKeys[KEYS[a]]) return true;
+    const alt = ALT_KEYS[a];
+    if (alt) for (const k of alt) if (this.hitKeys[k]) return true;
+    return false;
+  },
+  /* is the pointer inside this rectangle of virtual pixels */
+  over(r) { return this.mx >= r.x && this.mx <= r.x + r.w && this.my >= r.y && this.my <= r.y + r.h; },
+  /* did a click or a fresh finger land inside it this frame */
+  tap(r) {
+    for (const t of this.taps)
+      if (t.x >= r.x && t.x <= r.x + r.w && t.y >= r.y && t.y <= r.y + r.h) return true;
+    return false;
+  },
+  endFrame() {
+    this.hitKeys = Object.create(null); this.mhit = false; this.mrelease = false;
+    this.wheel = 0; this.typed = ''; this.anyKey = false; this.taps = []; this.lastCode = '';
+  }
+};
+
+/* ============================================================
+   saved options and save files
+   ============================================================ */
+const Store = {
+  read(key, fallback) {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : fallback;
+    } catch (e) { return fallback; }
+  },
+  write(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); return true; }
+    catch (e) { return false; }
+  },
+  drop(key) { try { localStorage.removeItem(key); } catch (e) { /* private mode */ } }
 };
 
 /* ============================================================
    display
    ============================================================ */
 let cv, ctx;
+/* the page fills the screen on a phone; a desktop keeps its border */
+const Screen = { fullscreen: false, landscape: false, wantFull: false };
+
+function screenIsLandscape() {
+  const w = (window.visualViewport && window.visualViewport.width) || window.innerWidth;
+  const h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+  return w > h;
+}
+/* a phone in landscape gets the whole screen; the browser only grants this
+   inside a touch or a click, so the game asks again on every gesture */
+function requestFullscreen() {
+  const el = document.documentElement;
+  const fn = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+  if (!fn) return;
+  if (document.fullscreenElement || document.webkitFullscreenElement) return;
+  try {
+    const r = fn.call(el, { navigationUI: 'hide' });
+    if (r && r.then) r.then(lockLandscape, () => {});
+    else lockLandscape();
+  } catch (e) { /* the browser said no */ }
+}
+function lockLandscape() {
+  try {
+    if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {});
+  } catch (e) { /* not supported */ }
+}
+function exitFullscreen() {
+  const fn = document.exitFullscreen || document.webkitExitFullscreen;
+  if (fn && (document.fullscreenElement || document.webkitFullscreenElement)) {
+    try { fn.call(document); } catch (e) { /* nothing to undo */ }
+  }
+}
+
 function initDisplay() {
   cv = document.getElementById('game');
   ctx = cv.getContext('2d', { alpha: false });
   ctx.imageSmoothingEnabled = false;
 
   function resize() {
-    const pad = 24;
-    const aw = window.innerWidth - pad, ah = window.innerHeight - pad - 18;
+    Screen.landscape = screenIsLandscape();
+    Screen.fullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    const vv = window.visualViewport;
+    const winW = (vv && vv.width) || window.innerWidth;
+    const winH = (vv && vv.height) || window.innerHeight;
+    /* on a phone the canvas takes the whole screen, so no button falls off it */
+    const full = typeof G !== 'undefined' && G.mobile;
+    document.body.classList.toggle('full', !!full);
+    const hint = document.getElementById('hint');
+    if (hint) hint.style.display = full ? 'none' : '';
+    const pad = full ? 0 : 24;
+    const aw = winW - pad, ah = winH - pad - (full ? 0 : 18);
     let s = Math.min(aw / VW, ah / VH);
-    s = s >= 1 ? Math.max(1, Math.floor(s * 2) / 2) : s;   // half-step scaling
+    if (!full) s = s >= 1 ? Math.max(1, Math.floor(s * 2) / 2) : s;   // half-step scaling
     cv.style.width = Math.round(VW * s) + 'px';
     cv.style.height = Math.round(VH * s) + 'px';
   }
+  Screen.resize = resize;
   window.addEventListener('resize', resize);
+  window.addEventListener('orientationchange', () => setTimeout(resize, 120));
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
+  document.addEventListener('fullscreenchange', resize);
+  document.addEventListener('webkitfullscreenchange', resize);
   resize();
 
   addEventListener('keydown', e => {
@@ -404,6 +547,7 @@ function initDisplay() {
     if (!Input.held[e.code]) Input.hitKeys[e.code] = true;
     Input.held[e.code] = true;
     Input.anyKey = true;
+    Input.lastCode = e.code;
     /* raw characters, for the code box */
     if (e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) Input.typed += e.key;
   });
@@ -416,7 +560,11 @@ function initDisplay() {
     Input.my = clamp((e.clientY - r.top) / r.height * VH, 0, VH - 1);
   }
   addEventListener('mousemove', toVirtual);
-  cv.addEventListener('mousedown', e => { toVirtual(e); Input.mdown = true; Input.mhit = true; e.preventDefault(); });
+  cv.addEventListener('mousedown', e => {
+    toVirtual(e); Input.mdown = true; Input.mhit = true;
+    Input.taps.push({ id: 'mouse', x: Input.mx, y: Input.my });
+    e.preventDefault();
+  });
   addEventListener('mouseup', e => { Input.mdown = false; Input.mrelease = true; });
 
   /* touch: every finger is tracked, and the first one also drives the pointer
@@ -436,8 +584,15 @@ function initDisplay() {
   }
   cv.addEventListener('touchstart', e => {
     const had = Input.touches.length;
+    /* record every finger that is new this frame, not only the first, so one
+       thumb can hold the pad while another taps a button or a door */
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const p = touchPoint(e.changedTouches[i]);
+      Input.taps.push(p);
+    }
     readTouches(e);
     if (!had) { Input.mdown = true; Input.mhit = true; }
+    if (Screen.wantFull) requestFullscreen();
     e.preventDefault();
   }, { passive: false });
   cv.addEventListener('touchmove', e => { readTouches(e); e.preventDefault(); }, { passive: false });

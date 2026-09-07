@@ -37,12 +37,15 @@ var iv=setInterval(function(){
     if(typeof G==='undefined') return;
     ticks++; phaseTick++;
     if(G.state==='title'){ Input.hitKeys['Enter']=true; return; }
+    if(G.state==='files'){ var fr=fileRect(0); Input.mx=fr.x+fr.w/2; Input.my=fr.y+fr.h/2;
+      Input.taps=[{id:'mouse',x:Input.mx,y:Input.my}]; Input.mhit=true; return; }
     if(G.state==='map'){ G.tutorialDone=true; G.mapMode='realm'; G.unlocked=9; var n=World.LEVELS[0].node; Input.mx=n.x; Input.my=n.y; Input.mhit=true; return; }
     if(G.state!=='play'&&G.state!=='dead'&&G.state!=='victory') return;
 
     if(phase===0){                                   // free play in the glade
       Input.held['ArrowRight']=(phaseTick%4)!==0;
       Input.held['ArrowLeft']=(phaseTick%37)===0;
+      Input.held['ArrowDown']=(phaseTick%19)<6;      // crouch, and roll when a way is held too
       Input.held['KeyS']=(phaseTick%9)<5;
       if(phaseTick%30===0) Input.hitKeys['ArrowUp']=true;
       Input.held['ArrowUp']=(phaseTick%30)<8;
@@ -79,15 +82,18 @@ var iv=setInterval(function(){
       if(phaseTick%17===0) G.player.up.wings=1;
       if(phaseTick===2){ G.mobile=true; }
       if(G.mobile && phaseTick>4){
-        var want=[]; 
-        if(phaseTick%3) want.push('ArrowRight');
-        if(phaseTick%26<4) want.push('ArrowUp');
-        if(phaseTick%13<3) want.push('Space');
-        if(phaseTick%41<3) want.push('KeyD');
+        var want=[];
+        if(phaseTick%3) want.push('right');
+        if(phaseTick%26<4) want.push('up');
+        if(phaseTick%13<3) want.push('attack');
+        if(phaseTick%41<3) want.push('dash');
+        if(phaseTick%19<6) want.push('down');
         var pts = want.map(function(c){
-          var b=null; for(var i=0;i<PAD.length;i++) if(PAD[i].code===c) b=PAD[i];
+          var b=null; for(var i=0;i<PAD.length;i++) if(PAD[i].act===c) b=PAD[i];
           return { id:c, x:b.x, y:b.y };
         });
+        // a thumb wedged between two arrows, to prove the diagonals answer
+        if(phaseTick%23<6) pts.push({ id:'diag', x:PAD_HUB.x-24, y:PAD_HUB.y-24 });
         // and a finger dragging the aim ring around
         if(phaseTick%7<4) pts.push({ id:'aim', x:G.aimX + Math.sin(phaseTick*0.3)*4, y:G.aimY + Math.cos(phaseTick*0.4)*4 });
         Input.touches = pts;
@@ -96,6 +102,9 @@ var iv=setInterval(function(){
       if(phaseTick%31===0) Input.hitKeys['KeyI']=true;
       if(phaseTick%9===0) Input.hitKeys['KeyF']=true;
       if(phaseTick%23===0) Input.hitKeys['KeyE']=true;
+      // and click a doorway now and then, the way a player enters one
+      if(phaseTick%29===0 && G.nearExit){ var dr=doorScreenRect(G.nearExit);
+        if(dr) Input.taps=[{id:'mouse',x:dr.x+dr.w/2,y:dr.y+dr.h/2}]; }
       Input.mx=(phaseTick*11)%380; Input.my=(phaseTick*5)%210;
       G.player.hp=G.player.maxHp;
       if(phaseTick>150){ Input.touches=[]; G.mobile=false; note('room '+id+' ok, enemies='+G.enemies.length+' particles='+G.particles.length+' coins='+G.coins.length); phase++; phaseTick=0; }
@@ -107,7 +116,30 @@ var iv=setInterval(function(){
     } else if(phase===25){                            // death and respawn
       if(phaseTick===1){ G.state='play'; G.enterRoom('glade',null); G.player.dead=false; G.player.hp=1; G.player.hurt(9,0,0); }
       if(phaseTick>140) Input.hitKeys['Space']=true;
-      if(phaseTick>200){ note('death/respawn ok, state='+G.state+' hp='+G.player.hp); phase=26; phaseTick=0; }
+      if(phaseTick>200){ note('death/respawn ok, state='+G.state+' hp='+G.player.hp+' h='+G.player.h); phase=26; phaseTick=0; }
+    } else if(phase===26){                            // settings: tabs, sliders, a rebind
+      if(phaseTick===1){ G.settingsOpen=true; G.setTab=0; }
+      else if(phaseTick===4){ var r=setSliderRect(0); Input.mx=r.x+r.w*0.4; Input.my=r.y+4;
+        Input.taps=[{id:'mouse',x:Input.mx,y:Input.my}]; Input.mdown=true; }
+      else if(phaseTick===6){ Input.mdown=false; }
+      else if(phaseTick===8){ var r2=setSliderRect(2); Input.mx=r2.x+r2.w*0.8; Input.my=r2.y+4;
+        Input.taps=[{id:'mouse',x:Input.mx,y:Input.my}]; Input.mdown=true; }
+      else if(phaseTick===10){ Input.mdown=false; }
+      else if(phaseTick===12){ var t=setTabRect(1); Input.mx=t.x+4; Input.my=t.y+4;
+        Input.taps=[{id:'mouse',x:Input.mx,y:Input.my}]; }
+      else if(phaseTick===14){ var k=keyRowRect(4); Input.mx=k.x+4; Input.my=k.y+4;
+        Input.taps=[{id:'mouse',x:Input.mx,y:Input.my}]; }
+      else if(phaseTick===16){ Input.lastCode='KeyQ'; Input.hitKeys['KeyQ']=true; }
+      else if(phaseTick===18){ var rs=setResetRect(); Input.mx=rs.x+4; Input.my=rs.y+4;
+        Input.taps=[{id:'mouse',x:Input.mx,y:Input.my}]; }
+      else if(phaseTick===20){ var b=setBackRect(); Input.mx=b.x+4; Input.my=b.y+4;
+        Input.taps=[{id:'mouse',x:Input.mx,y:Input.my}]; }
+      else if(phaseTick>24){ note('settings ok, music='+G.opts.music.toFixed(2)+' pad='+G.opts.padAlpha.toFixed(2)
+        +' attack='+KEYS.attack+' open='+G.settingsOpen); phase=27; phaseTick=0; }
+    } else if(phase===27){                            // the three save files
+      if(phaseTick===1){ G.saveGame(); openFiles(); }
+      else if(phaseTick>6){ note('files ok, pct='+[0,1,2].map(function(i){return slotPercent(readSlot(i));}).join('/')
+        +' state='+G.state); phase=28; phaseTick=0; }
     } else {
       clearInterval(iv);
       note('FINAL state='+G.state+' ticks='+ticks

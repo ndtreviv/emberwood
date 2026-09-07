@@ -3,6 +3,22 @@
    ============================================================ */
 'use strict';
 
+/* a solid white copy of a sprite, built once and kept, so a struck creature
+   can flash the whole of its silhouette rather than merely brighten */
+const _whiteCache = new WeakMap();
+function whiteSprite(img) {
+  let c = _whiteCache.get(img);
+  if (c) return c;
+  c = mkc(img.width, img.height);
+  const x = c.getContext('2d');
+  x.drawImage(img, 0, 0);
+  x.globalCompositeOperation = 'source-in';
+  x.fillStyle = '#ffffff';
+  x.fillRect(0, 0, img.width, img.height);
+  _whiteCache.set(img, c);
+  return c;
+}
+
 function blit(c2, img, x, y, ax, ay, flip, alpha, scale, rot) {
   if (!img) return;
   c2.save();
@@ -80,6 +96,8 @@ class Player {
     this.atkT = 0; this.atkHit = null; this.atkCd = 0;
     this.pierceT = 0; this.pierceHit = null; this.pierceWarnT = 0; this.pierceCd = 0;
     this.swimming = false; this.swimT = 0;
+    this.crouching = false; this.rollT = 0; this.rollCd = 0; this.rollDir = 1;
+    this.hurtT = 0;
     this.inhaling = false; this.mouthful = null; this.inhaleT = 0;
     this.onLadder = false; this.climbT = 0; this.ladderOffT = 0;
     this.invuln = 0; this.landT = 0;
@@ -94,11 +112,42 @@ class Player {
   get cx() { return this.x + this.w / 2; }
   get cy() { return this.y + this.h / 2; }
   place(x, y) {
+    this.h = PH;
+    this.crouching = false; this.rollT = 0; this.rollCd = 0; this.hurtT = 0;
     this.x = x - this.w / 2; this.y = y - this.h;
     this.vx = this.vy = 0; this.trail.length = 0; this.spawnFlash = 0.4;
     this.inhaling = false; this.mouthful = null;
   }
   get speedMax() { return (G.room && G.room.mode === 'top' ? 1.55 : 2.15) * (1 + this.up.speed * 0.16); }
+  /* a crouch and a roll both shrink the body, so you fit under a low gap */
+  get lowH() { return 10; }
+  /* shrink from the feet up, so the boots stay planted */
+  setHeight(h) {
+    if (this.h === h) return;
+    this.y += this.h - h;
+    this.h = h;
+  }
+  /* is there room overhead to stand up again */
+  canStand() {
+    if (this.h >= PH) return true;
+    return !G.room.boxSolid(this.x, this.y - (PH - this.h), this.w, PH);
+  }
+  startRoll(dir) {
+    if (this.dead || this.rollT > 0 || this.rollCd > 0) return;
+    if (this.dashT > 0 || this.pierceT > 0 || this.onLadder || this.swimming) return;
+    if (!this.grounded || G.room.mode !== 'side') return;
+    this.rollT = 0.42; this.rollCd = 0.62;
+    this.rollDir = dir; this.face = dir;
+    this.vx = dir * (3.9 * (1 + this.up.speed * 0.10));
+    this.atkT = 0; this.atkHit = null;
+    /* the tuck carries you through a blow, but only for the first half */
+    this.invuln = Math.max(this.invuln, 0.24);
+    Snd.step(1.4);
+    for (let i = 0; i < 10; i++) G.particles.push(new Particle({
+      x: this.cx - dir * 4 + rr(-3, 3), y: this.y + this.h, vx: -dir * rr(0.6, 2.2), vy: rr(-1.2, -0.1),
+      life: rr(0.2, 0.45), col: '#e0d6b6', col2: '#95886a', size: rr(1, 2.2), grav: 0.12
+    }));
+  }
   get dashCdMax() { return 1.15 * Math.pow(0.76, this.up.dash); }
   get magnetR() { return 70 + this.up.magnet * 40; }
   get atkDmg() { return 2 + this.up.sword; }
@@ -111,7 +160,10 @@ class Player {
     this.invuln = 1.15;
     const dx = this.cx - fromX, dy = this.cy - fromY;
     const l = Math.hypot(dx, dy) || 1;
-    this.vx = dx / l * 3.4; this.vy = G.room.mode === 'top' ? dy / l * 3.4 : -2.6;
+    /* mild knockback: enough to feel the blow, short enough to recover from */
+    this.vx = dx / l * 2.8; this.vy = G.room.mode === 'top' ? dy / l * 2.8 : -2.3;
+    this.hurtT = 0.17;                 /* your own steering is muted this long */
+    this.rollT = 0; this.crouching = false;
     G.shake(5); G.hitStop(0.09);
     Snd.hurt();
     for (let i = 0; i < 14; i++) G.particles.push(new Particle({
@@ -234,8 +286,8 @@ class Player {
   /* O draws things in, I fires them back */
   updatePuff(dt) {
     if (!G.codes.kirby) { this.inhaling = false; return; }
-    if (Input.hit('KeyI')) this.spit();
-    const want = Input.down('KeyO') && !this.dead && !this.mouthful && this.dashT <= 0 && this.pierceT <= 0;
+    if (Input.actHit('spit')) this.spit();
+    const want = Input.act('inhale') && !this.dead && !this.mouthful && this.dashT <= 0 && this.pierceT <= 0;
     this.inhaling = want;
     if (!want) return;
     this.inhaleT -= dt;
@@ -337,13 +389,17 @@ class Player {
     this.dashCd = Math.max(0, this.dashCd - dt);
     if (cdBefore > 0 && this.dashCd === 0 && !this.dashWasReady) { this.dashWasReady = true; Snd.dashReady(); }
 
-    /* --- input --- */
-    const L = Input.down('ArrowLeft'), Rk = Input.down('ArrowRight');
-    const U = Input.down('ArrowUp'), D = Input.down('ArrowDown');
+    this.rollCd = Math.max(0, this.rollCd - dt);
+    this.hurtT = Math.max(0, this.hurtT - dt);
+
+    /* --- input --- every direction is read on its own, so any two of them
+       can be held or tapped together */
+    const L = Input.act('left'), Rk = Input.act('right');
+    const U = Input.act('up'), D = Input.act('down');
     this.updatePuff(dt);
-    if (Input.hit('KeyD')) this.startDash();
-    if (Input.hit('KeyF')) this.startPierce();
-    if (Input.hit('Space') || Input.hit('KeyX') || Input.hit('KeyZ') || G.clickAttack) this.startAttack();
+    if (Input.actHit('dash')) this.startDash();
+    if (Input.actHit('pierce')) this.startPierce();
+    if (this.rollT <= 0 && (Input.actHit('attack') || G.clickAttack)) this.startAttack();
 
     /* --- attack timing --- */
     if (this.atkT > 0) {
@@ -375,8 +431,12 @@ class Player {
       if (this.dashT <= 0) { this.vx *= 0.42; this.vy *= 0.3; }
     }
 
-    if (room.mode === 'top') this.updateTop(dt, L, Rk, U, D);
-    else this.updateSide(dt, L, Rk, U, D);
+    if (room.mode === 'top') {
+      /* seen from above there is no crouch, so the body is always full height */
+      this.crouching = false; this.rollT = 0;
+      if (this.h !== PH) this.setHeight(PH);
+      this.updateTop(dt, L, Rk, U, D);
+    } else this.updateSide(dt, L, Rk, U, D);
 
     /* trail fade */
     for (const t of this.trail) t.life -= dt;
@@ -389,7 +449,8 @@ class Player {
     const room = G.room;
     const s = dt * 60;
     this.inWater = room.boxWet(this.x, this.y + this.h * 0.4, this.w, this.h * 0.6);
-    this.swimming = this.inWater && Input.down('KeyS') && this.pierceT <= 0 && this.dashT <= 0;
+    this.swimming = this.inWater && Input.act('swim') && this.pierceT <= 0 && this.dashT <= 0;
+    if (this.swimming || this.dashT > 0 || this.pierceT > 0) this.rollT = 0;
 
     /* ladders: walk into one to go up it */
     const lad = this.ladderAt();
@@ -438,7 +499,7 @@ class Player {
       } else {
         this.vy = 0;
       }
-      if (Input.hit('ArrowUp')) { this.onLadder = false; this.vy = -5.7; Snd.jump(); }
+      if (Input.actHit('up')) { this.onLadder = false; this.vy = -5.7; Snd.jump(); }
       this.grounded = false;
       this.dropThrough = false;
       if (Math.abs(this.vy) > 0.2) {
@@ -485,14 +546,45 @@ class Player {
       this.dropThrough = false;
       G.tutMark('swim');
     } else if (this.dashT <= 0) {
-      /* horizontal */
       const dir = (Rk ? 1 : 0) - (L ? 1 : 0);
+      const canLow = G.room.mode === 'side' && !this.inWater;
+
+      /* --- the roll: hold the crouch and press a direction --- */
+      if (this.rollT > 0) {
+        this.rollT -= dt;
+        this.vx = approach(this.vx, this.rollDir * 1.2, 0.09 * s);
+        this.face = this.rollDir;
+        if (this.grounded && Math.random() < 0.5) G.particles.push(new Particle({
+          x: this.cx - this.rollDir * 5, y: this.y + this.h - 1,
+          vx: -this.rollDir * rr(0.4, 1.5), vy: rr(-0.9, -0.1), life: rr(0.2, 0.4),
+          col: '#dfd6b8', col2: '#95886a', size: rr(1, 2), grav: 0.08
+        }));
+        if (this.rollT <= 0 && !this.canStand()) this.rollT = 0.05;   /* still under a low roof */
+      }
+
+      /* --- the crouch --- */
+      const holdLow = D && this.grounded && canLow && this.hurtT <= 0;
+      if (this.rollT <= 0 && holdLow && dir && this.rollCd <= 0) this.startRoll(dir);
+      this.crouching = this.rollT <= 0 && holdLow;
+
+      /* the body is short while rolling or crouching, and only stands back
+         up when there is headroom for it */
+      const wantH = (this.rollT > 0 || this.crouching) && canLow ? this.lowH : PH;
+      if (wantH < this.h) this.setHeight(wantH);
+      else if (wantH > this.h && this.canStand()) this.setHeight(PH);
+
+      /* horizontal */
       const accel = this.grounded ? 0.30 : 0.20;
       const fric = this.grounded ? 0.62 : 0.86;
-      if (dir) {
-        this.vx = approach(this.vx, dir * this.speedMax * (this.inWater ? 0.62 : 1), accel * s);
+      const steer = this.rollT > 0 ? 0 : (this.hurtT > 0 ? 0.35 : 1);
+      if (dir && steer > 0 && !this.crouching) {
+        this.vx = approach(this.vx, dir * this.speedMax * (this.inWater ? 0.62 : 1), accel * steer * s);
         this.face = dir;
-      } else {
+      } else if (this.crouching) {
+        /* a crouch holds its ground: you shuffle to a stop */
+        if (dir) this.face = dir;
+        this.vx = approach(this.vx, 0, 0.34 * s);
+      } else if (this.rollT <= 0) {
         this.vx = approach(this.vx, 0, (1 - fric) * 1.6 * s);
       }
       /* gravity */
@@ -501,13 +593,19 @@ class Player {
 
       /* jump */
       this.coyote = this.grounded ? 0.11 : Math.max(0, this.coyote - dt);
-      if (Input.hit('ArrowUp')) this.jumpBuf = 0.13;
+      if (Input.actHit('up')) this.jumpBuf = 0.13;
       else this.jumpBuf = Math.max(0, this.jumpBuf - dt);
       if (this.grounded) this.airJumps = 0;
       const canDouble = this.up.wings > 0 && this.airJumps < this.up.wings &&
                         !this.grounded && this.coyote <= 0 && !this.inWater;
-      if (this.jumpBuf > 0 && (this.coyote > 0 || this.inWater || canDouble)) {
+      if (this.jumpBuf > 0 && this.canStand() && (this.coyote > 0 || this.inWater || canDouble)) {
         const doubling = canDouble && this.coyote <= 0 && !this.inWater;
+        /* jumping while a direction is held throws you along it, not straight up */
+        if (dir) {
+          this.rollT = 0; this.crouching = false;
+          this.face = dir;
+          this.vx = dir * Math.max(Math.abs(this.vx), this.speedMax * 0.92);
+        }
         if (doubling) {
           this.airJumps++;
           this.vy = -5.8;
@@ -532,9 +630,16 @@ class Player {
         }));
       }
       if (!U && this.vy < -1.6) this.vy += 0.30 * s;     /* variable jump height */
-      /* drop through one-way platforms */
-      this.dropThrough = D;
+      /* drop through one-way platforms — but never mid-roll */
+      this.dropThrough = D && this.rollT <= 0;
     }
+
+    /* anything else that takes over the body ends the crouch, and the hero
+       stands back up as soon as there is headroom for it */
+    if (this.pierceT > 0 || this.onLadder || this.swimming || this.dashT > 0) {
+      this.crouching = false; this.rollT = 0;
+    }
+    if (this.rollT <= 0 && !this.crouching && this.h !== PH && this.canStand()) this.setHeight(PH);
 
     /* --- move and collide --- */
     this.moveX(this.vx * s);
@@ -733,6 +838,7 @@ class Player {
     const room = G.room;
     let a, spd = 1;
     if (this.pierceT > 0) a = 'pierce';
+    else if (this.rollT > 0) a = 'roll';
     else if (this.atkT > 0) a = (room.mode === 'top') ? 'tatk' : 'atk';
     else if (this.dashT > 0) a = 'dash';
     else if (room.mode === 'top') a = (Math.abs(this.vx) + Math.abs(this.vy) > 0.25) ? 'twalk' : 'tidle';
@@ -740,6 +846,7 @@ class Player {
     else if (this.swimming) a = (Math.abs(this.vx) + Math.abs(this.vy) > 0.3) ? 'swim' : 'swimIdle';
     else if (this.inWater && !this.grounded) a = 'swimIdle';
     else if (!this.grounded) a = this.vy < -0.4 ? 'jump' : 'fall';
+    else if (this.crouching) a = 'crouch';
     else if (this.landT > 0) a = 'land';
     else if (Math.abs(this.vx) > 1.25) { a = 'run'; spd = Math.abs(this.vx) / 2.1; }
     else if (Math.abs(this.vx) > 0.18) { a = 'walk'; spd = Math.abs(this.vx) / 1.1; }
@@ -749,9 +856,9 @@ class Player {
     this.animT += dt * spd;
     const rate = { idle: 0.14, walk: 0.085, run: 0.062, twalk: 0.085, tidle: 0.42,
                    jump: 1, fall: 1, land: 1, dash: 0.08, atk: 0.056, tatk: 0.066, pierce: 0.07,
-                   swim: 0.085, swimIdle: 0.19, climb: 0.12 }[a] || 0.1;
+                   swim: 0.085, swimIdle: 0.19, climb: 0.12, crouch: 0.20, roll: 0.055 }[a] || 0.1;
     this.frame = Math.floor(this.animT / rate);
-    const len = { idle: 8, walk: 8, run: 8, twalk: 8, tidle: 2, jump: 1, fall: 1, land: 1, dash: 2, atk: 6, tatk: 5, pierce: 2, swim: 6, swimIdle: 4, climb: 6 }[a] || 1;
+    const len = { idle: 8, walk: 8, run: 8, twalk: 8, tidle: 2, jump: 1, fall: 1, land: 1, dash: 2, atk: 6, tatk: 5, pierce: 2, swim: 6, swimIdle: 4, climb: 6, crouch: 4, roll: 4 }[a] || 1;
     if (a === 'atk') this.frame = Math.min(5, this.frame);
     else if (a === 'tatk') this.frame = Math.min(4, this.frame);
     else this.frame %= len;
@@ -778,6 +885,8 @@ class Player {
       case 'dash': return H.dash[this.frame % 2];
       case 'pierce': return H.pierce[this.frame % 2];
       case 'climb': return H.climb[this.frame % 6];
+      case 'crouch': return (H.crouch || H.idle)[this.frame % 4];
+      case 'roll': return (H.roll || H.dash)[this.frame % (H.roll ? 4 : 2)];
       case 'swim': return H.swim[this.frame % 6];
       case 'swimIdle': return H.swimIdle[this.frame % 4];
       case 'atk': return H.atk[this.frame];
@@ -806,6 +915,13 @@ class Player {
     if (flick) return;
     const img = this.currentSprite();
     const flip = isTopAnim ? false : this.face < 0;
+    /* the roll spins a full turn, so the tucked body reads as tumbling */
+    if (this.anim === 'roll') {
+      /* pivot on the middle of the tuck, not on the boots */
+      const rot = this.rollDir * (1 - clamp(this.rollT / 0.42, 0, 1)) * TAU;
+      blit(c2, img, sx, sy - 5, anchor.x, anchor.y - 5, flip, 1, 1, rot);
+      return;
+    }
     blit(c2, img, sx, sy, anchor.x, anchor.y, flip, 1, 1, 0);
   }
 }
@@ -820,6 +936,40 @@ class Enemy {
     this.dead = false; this.flash = 0; this.animT = 0; this.frame = 0;
     this.state = 'walk'; this.stateT = 0; this.grounded = false;
     this.touchCd = 0;
+    this.kbX = 0; this.kbY = 0; this.kbT = 0;
+  }
+  /* how far a blow shifts this creature. A guardian sets it to zero. */
+  get knockScale() { return this.kbScale === undefined ? 1 : this.kbScale; }
+  knock(fx, fy, power) {
+    const k = this.knockScale;
+    if (k <= 0) return;
+    let dx = this.cx - fx, dy = this.cy - fy;
+    /* a blow with no source, or one landing dead centre, shoves the way
+       the creature faces rather than nowhere at all */
+    if (!isFinite(dx) || !isFinite(dy) || (dx === 0 && dy === 0)) { dx = -this.face; dy = -0.4; }
+    const l = Math.hypot(dx, dy) || 1;
+    this.kbX = dx / l * power * k;
+    this.kbY = dy / l * power * k * 0.5;
+    this.kbT = 0.22;
+  }
+  /* the shove runs after the creature's own move, so its AI cannot
+     simply write over it the way it writes over vx every frame */
+  applyKnock(dt) {
+    if (this.kbT <= 0 || this.dead) return;
+    if (!isFinite(this.kbX) || !isFinite(this.kbY)) { this.kbT = 0; this.kbX = this.kbY = 0; return; }
+    this.kbT -= dt;
+    const room = G.room, s = dt * 60;
+    const nx = this.x + this.kbX * s;
+    if (!room.boxSolid(nx - this.w / 2, this.y - this.h, this.w, this.h)) this.x = nx;
+    else this.kbX = 0;
+    /* only things that leave the ground get pushed vertically */
+    if (room.mode === 'top' || !this.grounded) {
+      const ny = this.y + this.kbY * s;
+      if (!room.boxSolid(this.x - this.w / 2, ny - this.h, this.w, this.h)) this.y = ny;
+      else this.kbY = 0;
+    }
+    const decay = Math.pow(0.02, dt);
+    this.kbX *= decay; this.kbY *= decay;
   }
   box() { return { x: this.x - this.w / 2, y: this.y - this.h, w: this.w, h: this.h }; }
   get cx() { return this.x; }
@@ -828,9 +978,10 @@ class Enemy {
     if (this.dead) return;
     if (coinMult) this.coinMult = coinMult;
     G.addCombo();
-    this.hp -= dmg; this.flash = 0.16;
+    this.hp -= dmg; this.flash = 0.22;
     const dir = Math.sign(this.x - fx) || 1;
-    this.vx += dir * 2.6; this.vy -= 1.6;
+    this.vx += dir * 2.6; this.vy -= 1.6 * this.knockScale;
+    this.knock(fx, fy, 5.2);
     Snd.hitFlesh(); G.shake(3);
     G.texts.push(new FloatText(this.cx, this.cy - 10, String(dmg), '#ffd6d6'));
     for (let i = 0; i < 12; i++) G.particles.push(new Particle({
@@ -886,10 +1037,10 @@ class Enemy {
   drawFlash(c2, img, x, y, ax, ay, flip) {
     blit(c2, img, x, y, ax, ay, flip);
     if (this.flash > 0) {
+      /* a struck creature turns white, then fades back to its own colour */
       c2.save();
-      c2.globalCompositeOperation = 'lighter';
-      c2.globalAlpha = this.flash * 4;
-      blit(c2, img, x, y, ax, ay, flip);
+      c2.globalAlpha = clamp(this.flash / 0.22, 0, 1);
+      blit(c2, whiteSprite(img), x, y, ax, ay, flip);
       c2.restore();
     }
   }
@@ -1050,6 +1201,7 @@ class Bat extends Enemy {
 class Spider extends Enemy {
   constructor(x, y) {
     super({ x: x, y: y, w: 18, h: 14, hp: 2, damage: 1, coinDrop: ri(3, 5), blood: '#4d4067' });
+    this.kbScale = 0;                 /* it hangs on a thread, so it stays put */
     this.anchorY = y;                 /* the ceiling it is hitched to */
     /* if the anchor lands inside rock the spider would hang inert, so drop it
        to the first open row below */
@@ -1169,9 +1321,8 @@ class Bird extends Enemy {
     if (flip) c2.scale(-1, 1);
     c2.drawImage(img, -Math.round(a.x), -Math.round(a.y));
     if (this.flash > 0) {
-      c2.globalCompositeOperation = 'lighter';
-      c2.globalAlpha = this.flash * 4;
-      c2.drawImage(img, -Math.round(a.x), -Math.round(a.y));
+      c2.globalAlpha = clamp(this.flash / 0.22, 0, 1);
+      c2.drawImage(whiteSprite(img), -Math.round(a.x), -Math.round(a.y));
     }
     c2.restore();
   }
@@ -1257,6 +1408,7 @@ class Sporeling extends Enemy {
 class Idol extends Enemy {
   constructor(x, y) {
     super({ x: x, y: y, w: 24, h: 26, hp: 3, damage: 2, coinDrop: 6, blood: '#5b5b71' });
+    this.kbScale = 0;                 /* carved stone does not move */
     this.face = -1; this.shotT = 1.2;
   }
   box() { return { x: this.x - 12, y: this.y - 26, w: 24, h: 26 }; }
@@ -1671,6 +1823,9 @@ class LightningStrike {
     this.warn = 0.7; this.live = 0.24; this.seed = ri(1, 9999);
     this.hit = false;
   }
+  /* the bolt runs from cloud to ground, so anything that asks a projectile
+     where it is gets the middle of that line */
+  get y() { return (this.ty + this.gy) / 2; }
   update(dt) {
     this.t += dt;
     if (this.t > this.warn && !this.hit) {
@@ -1754,6 +1909,7 @@ class Bolt {
 class Zeus extends Enemy {
   constructor(x, y) {
     super({ x: x, y: y, w: 40, h: 70, hp: 62, damage: 2, coinDrop: 0, blood: '#f6f8ff' });
+    this.kbScale = 0;                 /* a guardian holds its ground */
     this.maxHp = 62; this.face = -1;
     this.state = 'sleep'; this.stateT = 0; this.phase = 1;
     this.awake = false; this.dying = false; this.deathT = 0;
@@ -1960,6 +2116,7 @@ class Guardian extends Enemy {
   constructor(x, y, key) {
     const cfg = GUARDIANS[key];
     super({ x: x, y: y, w: 48, h: 60, hp: cfg.hp, damage: 2, coinDrop: 0, blood: cfg.proj.col });
+    this.kbScale = 0;                 /* a guardian holds its ground */
     this.cfg = cfg; this.key = key; this.title = cfg.title;
     this.maxHp = cfg.hp; this.homeY = y; this.homeX = x;
     this.face = -1; this.state = 'sleep'; this.stateT = 0; this.phase = 1;
@@ -2241,6 +2398,7 @@ class SporeShot {
 class MotherSpore extends Enemy {
   constructor(x, y) {
     super({ x: x, y: y, w: 70, h: 60, hp: 56, damage: 2, coinDrop: 0, blood: '#c9403a' });
+    this.kbScale = 0;                 /* a guardian holds its ground */
     this.maxHp = 56; this.face = -1;
     this.state = 'sleep'; this.stateT = 0; this.phase = 1;
     this.awake = false; this.dying = false; this.deathT = 0; this.mode = 'idle';
@@ -2353,6 +2511,7 @@ class MotherSpore extends Enemy {
 class Dragon extends Enemy {
   constructor(x, y) {
     super({ x: x, y: y, w: 64, h: 52, hp: 48, damage: 2, coinDrop: 0, blood: '#9b3230' });
+    this.kbScale = 0;                 /* a guardian holds its ground */
     this.maxHp = 48;
     this.face = -1; this.state = 'sleep'; this.stateT = 0;
     this.homeY = y; this.flyY = y - 70; this.phase = 1;

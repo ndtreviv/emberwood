@@ -7,6 +7,9 @@
 
 const Snd = {
   ac: null, master: null, mus: null, sfx: null, amb: null,
+  musVol: null, sfxVol: null,
+  /* what the player chose in settings, kept even before the audio starts */
+  musicVolume: 0.7, sfxVolume: 0.8,
   ready: false, muted: false,
   noiseBuf: null,
   track: null, nextNote: 0, seqStep: 0, timer: null,
@@ -29,15 +32,18 @@ const Snd = {
     comp.connect(this.master);
     this.bus = comp;
 
-    this.mus = this.ac.createGain(); this.mus.gain.value = 0.34; this.mus.connect(this.bus);
-    this.sfx = this.ac.createGain(); this.sfx.gain.value = 0.55; this.sfx.connect(this.bus);
-    this.amb = this.ac.createGain(); this.amb.gain.value = 0.0; this.amb.connect(this.bus);
+    /* two stages per bus: the game fades the inner gain, the player sets the outer one */
+    this.musVol = this.ac.createGain(); this.musVol.gain.value = this.musicVolume; this.musVol.connect(this.bus);
+    this.sfxVol = this.ac.createGain(); this.sfxVol.gain.value = this.sfxVolume; this.sfxVol.connect(this.bus);
+    this.mus = this.ac.createGain(); this.mus.gain.value = 0.34; this.mus.connect(this.musVol);
+    this.sfx = this.ac.createGain(); this.sfx.gain.value = 0.55; this.sfx.connect(this.sfxVol);
+    this.amb = this.ac.createGain(); this.amb.gain.value = 0.0; this.amb.connect(this.sfxVol);
 
     /* shared reverb-ish delay for music */
     const dl = this.ac.createDelay(1.0); dl.delayTime.value = 0.26;
     const fb = this.ac.createGain(); fb.gain.value = 0.28;
     const lp = this.ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2200;
-    dl.connect(lp); lp.connect(fb); fb.connect(dl); dl.connect(this.bus);
+    dl.connect(lp); lp.connect(fb); fb.connect(dl); dl.connect(this.musVol);
     this.echo = dl;
 
     /* one second of white noise, reused everywhere */
@@ -497,5 +503,14 @@ const Snd = {
     this.muted = !this.muted;
     if (this.master) this.master.gain.value = this.muted ? 0 : 0.85;
     return this.muted;
+  },
+  /* the two sliders in settings, each 0 to 1 */
+  setMusicVolume(v) {
+    this.musicVolume = clamp(v, 0, 1);
+    if (this.musVol) this.musVol.gain.value = this.musicVolume;
+  },
+  setSfxVolume(v) {
+    this.sfxVolume = clamp(v, 0, 1);
+    if (this.sfxVol) this.sfxVol.gain.value = this.sfxVolume;
   }
 };

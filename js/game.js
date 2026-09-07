@@ -24,7 +24,7 @@ const G = {
   waves: [],
   codes: { found: {}, used: {}, tickets: 0, admin: false, kirby: false },
   codesOpen: false, codeBuf: '', codeMsg: '', codeMsgT: 0, codeMsgOk: false,
-  mobile: false, settingsOpen: false, padHit: {},
+  mobile: false, settingsOpen: false, padOn: {},
   tutorialDone: false, mapMode: 'realm',
   tut: { move: 0, fight: 0, swim: 0, dash: 0, pierce: 0, climb: 0, parry: 0 },
   aimX: VW * 0.62, aimY: VH * 0.40, aimDrag: null, aimGrabT: 0,
@@ -32,8 +32,138 @@ const G = {
   chapter: 0, mapScroll: 0, mapScrollT: 0, unlockAnim: null,
   deathT: 0, victoryT: 0,
   lockedMsgT: 0,
-  audioHint: true
+  audioHint: true,
+
+  /* which of the three save files is in play, and what the player chose in settings */
+  slot: 0, fileSel: -1, eraseArm: -1,
+  opts: { mobile: null, music: 0.7, sfx: 0.8, padAlpha: 0.5, keys: null },
+  setTab: 0, setSel: -1, setDrag: null, bindWait: null
 };
+
+/* ============================================================
+   OPTIONS — volumes, touch opacity and keybinds, kept on the machine
+   ============================================================ */
+const OPT_KEY = 'emberwood.opts.v1';
+const SLOT_KEY = 'emberwood.slot.v1';
+const SAVE_KEY = 'emberwood.save.v1.';
+const SLOTS = 3;
+
+function applyOptions() {
+  Snd.setMusicVolume(G.opts.music);
+  Snd.setSfxVolume(G.opts.sfx);
+  for (const a of ACTIONS) KEYS[a.key] = (G.opts.keys && G.opts.keys[a.key]) || DEFAULT_KEYS[a.key];
+  if (typeof G.opts.mobile === 'boolean') G.mobile = G.opts.mobile;
+  Screen.wantFull = G.mobile;
+  if (Screen.resize) Screen.resize();
+}
+function loadOptions() {
+  const o = Store.read(OPT_KEY, null);
+  if (o) {
+    if (typeof o.mobile === 'boolean') G.opts.mobile = o.mobile;
+    if (typeof o.music === 'number') G.opts.music = clamp(o.music, 0, 1);
+    if (typeof o.sfx === 'number') G.opts.sfx = clamp(o.sfx, 0, 1);
+    if (typeof o.padAlpha === 'number') G.opts.padAlpha = clamp(o.padAlpha, 0.12, 1);
+    if (o.keys) G.opts.keys = o.keys;
+  }
+  applyOptions();
+}
+function saveOptions() {
+  const keys = {};
+  for (const a of ACTIONS) keys[a.key] = KEYS[a.key];
+  G.opts.keys = keys;
+  G.opts.mobile = G.mobile;
+  Store.write(OPT_KEY, G.opts);
+}
+
+/* ============================================================
+   SAVE FILES — three of them, each with its own progress
+   ============================================================ */
+/* the coin flags are Sets, which JSON cannot carry, so they travel as lists */
+function packFlags(rf) {
+  const out = {};
+  for (const id in rf) out[id] = { coins: Array.from((rf[id] && rf[id].coins) || []) };
+  return out;
+}
+function unpackFlags(o) {
+  const out = {};
+  for (const id in (o || {})) out[id] = { coins: new Set((o[id] && o[id].coins) || []) };
+  return out;
+}
+function packSave() {
+  const p = G.player;
+  const ls = {};
+  for (const k in G.levelState) {
+    const st = G.levelState[k];
+    ls[k] = { roomId: st.roomId, x: st.x, y: st.y, hp: st.hp,
+              roomFlags: packFlags(st.roomFlags), flags: st.flags };
+  }
+  return {
+    v: 1, used: true,
+    tutorialDone: G.tutorialDone,
+    unlocked: G.unlocked, cleared: G.cleared.slice(), level: G.level,
+    levelState: ls, roomFlags: packFlags(G.roomFlags), flags: G.flags,
+    coins: p ? p.coins : 0, up: p ? Object.assign({}, p.up) : {},
+    maxHp: p ? p.maxHp : 6, hp: p ? p.hp : 6, hasKey: p ? p.hasKey : false,
+    codes: { found: G.codes.found, used: G.codes.used, tickets: G.codes.tickets,
+             admin: G.codes.admin, kirby: G.codes.kirby },
+    tut: G.tut, stats: G.stats
+  };
+}
+function readSlot(i) { return Store.read(SAVE_KEY + i, null); }
+function writeSlot(i, data) { Store.write(SAVE_KEY + i, data); }
+G.saveGame = function () {
+  if (G.state === 'load' || G.state === 'title' || G.state === 'files') return;
+  if (!G.player) return;
+  saveLevelState();
+  writeSlot(G.slot, packSave());
+  Store.write(SLOT_KEY, G.slot);
+};
+function applySave(d) {
+  const p = G.player;
+  G.tutorialDone = !!d.tutorialDone;
+  G.unlocked = Math.max(1, d.unlocked || 1);
+  G.cleared = (d.cleared || []).slice();
+  G.level = d.level || 0;
+  G.flags = d.flags || {};
+  G.roomFlags = unpackFlags(d.roomFlags);
+  G.levelState = {};
+  for (const k in (d.levelState || {})) {
+    const st = d.levelState[k];
+    G.levelState[k] = { roomId: st.roomId, x: st.x, y: st.y, hp: st.hp,
+                        roomFlags: unpackFlags(st.roomFlags), flags: st.flags || {} };
+  }
+  p.coins = d.coins || 0;
+  p.up = Object.assign({ sword: 0, speed: 0, dash: 0, magnet: 0, armour: 0, wings: 0, mantle: 0, emberheart: 0, heart: 0 }, d.up || {});
+  p.maxHp = d.maxHp || 6;
+  p.hp = clamp(d.hp || p.maxHp, 1, p.maxHp);
+  p.hasKey = !!d.hasKey;
+  G.codes.found = d.codes && d.codes.found || {};
+  G.codes.used = d.codes && d.codes.used || {};
+  G.codes.tickets = (d.codes && d.codes.tickets) || 0;
+  G.codes.admin = !!(d.codes && d.codes.admin);
+  G.codes.kirby = !!(d.codes && d.codes.kirby);
+  G.tut = Object.assign({ move: 0, fight: 0, swim: 0, dash: 0, pierce: 0, climb: 0, parry: 0 }, d.tut || {});
+  G.stats = Object.assign({ coins: 0, kills: 0, time: 0, deaths: 0 }, d.stats || {});
+  if (G.codes.admin) { try { Art.buildGold(); } catch (e) { /* art may not be up yet */ } }
+  if (G.codes.kirby) { try { Art.buildKirby(); } catch (e) { /* same */ } }
+}
+/* 100% is every realm cleared, every paper found and every upgrade maxed */
+function slotPercent(d) {
+  if (!d) return 0;
+  const realms = World.LEVELS.length;
+  const cleared = (d.cleared || []).filter(Boolean).length;
+  const papers = World.CODES.length;
+  const found = Object.keys(d.codes && d.codes.found || {}).length;
+  let cap = 0, have = 0;
+  for (const it of SHOP_ITEMS) {
+    if (it.key === 'tonic') continue;
+    const m = it.relic ? it.max : it.max + (realms - 1) * 2;
+    cap += m;
+    have += Math.min(m, (d.up && d.up[it.key]) || 0);
+  }
+  const f = (cleared / realms + Math.min(1, found / papers) + (cap ? have / cap : 0)) / 3;
+  return Math.round(clamp(f, 0, 1) * 100);
+}
 
 /* ---------- effects ---------- */
 G.shake = function (a) { G.shakeAmt = Math.min(12, G.shakeAmt + a); };
@@ -42,6 +172,7 @@ G.hitStop = function (t) { G.hitStopT = Math.max(G.hitStopT, t); };
 G.banner = function (txt, dur) { G.bannerTxt = txt; G.bannerT = dur || 2.0; };
 G.foundCode = function (code, si) {
   G.codes.found[code] = true;
+  G.saveGame();
   Snd.keyGet(); G.flash(0.3);
   G.banner('CODE FOUND - ' + code, 3.2);
   G.texts.push(new FloatText(G.player.cx, G.player.y - 6, code, '#ffeec0'));
@@ -116,6 +247,7 @@ G.redeem = function (raw) {
     G.codeMsgOk = true; G.codeMsgT = 3;
   }
   Snd.buy(); G.flash(0.25);
+  G.saveGame();
 };
 G.addCombo = function () {
   G.combo++; G.comboT = 2.6;
@@ -249,6 +381,7 @@ G.enterRoom = function (id, spawn) {
   Snd.play(room.music);
   Snd.ambienceLevel(room.ambient, 1.4);
   G.banner(room.name, 2.4);
+  G.saveGame();                 /* every new area is a point worth keeping */
 };
 
 /* ---------- transitions: a pixel flush between areas ---------- */
@@ -338,6 +471,7 @@ function boot() {
   G.mobile = ('ontouchstart' in window) ||
              (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0);
   initDisplay();
+  loadOptions();
   loadSteps = Art.steps();
   G.state = 'load';
   document.getElementById('boot').classList.add('hide');
@@ -369,6 +503,7 @@ function frame(now) {
     updatePad();
     if (G.state === 'load') updateLoad(dt);
     else if (G.state === 'title') updateTitle(dt);
+    else if (G.state === 'files') updateFiles(dt);
     else if (G.state === 'map') updateMap(dt);
     else updatePlay(dt);
     render();
@@ -427,13 +562,19 @@ function updateLoad(dt) {
 /* ============================================================
    PLAY
    ============================================================ */
-function startGame() {
+function startGame(slot) {
+  G.slot = clamp(slot | 0, 0, SLOTS - 1);
+  Store.write(SLOT_KEY, G.slot);
   G.player = new Player();
   G.stats = { coins: 0, kills: 0, time: 0, deaths: 0 };
-  G.roomFlags = {}; G.flags = {};
-  G.unlocked = 1; G.cleared = [];
+  G.roomFlags = {}; G.flags = {}; G.levelState = {};
+  G.unlocked = 1; G.cleared = []; G.level = 0;
   G.trans = null;
+  G.tutorialDone = false;
+  G.codes = { found: {}, used: {}, tickets: 0, admin: false, kirby: false };
   G.tut = { move: 0, fight: 0, swim: 0, dash: 0, pierce: 0, climb: 0, parry: 0 };
+  const d = readSlot(G.slot);
+  if (d && d.used) applySave(d);
   G.mapMode = G.tutorialDone ? 'realm' : 'tutorial';
   openMap(true);
 }
@@ -450,6 +591,7 @@ G.startTutorial = function () {
 G.finishTutorial = function () {
   G.tutorialDone = true;
   G.mapMode = 'realm';
+  G.saveGame();
   Snd.unlock(); G.flash(1.0);
   G.banner('THE REALM AWAITS', 3);
   G.trans = { t: 0, phase: 'out', dur: 0.42, toMap: true };
@@ -471,6 +613,7 @@ function openMap(fresh) {
 /* remember where you stood, what you had taken, and how hurt you were */
 function saveLevelState() {
   if (!G.room || !G.player || G.player.dead) return;
+  if (G.roomId === 'tutorial') return;      /* the tutorial is never resumed */
   G.levelState[G.level] = {
     roomId: G.roomId,
     x: G.player.cx, y: G.player.y + G.player.h,
@@ -502,12 +645,38 @@ G.startLevel = function (i) {
 G.leaveLevel = function () {
   if (G.trans) return;
   saveLevelState();
+  G.saveGame();
   Snd.door();
   G.trans = { t: 0, phase: 'out', dur: 0.42, toMap: true };
 };
 
+/* the doorway on screen, so it can be clicked or tapped */
+function doorScreenRect(ex) {
+  if (!ex || !ex.door) return null;
+  return { x: ex.door.x - 22 - G.cam.x, y: ex.door.y - 46 - G.cam.y, w: 44, h: 50 };
+}
+function overNearDoor() {
+  if (!G.nearExit || G.nearExitLocked) return false;
+  const r = doorScreenRect(G.nearExit);
+  return !!r && Input.over(r);
+}
+/* a click, or any finger that lands on the door and not on a touch button */
+function tapOnDoor(ex) {
+  const r = doorScreenRect(ex);
+  if (!r) return false;
+  for (const t of Input.taps) {
+    if (t.x < r.x || t.x > r.x + r.w || t.y < r.y || t.y > r.y + r.h) continue;
+    if (G.mobile && overAnyPad(t.x, t.y)) continue;
+    return true;
+  }
+  return false;
+}
+/* the way out of the tutorial for anyone who does not want it */
+const SKIP_RECT = { x: VW - 58, y: 4, w: 54, h: 15 };
+
 function updatePlay(dt) {
   updateTransition(dt);
+  if (G.settingsOpen) { updateSettings(); return; }
   G.stats.time += dt;
   if (G.comboT > 0) { G.comboT -= dt; if (G.comboT <= 0) G.combo = 0; }
   G.bannerT = Math.max(0, G.bannerT - dt);
@@ -524,7 +693,13 @@ function updatePlay(dt) {
   const overCode = Input.mx >= codeR.x && Input.mx <= codeR.x + codeR.w &&
                    Input.my >= codeR.y && Input.my <= codeR.y + codeR.h;
   G.overCodeIcon = overCode && !G.shopOpen && !G.codesOpen && G.roomId !== 'tutorial';
-  if (G.roomId !== 'tutorial' && G.state === 'play' && !G.shopOpen && !G.codesOpen && ((Input.mhit && overCode) || Input.hit('KeyC'))) {
+  /* the skip, top right, while the tutorial is running */
+  G.overSkip = false;
+  if (G.roomId === 'tutorial' && G.state === 'play' && !G.shopOpen && !G.trans) {
+    G.overSkip = Input.over(SKIP_RECT);
+    if (Input.tap(SKIP_RECT)) { Snd.ui(); G.banner('TUTORIAL SKIPPED', 2.2); G.finishTutorial(); return; }
+  }
+  if (G.roomId !== 'tutorial' && G.state === 'play' && !G.shopOpen && !G.codesOpen && (Input.tap(codeR) || Input.actHit('codes'))) {
     G.codesOpen = true; G.codeBuf = ''; G.codeMsgT = 0; Snd.ui(); Snd.musicLevel(0.16, 0.3);
     return;
   }
@@ -533,10 +708,10 @@ function updatePlay(dt) {
   const overMap = Input.mx >= mapR.x && Input.mx <= mapR.x + mapR.w &&
                   Input.my >= mapR.y && Input.my <= mapR.y + mapR.h;
   G.overMapIcon = overMap && !G.shopOpen && G.roomId !== 'tutorial';
-  if (G.state === 'play' && G.roomId !== 'tutorial' && !G.shopOpen && !G.trans && ((Input.mhit && overMap) || Input.hit('Backspace'))) {
+  if (G.state === 'play' && G.roomId !== 'tutorial' && !G.shopOpen && !G.trans && (Input.tap(mapR) || Input.actHit('map'))) {
     G.leaveLevel(); return;
   }
-  if (G.state === 'play' && !G.shopOpen && (Input.hit('Escape') || (Input.mhit && overIcon))) {
+  if (G.state === 'play' && !G.shopOpen && (Input.actHit('shop') || Input.hit('Escape') || Input.tap(iconR))) {
     G.shopOpen = true; G.shopSel = -1; Snd.ui();
     Snd.musicLevel(0.16, 0.3);
     return;
@@ -552,8 +727,8 @@ function updatePlay(dt) {
     return;
   }
 
-  if (Input.mhit && !overIcon && !overMap && !overCode && !G.mobile) G.clickAttack = true;
-  if (Input.hit('KeyM')) { const m = Snd.toggleMute(); G.banner(m ? 'SOUND OFF' : 'SOUND ON', 1.2); }
+  if (Input.mhit && !overIcon && !overMap && !overCode && !overNearDoor() && !G.overSkip && !G.mobile) G.clickAttack = true;
+  if (Input.actHit('mute')) { const m = Snd.toggleMute(); G.banner(m ? 'SOUND OFF' : 'SOUND ON', 1.2); }
 
   /* hit stop gives every sword blow some weight */
   if (G.hitStopT > 0) { G.hitStopT -= dt; dt = Math.min(dt, 0.0005); }
@@ -562,7 +737,7 @@ function updatePlay(dt) {
   p.update(dt);
   if (p.dead && G.state === 'play') { G.breakCombo(); G.state = 'dead'; G.deathT = 0; G.stats.deaths++; Snd.musicLevel(0.08, 1.2); }
 
-  for (const e of G.enemies) if (!e.dead) e.update(dt);
+  for (const e of G.enemies) if (!e.dead) { e.update(dt); e.applyKnock(dt); }
   const before = G.enemies.length;
   G.enemies = G.enemies.filter(e => !e.dead);
   G.stats.kills += before - G.enemies.length;
@@ -613,6 +788,10 @@ function updatePlay(dt) {
   if (!G.trans) updateCamera(dt);
 }
 
+/* click the door with the cursor, tap it with a finger, or press the key */
+function enterPressed(ex) {
+  return tapOnDoor(ex) || Input.actHit('interact');
+}
 function checkExits() {
   if (G.trans) return;
   const p = G.player, pb = { x: p.x, y: p.y, w: p.w, h: p.h };
@@ -638,14 +817,14 @@ function checkExits() {
         if (G.lockedMsgT <= 0) { G.banner('STILL TO LEARN - ' + left[0].label, 2.2); G.lockedMsgT = 2.4; Snd.uiBad(); }
         continue;
       }
-      if (!Input.hit('KeyE')) continue;
+      if (!enterPressed(ex)) continue;
       G.finishTutorial();
       return;
     }
     /* a doorway is entered on purpose; only the screen edges pull you through */
     if (ex.kind) {
       G.nearExit = ex; G.nearExitLocked = false;
-      if (!Input.hit('KeyE')) continue;
+      if (!enterPressed(ex)) continue;
     }
     G.goRoom(ex.to, ex);
     return;
@@ -677,6 +856,7 @@ G.onBossDead = function () {
   }
   Snd.play('victory'); Snd.musicLevel(0.4, 1.5);
   G.banner(['THE DRAGON FALLS', 'THE STORM IS BROKEN', 'THE SPORE IS SILENCED'][G.level] || 'THE GUARDIAN FALLS', 3);
+  writeSlot(G.slot, packSave());
 };
 function updateVictory(dt) {
   G.victoryT += dt;
@@ -720,10 +900,15 @@ function updateTutorialMap(dt) {
   G.mapT += dt;
   G.flashAmt = Math.max(0, G.flashAmt - dt * 2.2);
   G.bannerT = Math.max(0, G.bannerT - dt);
+  const backR = mapBackRect(), gearR = mapGearRect();
+  G.overMapBack = Input.over(backR);
+  G.overMapGear = Input.over(gearR);
+  if (G.settingsOpen) { updateSettings(); return; }
+  if (Input.tap(gearR)) { G.settingsOpen = true; G.setSel = -1; Snd.ui(); return; }
+  if (Input.tap(backR) || Input.hit('Escape')) { Snd.ui(); openFiles(); return; }
   const r = tutorialNodeRect();
   G.mapSel = Math.hypot(Input.mx - r.cx, Input.my - r.cy) < 28 ? 0 : -1;
   if (Input.mhit && G.mapSel === 0) { Snd.buy(); G.startTutorial(); return; }
-  if (Input.hit('Escape')) { G.state = 'title'; initTitle(); Snd.play('title'); Snd.ambienceLevel(0.5, 2); }
   for (const pa of G.particles) pa.update(dt);
   G.particles = G.particles.filter(x => !x.dead);
   if (Math.random() < dt * 6) G.particles.push(new Particle({
@@ -759,18 +944,38 @@ function drawTutorialMap() {
 
   ctx.fillStyle = 'rgba(58,44,28,0.82)';
   ctx.fillRect(0, VH - 14, VW, 14);
-  drawText(ctx, G.mapSel === 0 ? 'CLICK TO STEP INTO THE PROVING GROUND'
+  drawText(ctx, G.mapSel === 0 ? 'CLICK TO STEP INTO THE TUTORIAL'
                                : 'THE REALM OPENS ONCE YOU KNOW THE MOVES',
            VW / 2, VH - 11, '#ebdcb6', 1, 'center');
+  drawMapCorners();
   if (G.bannerT > 0) {
     ctx.save(); ctx.globalAlpha = Math.min(1, G.bannerT * 2);
     drawText(ctx, G.bannerTxt, VW / 2, VH - 32, '#c9403a', 1, 'center', '#ebdcb6');
     ctx.restore();
   }
+  if (G.settingsOpen) drawSettings();
   if (G.flashAmt > 0) {
     ctx.save(); ctx.globalAlpha = Math.min(1, G.flashAmt); ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, VW, VH); ctx.restore();
   }
+}
+function mapBackRect() { return { x: 6, y: VH - 20, w: 58, h: 15 }; }
+function mapGearRect() { return { x: VW - 30, y: VH - 26, w: 24, h: 22 }; }
+/* the same pair of corner buttons on both maps */
+function drawMapCorners() {
+  const b = mapBackRect();
+  ctx.fillStyle = G.overMapBack ? 'rgba(74,56,34,0.94)' : 'rgba(48,36,22,0.88)';
+  ctx.fillRect(b.x, b.y, b.w, b.h);
+  ctx.fillStyle = G.overMapBack ? '#ffd04a' : '#b8862f';
+  ctx.fillRect(b.x, b.y, b.w, 1); ctx.fillRect(b.x, b.y + b.h - 1, b.w, 1);
+  drawText(ctx, 'BACK', b.x + b.w / 2, b.y + 4, '#ffeec0', 1, 'center');
+  const g = mapGearRect();
+  ctx.save();
+  ctx.translate(g.x + g.w / 2, g.y + g.h / 2);
+  ctx.rotate(G.mapT * (G.overMapGear ? 1.1 : 0.25));
+  ctx.drawImage(Art.ui.gear, -11, -11);
+  ctx.restore();
+  if (G.overMapGear) drawText(ctx, 'SETTINGS', g.x + g.w / 2, g.y - 9, '#ffeec0', 1, 'center', '#2a1a10');
 }
 function updateMap(dt) {
   if (G.mapMode === 'tutorial') { updateTutorialMap(dt); return; }
@@ -819,25 +1024,30 @@ function updateMap(dt) {
     const r = mapNodeRect(i);
     if (Math.hypot(Input.mx - r.cx, Input.my - r.cy) < 28) G.mapSel = i;
   }
-  /* the paging arrows */
-  const ar = { l: { x: 4, y: VH / 2 - 12, w: 18, h: 24 }, r: { x: VW - 22, y: VH / 2 - 12, w: 18, h: 24 } };
+  /* the paging arrows — kept to the middle band so the corner buttons stay free */
   G.overArrow = 0;
-  if (Input.mx < 26 && G.chapter > 0) G.overArrow = -1;
-  else if (Input.mx > VW - 26 && G.chapter < World.CHAPTERS.length - 1) G.overArrow = 1;
-  void ar;
+  const inBand = Input.my > 36 && Input.my < VH - 52;
+  if (inBand && Input.mx < 26 && G.chapter > 0) G.overArrow = -1;
+  else if (inBand && Input.mx > VW - 26 && G.chapter < World.CHAPTERS.length - 1) G.overArrow = 1;
+
+  const backR = mapBackRect(), gearR = mapGearRect();
+  G.overMapBack = Input.over(backR);
+  G.overMapGear = Input.over(gearR);
+  if (G.settingsOpen) { updateSettings(); return; }
+  if (Input.tap(gearR)) { G.settingsOpen = true; G.setSel = -1; Snd.ui(); return; }
+  if (Input.tap(backR) || Input.hit('Escape')) { G.saveGame(); Snd.ui(); openFiles(); return; }
+
   if (Input.mhit && G.overArrow && !G.unlockAnim) { gotoChapter(G.chapter + G.overArrow); Snd.ui(); }
   else if (Input.mhit && G.mapSel >= 0) {
     if (G.mapSel < G.unlocked) { Snd.buy(); G.startLevel(G.mapSel); }
     else { Snd.uiBad(); G.banner('CLEAR THE REALM BEFORE IT', 1.8); }
   }
   const cbtn = { x: 6, y: VH - 46, w: 22, h: 22 };
-  G.overCodeIcon = Input.mx >= cbtn.x && Input.mx <= cbtn.x + cbtn.w &&
-                   Input.my >= cbtn.y && Input.my <= cbtn.y + cbtn.h;
+  G.overCodeIcon = Input.over(cbtn);
   if (G.codesOpen) { updateCodes(dt); return; }
-  if ((Input.mhit && G.overCodeIcon) || Input.hit('KeyC')) {
+  if (Input.tap(cbtn) || Input.actHit('codes')) {
     G.codesOpen = true; G.codeBuf = ''; G.codeMsgT = 0; Snd.ui(); return;
   }
-  if (Input.hit('Escape')) { G.state = 'title'; initTitle(); Snd.play('title'); Snd.ambienceLevel(0.5, 2); }
   for (const pa of G.particles) pa.update(dt);
   G.particles = G.particles.filter(x => !x.dead);
   if (Math.random() < dt * 6) G.particles.push(new Particle({
@@ -942,7 +1152,7 @@ function drawMap() {
   const foot = G.mapSel >= 0
     ? (G.mapSel < G.unlocked ? World.LEVELS[G.mapSel].sub + '   -   CLICK TO ENTER'
                              : 'SEALED   -   CLEAR THE REALM BEFORE IT')
-    : 'SCROLL OR ARROWS FOR THE NEXT CHAPTER   -   ESC FOR THE TITLE';
+    : 'SCROLL OR ARROWS TO PAGE   -   BACK FOR YOUR FILES';
   ctx.fillStyle = 'rgba(58,44,28,0.82)';
   ctx.fillRect(0, VH - 14, VW, 14);
   drawText(ctx, foot, VW / 2, VH - 11, '#ebdcb6', 1, 'center');
@@ -988,11 +1198,13 @@ function drawMap() {
     drawText(ctx, G.bannerTxt, VW / 2, VH - 32, '#c9403a', 1, 'center', '#ebdcb6');
     ctx.restore();
   }
+  drawMapCorners();
   if (G.flashAmt > 0) {
     ctx.save(); ctx.globalAlpha = Math.min(1, G.flashAmt); ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, VW, VH); ctx.restore();
   }
   if (G.codesOpen) drawCodes();
+  if (G.settingsOpen) drawSettings();
 }
 
 /* ============================================================
@@ -1304,15 +1516,18 @@ function drawDecor(layer, camX, camY) {
       case 'sign': {
         const s = Art.prop.sign;
         blit(ctx, s.c, d.x, d.y, s.ax, s.ay);
-        const txt = G.mobile ? d.mob : d.pc;
-        const w = textWidth(txt) + 8;
+        const lines = signLines(d);
+        let w = 0;
+        for (const l of lines) w = Math.max(w, textWidth(l) + 8);
+        const h = lines.length * 10 + 2;
+        const top = d.y - 34 - h;
         ctx.save();
         ctx.globalAlpha = 0.92;
         ctx.fillStyle = 'rgba(26,20,14,0.82)';
-        ctx.fillRect(Math.round(d.x - w / 2), Math.round(d.y - 44), Math.round(w), 12);
+        ctx.fillRect(Math.round(d.x - w / 2), Math.round(top), Math.round(w), h);
         ctx.fillStyle = '#c68e3f';
-        ctx.fillRect(Math.round(d.x - w / 2), Math.round(d.y - 44), Math.round(w), 1);
-        drawText(ctx, txt, d.x, d.y - 40, '#ffeec0', 1, 'center');
+        ctx.fillRect(Math.round(d.x - w / 2), Math.round(top), Math.round(w), 1);
+        lines.forEach((l, k) => drawText(ctx, l, d.x, top + 3 + k * 10, '#ffeec0', 1, 'center'));
         ctx.restore();
         break;
       }
@@ -1379,6 +1594,26 @@ function drawDecor(layer, camX, camY) {
   }
 }
 
+/* a sign names the key that is really bound, so rebinding keeps it true */
+function signText(d) {
+  const raw = (G.mobile ? d.mob : d.pc) || '';
+  return raw.replace(/\{(\w+)\}/g, (m, k) => (KEYS[k] ? keyLabel(KEYS[k]) : m));
+}
+/* a long sign breaks near its middle, so the board stays narrow enough
+   to read without covering the ground it stands on */
+function signLines(d) {
+  const txt = signText(d);
+  if (txt.length <= 18) return [txt];
+  const words = txt.split(' ');
+  if (words.length < 2) return [txt];
+  let best = 1, gap = 1e9;
+  for (let i = 1; i < words.length; i++) {
+    const a = words.slice(0, i).join(' ').length, b = words.slice(i).join(' ').length;
+    const d2 = Math.abs(a - b) + Math.max(a, b);
+    if (d2 < gap) { gap = d2; best = i; }
+  }
+  return [words.slice(0, best).join(' '), words.slice(best).join(' ')];
+}
 function drawDoors(camX) {
   for (const ex of G.room.exits) {
     if (!ex.door) continue;
@@ -1443,6 +1678,8 @@ function drawLighting(camX, camY) {
   lc.globalCompositeOperation = 'destination-out';
   const hole = (wx, wy, r, str) => {
     const x = (wx - camX) / 2, y = (wy - camY) / 2, rr2 = r / 2;
+    /* one stray coordinate must never take the whole frame down */
+    if (!isFinite(x) || !isFinite(y) || !isFinite(rr2) || rr2 <= 0) return;
     if (x < -rr2 || x > LW + rr2 || y < -rr2 || y > LH + rr2) return;
     const g2 = lc.createRadialGradient(x, y, 0, x, y, rr2);
     g2.addColorStop(0, 'rgba(0,0,0,' + str + ')');
@@ -1502,6 +1739,7 @@ function drawWorld() {
   drawPad();
   if (G.shopOpen) drawShop();
   if (G.codesOpen) drawCodes();
+  if (G.settingsOpen) drawSettings();
   drawCursor();
 }
 
@@ -1652,7 +1890,8 @@ function drawHUD() {
   if (G.nearExit && !G.trans) {
     const ex = G.nearExit;
     const px = ex.x + ex.w / 2 - G.cam.x, py = ex.y - 12 - G.cam.y;
-    const txt = G.nearExitLocked ? 'SEALED' : 'PRESS E TO ENTER';
+    const txt = G.nearExitLocked ? 'SEALED'
+              : (G.mobile ? 'TAP THE DOOR' : 'CLICK THE DOOR');
     const w = textWidth(txt) + 8;
     ctx.save();
     ctx.globalAlpha = 0.85 + Math.sin(G.t * 4) * 0.15;
@@ -1664,13 +1903,23 @@ function drawHUD() {
     ctx.restore();
     if (!G.nearExitLocked) drawText(ctx, ex.label || '', px, py + 11, '#9aa8c4', 1, 'center', '#000000');
   }
+  /* the way out of the tutorial, top right */
+  if (G.roomId === 'tutorial' && G.state === 'play') {
+    const r = SKIP_RECT, hot = G.overSkip;
+    ctx.fillStyle = hot ? 'rgba(74,56,34,0.95)' : 'rgba(10,8,18,0.72)';
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.fillStyle = hot ? '#ffd04a' : '#c68e3f';
+    ctx.fillRect(r.x, r.y, r.w, 1); ctx.fillRect(r.x, r.y + r.h - 1, r.w, 1);
+    ctx.fillRect(r.x, r.y, 1, r.h); ctx.fillRect(r.x + r.w - 1, r.y, 1, r.h);
+    drawText(ctx, 'SKIP', r.x + r.w / 2, r.y + 4, hot ? '#ffeec0' : '#d8c49a', 1, 'center');
+  }
   /* the training checklist */
   if (G.roomId === 'tutorial') {
-    const bx = VW - 108, by = 34;
+    const bx = VW - 128, by = 34;
     ctx.fillStyle = 'rgba(10,8,18,0.62)';
-    ctx.fillRect(bx - 4, by - 5, 106, TUT_STEPS.length * 10 + 14);
+    ctx.fillRect(bx - 4, by - 5, 126, TUT_STEPS.length * 10 + 14);
     ctx.fillStyle = '#c68e3f';
-    ctx.fillRect(bx - 4, by - 5, 106, 1);
+    ctx.fillRect(bx - 4, by - 5, 126, 1);
     drawText(ctx, 'LEARN THESE', bx, by - 2, '#f2e2b8', 1, 'left');
     TUT_STEPS.forEach((s, i) => {
       const done = !!G.tut[s.key];
@@ -1698,51 +1947,68 @@ function drawCursor() {
 /* ============================================================
    TOUCH CONTROLS — laid over the game, faint until pressed
    ============================================================ */
+/* the four arrows sit on one round pad, so a thumb between two of them
+   presses both and the hero moves on the diagonal */
+const PAD_HUB = { x: 50, y: 168, r: 48, dead: 7 };
 const PAD = [
-  { code: 'ArrowLeft',  x: 18,  y: 168, w: 30, h: 30, icon: 'left' },
-  { code: 'ArrowRight', x: 82,  y: 168, w: 30, h: 30, icon: 'right' },
-  { code: 'ArrowUp',    x: 50,  y: 136, w: 30, h: 30, icon: 'up' },
-  { code: 'ArrowDown',  x: 50,  y: 200, w: 30, h: 30, icon: 'down' },
-  { code: 'Space',      x: 340, y: 186, w: 38, h: 38, label: 'CUT' },
-  { code: 'KeyD',       x: 300, y: 172, w: 30, h: 30, label: 'DSH' },
-  { code: 'KeyF',       x: 330, y: 142, w: 28, h: 28, label: 'PRC' },
-  { code: 'KeyE',       x: 272, y: 200, w: 26, h: 26, art: 'doorBtn' },
-  { code: 'KeyS',       x: 372, y: 146, w: 24, h: 24, art: 'swimBtn' },
-  { code: 'KeyO',       x: 292, y: 116, w: 26, h: 26, label: 'O', puff: true },
-  { code: 'KeyI',       x: 330, y: 106, w: 26, h: 26, label: 'I', puff: true }
+  { act: 'left',   x: 18,  y: 168, w: 30, h: 30, icon: 'left',  dir: 'left' },
+  { act: 'right',  x: 82,  y: 168, w: 30, h: 30, icon: 'right', dir: 'right' },
+  { act: 'up',     x: 50,  y: 136, w: 30, h: 30, icon: 'up',    dir: 'up' },
+  { act: 'down',   x: 50,  y: 200, w: 30, h: 30, icon: 'down',  dir: 'down' },
+  { act: 'attack', x: 340, y: 186, w: 38, h: 38, label: 'CUT' },
+  { act: 'dash',   x: 300, y: 172, w: 30, h: 30, label: 'DSH' },
+  { act: 'pierce', x: 330, y: 142, w: 28, h: 28, label: 'PRC' },
+  { act: 'swim',   x: 372, y: 146, w: 24, h: 24, art: 'swimBtn' },
+  { act: 'inhale', x: 292, y: 116, w: 26, h: 26, label: 'O', puff: true },
+  { act: 'spit',   x: 330, y: 106, w: 26, h: 26, label: 'I', puff: true }
 ];
 function padVisible(b) { return !b.puff || (G.codes.kirby && Art.kirby); }
 function padRect(b) { return { x: b.x - b.w / 2, y: b.y - b.h / 2, w: b.w, h: b.h }; }
 function padActive() {
   return G.mobile && G.state === 'play' && !G.shopOpen && !G.codesOpen && !G.settingsOpen && !G.trans;
 }
-/* read the fingers before the game does, and push them in as key state */
+/* one finger on the round pad gives one or two directions, by its angle */
+function hubDirs(t, out) {
+  const dx = t.x - PAD_HUB.x, dy = t.y - PAD_HUB.y;
+  const d = Math.hypot(dx, dy);
+  if (d > PAD_HUB.r || d < PAD_HUB.dead) return;
+  /* eight sectors: the four straight ones and the four corners */
+  const oct = Math.round(Math.atan2(dy, dx) / (TAU / 8));
+  const names = [['right'], ['right', 'down'], ['down'], ['left', 'down'],
+                 ['left'], ['left', 'up'], ['up'], ['right', 'up']];
+  for (const n of names[((oct % 8) + 8) % 8]) out[n] = true;
+}
+/* read the fingers before the game does, and push them in as action state */
 function updatePad() {
   const now = Object.create(null);
   if (padActive()) {
     const pts = Input.touches.length ? Input.touches
               : (Input.mdown ? [{ x: Input.mx, y: Input.my }] : []);
-    for (const b of PAD) {
-      if (!padVisible(b)) continue;
-      const r = padRect(b);
-      /* a generous margin: fingers are not precise */
-      for (const t of pts) {
-        if (t.x >= r.x - 4 && t.x <= r.x + r.w + 4 && t.y >= r.y - 4 && t.y <= r.y + r.h + 4) { now[b.code] = true; break; }
+    for (const t of pts) {
+      hubDirs(t, now);
+      /* the plates themselves still answer, with a generous margin,
+         so several buttons can be held at once */
+      for (const b of PAD) {
+        if (!padVisible(b)) continue;
+        const r = padRect(b);
+        if (t.x >= r.x - 4 && t.x <= r.x + r.w + 4 && t.y >= r.y - 4 && t.y <= r.y + r.h + 4) now[b.act] = true;
       }
     }
   }
+  const hit = Object.create(null);
   for (const b of PAD) {
-    const was = !!G.padHit[b.code], is = !!now[b.code];
-    if (is && !was) Input.hitKeys[b.code] = true;
-    if (is) Input.held[b.code] = true;
-    else if (was) Input.held[b.code] = false;
+    const was = !!G.padOn[b.act], is = !!now[b.act];
+    if (is && !was) hit[b.act] = true;
   }
-  G.padHit = now;
+  Input.padHeld = now;
+  Input.padHitAct = hit;
+  G.padOn = now;
   updateAimDrag();
 }
 /* the mobile reticle: a handle you drag to aim the dash */
 const AIM_GRAB = 26;
 function overAnyPad(x, y) {
+  if (Math.hypot(x - PAD_HUB.x, y - PAD_HUB.y) <= PAD_HUB.r) return true;
   for (const b of PAD) {
     if (!padVisible(b)) continue;
     const r = padRect(b);
@@ -1832,25 +2098,35 @@ function padPlate(x, y, w, h, on, alpha) {
 }
 function drawPad() {
   if (!padActive()) return;
+  const base = clamp(G.opts.padAlpha, 0.12, 1);
+  /* the ring the four arrows share, so the diagonals read as reachable */
+  ctx.save();
+  ctx.globalAlpha = base * 0.35;
+  ctx.fillStyle = 'rgba(12,10,22,0.5)';
+  for (let k = 0; k < 40; k++) {
+    const a = k / 40 * TAU;
+    ctx.fillRect(Math.round(PAD_HUB.x + Math.cos(a) * PAD_HUB.r), Math.round(PAD_HUB.y + Math.sin(a) * PAD_HUB.r), 2, 2);
+  }
+  ctx.restore();
   for (const b of PAD) {
     if (!padVisible(b)) continue;
-    const r = padRect(b), on = !!G.padHit[b.code];
-    const alpha = on ? 1 : 0.5;
+    const r = padRect(b), on = !!G.padOn[b.act];
+    const alpha = on ? Math.min(1, base + 0.45) : base;
     padPlate(r.x, r.y, r.w, r.h, on, alpha);
     ctx.save();
-    ctx.globalAlpha = on ? 1 : 0.62;
+    ctx.globalAlpha = on ? Math.min(1, base + 0.45) : Math.max(0.15, base * 1.2);
     if (b.icon) {
-      /* a chunky arrow */
+      /* a chunky arrow: the point sits at the far end, in the way it means */
       const cx = b.x, cy = b.y, s = 7;
       const dx = b.icon === 'left' ? -1 : (b.icon === 'right' ? 1 : 0);
       const dy = b.icon === 'up' ? -1 : (b.icon === 'down' ? 1 : 0);
       ctx.fillStyle = on ? '#ffffff' : '#e6edf6';
       for (let k = 0; k < s; k++) {
-        const w = s - k;
-        if (dx) ctx.fillRect(Math.round(cx + dx * (s / 2 - k)), Math.round(cy - w / 2), 1, Math.max(1, Math.round(w)));
-        else ctx.fillRect(Math.round(cx - w / 2), Math.round(cy + dy * (s / 2 - k)), Math.max(1, Math.round(w)), 1);
+        const w = s - k;      /* the bars narrow to a point, and the point leads */
+        if (dx) ctx.fillRect(Math.round(cx + dx * (k - s / 2)), Math.round(cy - w / 2), 1, Math.max(1, Math.round(w)));
+        else ctx.fillRect(Math.round(cx - w / 2), Math.round(cy + dy * (k - s / 2)), Math.max(1, Math.round(w)), 1);
       }
-    } else if (b.code === 'Space') {
+    } else if (b.act === 'attack') {
       ctx.drawImage(Art.item.sword, Math.round(b.x - 8), Math.round(b.y - 8));
     } else if (b.art) {
       const im = Art.ui[b.art];
@@ -1875,58 +2151,315 @@ G.aim = function (px, py) {
 };
 
 /* ============================================================
-   SETTINGS
+   SETTINGS — how you play, how loud it is, and which keys do what
    ============================================================ */
-const SET_BOX = { x: 76, y: 52, w: 232, h: 116 };
-function setRowRect(i) { return { x: SET_BOX.x + 14, y: SET_BOX.y + 40 + i * 30, w: SET_BOX.w - 28, h: 26 }; }
+const SET_BOX = { x: 26, y: 12, w: 332, h: 192 };
+const SET_TABS = ['PLAY', 'KEYS'];
+const SLIDERS = [
+  { key: 'music', name: 'MUSIC', min: 0, max: 1, hint: 'THE TRACKS' },
+  { key: 'sfx', name: 'SOUND', min: 0, max: 1, hint: 'BLOWS, COINS AND THE WIND' },
+  { key: 'padAlpha', name: 'BUTTONS', min: 0.12, max: 1, hint: 'HOW BRIGHT THE TOUCH BUTTONS SIT' }
+];
+function setTabRect(i) { return { x: SET_BOX.x + 10 + i * 76, y: SET_BOX.y + 20, w: 72, h: 14 }; }
+function setCloseRect() { return { x: SET_BOX.x + SET_BOX.w - 18, y: SET_BOX.y + 5, w: 13, h: 13 }; }
+function setBackRect() { return { x: SET_BOX.x + 10, y: SET_BOX.y + SET_BOX.h - 20, w: 60, h: 15 }; }
+function setResetRect() { return { x: SET_BOX.x + SET_BOX.w - 88, y: SET_BOX.y + SET_BOX.h - 20, w: 78, h: 15 }; }
+function setModeRect(i) { return { x: SET_BOX.x + 14 + i * 156, y: SET_BOX.y + 50, w: 148, h: 26 }; }
+function setSliderRect(i) { return { x: SET_BOX.x + 108, y: SET_BOX.y + 96 + i * 24, w: 174, h: 9 }; }
+/* fifteen controls in two columns, eight then seven */
+function keyRowRect(i) {
+  const col = i < 8 ? 0 : 1, row = i < 8 ? i : i - 8;
+  return { x: SET_BOX.x + 10 + col * 158, y: SET_BOX.y + 50 + row * 15, w: 152, h: 14 };
+}
+function closeSettings() {
+  G.settingsOpen = false; G.setDrag = null; G.bindWait = null;
+  saveOptions(); Snd.ui();
+}
+/* the player is choosing a new key for one control */
+function updateBindWait() {
+  if (Input.hit('Escape')) { G.bindWait = null; Snd.uiBad(); return; }
+  const code = Input.lastCode;
+  if (!code) return;
+  const act = G.bindWait;
+  const old = KEYS[act];
+  /* a key already in use swaps places rather than leaving a control dead */
+  for (const a of ACTIONS) if (a.key !== act && KEYS[a.key] === code) KEYS[a.key] = old;
+  KEYS[act] = code;
+  G.bindWait = null;
+  saveOptions();
+  Snd.buy();
+}
 function updateSettings() {
-  if (Input.hit('Escape')) { G.settingsOpen = false; Snd.ui(); return; }
-  G.setSel = -1;
-  for (let i = 0; i < 2; i++) {
-    const r = setRowRect(i);
-    if (Input.mx >= r.x && Input.mx <= r.x + r.w && Input.my >= r.y && Input.my <= r.y + r.h) G.setSel = i;
+  if (G.bindWait) { updateBindWait(); return; }
+  if (Input.hit('Escape')) { closeSettings(); return; }
+
+  /* sliders answer to a held finger or a held button, so they can be dragged */
+  if (G.setDrag !== null && G.setDrag !== undefined) {
+    if (!Input.mdown) { G.setDrag = null; saveOptions(); }
+    else {
+      const sl = SLIDERS[G.setDrag], r = setSliderRect(G.setDrag);
+      const t = clamp((Input.mx - r.x) / r.w, 0, 1);
+      G.opts[sl.key] = sl.min + t * (sl.max - sl.min);
+      applyOptions();
+      return;
+    }
   }
-  const cr = { x: SET_BOX.x + SET_BOX.w - 18, y: SET_BOX.y + 5, w: 13, h: 13 };
-  G.setOverClose = Input.mx >= cr.x && Input.mx <= cr.x + cr.w && Input.my >= cr.y && Input.my <= cr.y + cr.h;
-  if (!Input.mhit) return;
-  if (G.setOverClose) { G.settingsOpen = false; Snd.ui(); return; }
-  if (G.setSel === 0) { G.mobile = false; Snd.ui(); }
-  else if (G.setSel === 1) { G.mobile = true; Snd.ui(); }
+
+  G.setSel = -1;
+  const close = setCloseRect(), back = setBackRect();
+  G.setOverClose = Input.over(close);
+  G.setOverBack = Input.over(back);
+
+  if (Input.tap(close) || Input.tap(back)) { closeSettings(); return; }
+  for (let i = 0; i < SET_TABS.length; i++) {
+    if (Input.tap(setTabRect(i))) { G.setTab = i; Snd.ui(); return; }
+  }
+
+  if (G.setTab === 0) {
+    for (let i = 0; i < 2; i++) if (Input.over(setModeRect(i))) G.setSel = i;
+    for (let i = 0; i < SLIDERS.length; i++) {
+      const r = setSliderRect(i);
+      const grab = { x: r.x - 6, y: r.y - 6, w: r.w + 12, h: r.h + 12 };
+      if (Input.tap(grab)) {
+        G.setDrag = i;
+        const sl = SLIDERS[i];
+        G.opts[sl.key] = sl.min + clamp((Input.mx - r.x) / r.w, 0, 1) * (sl.max - sl.min);
+        applyOptions(); Snd.ui();
+        return;
+      }
+    }
+    if (Input.tap(setModeRect(0))) { G.mobile = false; Screen.wantFull = false; exitFullscreen(); applyOptions(); saveOptions(); Snd.ui(); return; }
+    if (Input.tap(setModeRect(1))) { G.mobile = true; Screen.wantFull = true; applyOptions(); saveOptions(); Snd.ui(); return; }
+  } else {
+    for (let i = 0; i < ACTIONS.length; i++) {
+      const r = keyRowRect(i);
+      if (Input.over(r)) G.setSel = i;
+      if (Input.tap(r)) { G.bindWait = ACTIONS[i].key; Snd.ui(); return; }
+    }
+    const rr2 = setResetRect();
+    G.setOverReset = Input.over(rr2);
+    if (Input.tap(rr2)) {
+      for (const a of ACTIONS) KEYS[a.key] = DEFAULT_KEYS[a.key];
+      saveOptions(); Snd.buy();
+      return;
+    }
+  }
+}
+function uiButton(r, label, hot, tone) {
+  ctx.fillStyle = hot ? (tone || '#3c5a40') : '#211c32';
+  ctx.fillRect(r.x, r.y, r.w, r.h);
+  ctx.fillStyle = hot ? '#8fd08a' : '#3a3350';
+  ctx.fillRect(r.x, r.y, r.w, 1); ctx.fillRect(r.x, r.y + r.h - 1, r.w, 1);
+  ctx.fillRect(r.x, r.y, 1, r.h); ctx.fillRect(r.x + r.w - 1, r.y, 1, r.h);
+  drawText(ctx, label, r.x + r.w / 2, r.y + (r.h - 7) / 2, hot ? '#ffeec0' : '#c9d4e8', 1, 'center');
+}
+function drawSlider(i) {
+  const sl = SLIDERS[i], r = setSliderRect(i);
+  const v = clamp(G.opts[sl.key], sl.min, sl.max);
+  const t = (v - sl.min) / (sl.max - sl.min);
+  drawText(ctx, sl.name, SET_BOX.x + 16, r.y + 1, '#c9d4e8', 1, 'left');
+  ctx.fillStyle = '#12101c'; ctx.fillRect(r.x - 1, r.y - 1, r.w + 2, r.h + 2);
+  ctx.fillStyle = '#2b2740'; ctx.fillRect(r.x, r.y, r.w, r.h);
+  ctx.fillStyle = G.setDrag === i ? '#ffe98a' : '#6fc46a';
+  ctx.fillRect(r.x, r.y, Math.round(r.w * t), r.h);
+  /* the handle */
+  const hx = Math.round(r.x + r.w * t);
+  ctx.fillStyle = '#12101c'; ctx.fillRect(hx - 3, r.y - 3, 6, r.h + 6);
+  ctx.fillStyle = G.setDrag === i ? '#ffffff' : '#f2e2b8'; ctx.fillRect(hx - 2, r.y - 2, 4, r.h + 4);
+  drawText(ctx, Math.round(t * 100) + '%', r.x + r.w + 8, r.y + 1, '#a9b3c9', 1, 'left');
 }
 function drawSettings() {
   ctx.save();
-  ctx.fillStyle = 'rgba(8,6,16,0.74)'; ctx.fillRect(0, 0, VW, VH);
+  ctx.fillStyle = 'rgba(8,6,16,0.80)'; ctx.fillRect(0, 0, VW, VH);
   panel(ctx, SET_BOX.x, SET_BOX.y, SET_BOX.w, SET_BOX.h);
-  drawText(ctx, 'SETTINGS', SET_BOX.x + 10, SET_BOX.y + 9, '#f2e2b8', 1, 'left', '#000000');
-  const cr = { x: SET_BOX.x + SET_BOX.w - 18, y: SET_BOX.y + 5, w: 13, h: 13 };
+  drawText(ctx, 'SETTINGS', SET_BOX.x + 10, SET_BOX.y + 8, '#f2e2b8', 1, 'left', '#000000');
+  const cr = setCloseRect();
   ctx.fillStyle = G.setOverClose ? '#c9403a' : '#3a3350';
   ctx.fillRect(cr.x, cr.y, cr.w, cr.h);
   drawText(ctx, 'X', cr.x + 4, cr.y + 3, '#f2e2b8', 1, 'left');
-  drawText(ctx, 'HOW ARE YOU PLAYING', SET_BOX.x + SET_BOX.w / 2, SET_BOX.y + 26, '#a9b3c9', 1, 'center');
 
-  const opts = [
-    { name: 'PC', sub: 'KEYBOARD AND MOUSE', on: !G.mobile },
-    { name: 'MOBILE', sub: 'TOUCH BUTTONS ON SCREEN', on: G.mobile }
-  ];
-  opts.forEach((o, i) => {
-    const r = setRowRect(i);
-    const hot = G.setSel === i;
-    ctx.fillStyle = o.on ? '#2f4a34' : (hot ? '#332c4c' : '#211c32');
+  for (let i = 0; i < SET_TABS.length; i++) {
+    const r = setTabRect(i), on = G.setTab === i;
+    ctx.fillStyle = on ? '#3a3350' : '#1d1930';
     ctx.fillRect(r.x, r.y, r.w, r.h);
-    if (o.on || hot) {
-      ctx.fillStyle = o.on ? '#6fc46a' : '#c68e3f';
-      ctx.fillRect(r.x, r.y, r.w, 1); ctx.fillRect(r.x, r.y + r.h - 1, r.w, 1);
-      ctx.fillRect(r.x, r.y, 1, r.h); ctx.fillRect(r.x + r.w - 1, r.y, 1, r.h);
-    }
-    /* a tick box */
-    ctx.fillStyle = '#12101c'; ctx.fillRect(r.x + 6, r.y + 8, 9, 9);
-    if (o.on) { ctx.fillStyle = '#6fc46a'; ctx.fillRect(r.x + 8, r.y + 10, 5, 5); }
-    drawText(ctx, o.name, r.x + 22, r.y + 5, o.on ? '#ffeec0' : '#c9d4e8', 1, 'left');
-    drawText(ctx, o.sub, r.x + 22, r.y + 15, '#7f8aa3', 1, 'left');
-  });
-  drawText(ctx, G.mobile ? 'BUTTONS AND A DRAG-TO-AIM RING' : 'ARROWS, SPACE, D, F, S, E',
-           SET_BOX.x + SET_BOX.w / 2, SET_BOX.y + SET_BOX.h - 14, '#a9b3c9', 1, 'center');
+    ctx.fillStyle = on ? '#c68e3f' : '#2b2740';
+    ctx.fillRect(r.x, r.y, r.w, 1);
+    drawText(ctx, SET_TABS[i], r.x + r.w / 2, r.y + 4, on ? '#ffeec0' : '#7f8aa3', 1, 'center');
+  }
+
+  if (G.setTab === 0) {
+    drawText(ctx, 'HOW ARE YOU PLAYING', SET_BOX.x + SET_BOX.w / 2, SET_BOX.y + 40, '#a9b3c9', 1, 'center');
+    const opts = [
+      { name: 'PC', sub: 'KEYBOARD AND MOUSE', on: !G.mobile },
+      { name: 'MOBILE', sub: 'ON-SCREEN BUTTONS', on: G.mobile }
+    ];
+    opts.forEach((o, i) => {
+      const r = setModeRect(i), hot = G.setSel === i;
+      ctx.fillStyle = o.on ? '#2f4a34' : (hot ? '#332c4c' : '#211c32');
+      ctx.fillRect(r.x, r.y, r.w, r.h);
+      if (o.on || hot) {
+        ctx.fillStyle = o.on ? '#6fc46a' : '#c68e3f';
+        ctx.fillRect(r.x, r.y, r.w, 1); ctx.fillRect(r.x, r.y + r.h - 1, r.w, 1);
+        ctx.fillRect(r.x, r.y, 1, r.h); ctx.fillRect(r.x + r.w - 1, r.y, 1, r.h);
+      }
+      ctx.fillStyle = '#12101c'; ctx.fillRect(r.x + 6, r.y + 8, 9, 9);
+      if (o.on) { ctx.fillStyle = '#6fc46a'; ctx.fillRect(r.x + 8, r.y + 10, 5, 5); }
+      drawText(ctx, o.name, r.x + 22, r.y + 5, o.on ? '#ffeec0' : '#c9d4e8', 1, 'left');
+      drawText(ctx, o.sub, r.x + 22, r.y + 15, '#7f8aa3', 1, 'left');
+    });
+    for (let i = 0; i < SLIDERS.length; i++) drawSlider(i);
+    drawText(ctx, G.mobile ? 'BUTTON BRIGHTNESS APPLIES TO THE TOUCH PAD'
+                           : 'BUTTON BRIGHTNESS APPLIES IN MOBILE MODE',
+             SET_BOX.x + SET_BOX.w / 2, SET_BOX.y + SET_BOX.h - 34, '#6d7994', 1, 'center');
+  } else {
+    drawText(ctx, 'CLICK A ROW, THEN PRESS THE KEY YOU WANT', SET_BOX.x + SET_BOX.w / 2,
+             SET_BOX.y + 40, '#a9b3c9', 1, 'center');
+    ACTIONS.forEach((a, i) => {
+      const r = keyRowRect(i), hot = G.setSel === i, waiting = G.bindWait === a.key;
+      ctx.fillStyle = waiting ? '#4a3a20' : (hot ? '#332c4c' : '#1d1930');
+      ctx.fillRect(r.x, r.y, r.w, r.h);
+      if (waiting || hot) {
+        ctx.fillStyle = waiting ? '#ffd04a' : '#c68e3f';
+        ctx.fillRect(r.x, r.y, r.w, 1); ctx.fillRect(r.x, r.y + r.h - 1, r.w, 1);
+      }
+      drawText(ctx, a.name, r.x + 4, r.y + 4, waiting ? '#ffeec0' : '#c9d4e8', 1, 'left');
+      drawText(ctx, waiting ? 'PRESS...' : keyLabel(KEYS[a.key]), r.x + r.w - 4, r.y + 4,
+               waiting ? '#ffd04a' : '#ffe98a', 1, 'right');
+    });
+    uiButton(setResetRect(), 'DEFAULTS', !!G.setOverReset, '#4a3a20');
+  }
+  uiButton(setBackRect(), 'BACK', !!G.setOverBack);
+  if (G.bindWait) {
+    ctx.fillStyle = 'rgba(8,6,16,0.72)'; ctx.fillRect(0, VH / 2 - 16, VW, 32);
+    drawText(ctx, 'PRESS A KEY  -  ESC TO KEEP THE OLD ONE', VW / 2, VH / 2 - 3, '#ffd04a', 1, 'center', '#000000');
+  }
   ctx.restore();
+}
+
+/* ============================================================
+   SAVE FILES — pick one of three, each showing how far it has gone
+   ============================================================ */
+function fileRect(i) { return { x: 24 + i * 116, y: 62, w: 104, h: 96 }; }
+function fileEraseRect(i) { const r = fileRect(i); return { x: r.x + r.w - 40, y: r.y + r.h - 15, w: 34, h: 11 }; }
+function fileBackRect() { return { x: 10, y: VH - 22, w: 58, h: 15 }; }
+function fileGearRect() { return { x: VW - 28, y: 6, w: 22, h: 22 }; }
+/* the three files are read once on arrival, not once a frame */
+function refreshSlots() {
+  G.slotData = [];
+  for (let i = 0; i < SLOTS; i++) G.slotData.push(readSlot(i));
+}
+function slotOf(i) { return (G.slotData && G.slotData[i]) || null; }
+function openFiles() {
+  G.state = 'files'; G.fileSel = -1; G.eraseArm = -1;
+  G.particles.length = 0;
+  refreshSlots();
+  G.slot = clamp(Store.read(SLOT_KEY, 0) | 0, 0, SLOTS - 1);
+  Snd.play('title'); Snd.musicLevel(0.30, 0.8); Snd.ambienceLevel(0.35, 1.2);
+}
+function updateFiles(dt) {
+  G.mapT += dt;
+  G.flashAmt = Math.max(0, G.flashAmt - dt * 2.2);
+  if (G.settingsOpen) { updateSettings(); return; }
+  const gear = fileGearRect();
+  G.overGearFiles = Input.over(gear);
+  if (Input.tap(gear)) { G.settingsOpen = true; G.setSel = -1; Snd.ui(); return; }
+
+  G.fileSel = -1;
+  for (let i = 0; i < SLOTS; i++) if (Input.over(fileRect(i))) G.fileSel = i;
+  const back = fileBackRect();
+  G.overFileBack = Input.over(back);
+  if (Input.tap(back) || Input.hit('Escape')) {
+    G.state = 'title'; initTitle(); Snd.ui(); Snd.play('title'); Snd.ambienceLevel(0.5, 2);
+    return;
+  }
+  for (let i = 0; i < SLOTS; i++) {
+    if (Input.tap(fileEraseRect(i))) {
+      if (!slotOf(i)) { Snd.uiBad(); return; }
+      if (G.eraseArm === i) {
+        Store.drop(SAVE_KEY + i); refreshSlots(); G.eraseArm = -1; Snd.uiBad(); G.flash(0.2);
+      } else { G.eraseArm = i; Snd.ui(); }
+      return;
+    }
+  }
+  for (let i = 0; i < SLOTS; i++) {
+    if (Input.tap(fileRect(i))) { Snd.buy(); startGame(i); return; }
+  }
+  for (const pa of G.particles) pa.update(dt);
+  G.particles = G.particles.filter(x => !x.dead);
+  if (Math.random() < dt * 6) G.particles.push(new Particle({
+    x: rr(0, VW), y: VH + 4, vx: rr(-0.2, 0.2), vy: rr(-0.5, -0.15),
+    life: rr(3, 6), col: rpick(['#ebdcb6', '#d8c49a', '#fff4d6']), size: 1, grav: 0, type: 'leaf'
+  }));
+}
+function drawFiles() {
+  ctx.drawImage(Art.map.bg, 0, 0);
+  for (const pa of G.particles) pa.draw(ctx);
+  ctx.fillStyle = 'rgba(58,44,28,0.9)';
+  ctx.fillRect(50, 4, VW - 100, 24);
+  ctx.fillStyle = '#b8862f';
+  ctx.fillRect(50, 4, VW - 100, 1); ctx.fillRect(50, 27, VW - 100, 1);
+  drawText(ctx, 'CHOOSE A FILE', VW / 2, 5, '#ffeec0', 2, 'center', '#2a1a10');
+  drawText(ctx, 'THREE SEPARATE JOURNEYS', VW / 2, 20, '#d8c49a', 1, 'center');
+
+  for (let i = 0; i < SLOTS; i++) {
+    const r = fileRect(i), d = slotOf(i), hot = G.fileSel === i;
+    const pct = slotPercent(d);
+    ctx.fillStyle = hot ? 'rgba(74,56,34,0.94)' : 'rgba(48,36,22,0.88)';
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.fillStyle = hot ? '#ffd04a' : '#b8862f';
+    ctx.fillRect(r.x, r.y, r.w, 1); ctx.fillRect(r.x, r.y + r.h - 1, r.w, 1);
+    ctx.fillRect(r.x, r.y, 1, r.h); ctx.fillRect(r.x + r.w - 1, r.y, 1, r.h);
+    drawText(ctx, 'FILE ' + (i + 1), r.x + 6, r.y + 6, '#ffeec0', 1, 'left');
+    if (G.slot === i && d) drawText(ctx, 'LAST', r.x + r.w - 6, r.y + 6, '#9be89a', 1, 'right');
+
+    if (!d) {
+      drawText(ctx, 'EMPTY', r.x + r.w / 2, r.y + 40, '#8a7a5c', 2, 'center');
+      drawText(ctx, hot ? 'CLICK TO BEGIN' : '', r.x + r.w / 2, r.y + 62, '#d8c49a', 1, 'center');
+      continue;
+    }
+    /* the bar of how far this file has gone */
+    drawText(ctx, pct + '%', r.x + r.w / 2, r.y + 20, pct >= 100 ? '#ffd04a' : '#ffeec0', 2, 'center');
+    const bw = r.w - 16, bx = r.x + 8, by = r.y + 40;
+    ctx.fillStyle = '#2a1f12'; ctx.fillRect(bx - 1, by - 1, bw + 2, 7);
+    ctx.fillStyle = '#4a3826'; ctx.fillRect(bx, by, bw, 5);
+    ctx.fillStyle = pct >= 100 ? '#ffd04a' : '#6fc46a';
+    ctx.fillRect(bx, by, Math.round(bw * pct / 100), 5);
+
+    const realms = (d.cleared || []).filter(Boolean).length;
+    const papers = Object.keys(d.codes && d.codes.found || {}).length;
+    drawText(ctx, 'REALMS ' + realms + '/' + World.LEVELS.length, r.x + 8, r.y + 52, '#e0d0aa', 1, 'left');
+    drawText(ctx, 'PAPERS ' + papers + '/' + World.CODES.length, r.x + 8, r.y + 62, '#e0d0aa', 1, 'left');
+    drawText(ctx, 'COINS ' + (d.codes && d.codes.admin ? INF : (d.coins || 0)), r.x + 8, r.y + 72, '#e0d0aa', 1, 'left');
+
+    const er = fileEraseRect(i);
+    const armed = G.eraseArm === i;
+    ctx.fillStyle = armed ? '#c9403a' : 'rgba(30,22,14,0.9)';
+    ctx.fillRect(er.x, er.y, er.w, er.h);
+    drawText(ctx, armed ? 'SURE?' : 'ERASE', er.x + er.w / 2, er.y + 2, armed ? '#ffeec0' : '#a8967a', 1, 'center');
+  }
+
+  const back = fileBackRect();
+  ctx.fillStyle = G.overFileBack ? 'rgba(74,56,34,0.94)' : 'rgba(48,36,22,0.88)';
+  ctx.fillRect(back.x, back.y, back.w, back.h);
+  ctx.fillStyle = G.overFileBack ? '#ffd04a' : '#b8862f';
+  ctx.fillRect(back.x, back.y, back.w, 1); ctx.fillRect(back.x, back.y + back.h - 1, back.w, 1);
+  drawText(ctx, 'BACK', back.x + back.w / 2, back.y + 4, '#ffeec0', 1, 'center');
+
+  /* the cog, so keys and volume can be set before you start */
+  {
+    const hov = G.overGearFiles;
+    ctx.save();
+    ctx.translate(VW - 17, 17);
+    ctx.rotate(G.mapT * (hov ? 1.1 : 0.25));
+    ctx.drawImage(Art.ui.gear, -11, -11);
+    ctx.restore();
+    if (hov) drawText(ctx, 'SETTINGS', VW - 17, 32, '#ffeec0', 1, 'center', '#2a1a10');
+  }
+  if (G.settingsOpen) drawSettings();
+  if (G.flashAmt > 0) {
+    ctx.save(); ctx.globalAlpha = Math.min(1, G.flashAmt); ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, VW, VH); ctx.restore();
+  }
 }
 
 /* ============================================================
@@ -2027,11 +2560,16 @@ function shopRows() { return SHOP_ITEMS.filter(shopVisible); }
 function shopPrice(it) { return Math.round(it.base * Math.pow(it.mul, shopLevel(it))); }
 const SHOP_BOX = { x: 34, y: 10, w: 316, h: 196 };
 function shopRowRect(i) { return { x: SHOP_BOX.x + 8, y: SHOP_BOX.y + 30 + i * 17, w: SHOP_BOX.w - 16, h: 16 }; }
+function shopGearRect() { return { x: SHOP_BOX.x + SHOP_BOX.w - 36, y: SHOP_BOX.y + 5, w: 13, h: 13 }; }
 function updateShop(dt) {
   void dt;
-  if (Input.hit('Escape')) {
+  if (G.settingsOpen) { updateSettings(); return; }
+  if (Input.hit('Escape') || Input.actHit('shop')) {
     G.shopOpen = false; Snd.ui(); Snd.musicLevel(0.34, 0.5); return;
   }
+  const gr = shopGearRect();
+  G.shopOverGear = Input.over(gr);
+  if (Input.tap(gr)) { G.settingsOpen = true; G.setSel = -1; Snd.ui(); return; }
   const rows = shopRows();
   G.shopSel = -1;
   for (let i = 0; i < rows.length; i++) {
@@ -2058,6 +2596,7 @@ function updateShop(dt) {
   if (it.key === 'heart') { p.up.heart = (p.up.heart || 0) + 1; p.maxHp += 2; p.hp = p.maxHp; }
   else if (it.key === 'tonic') p.heal(p.maxHp);
   else p.up[it.key] = (p.up[it.key] || 0) + 1;
+  G.saveGame();
 }
 function drawShop() {
   ctx.save();
@@ -2067,7 +2606,14 @@ function drawShop() {
   /* purse */
   ctx.drawImage(Art.item.coin[Math.floor(G.t / 0.09) % 8], SHOP_BOX.x + SHOP_BOX.w - 84, SHOP_BOX.y + 6);
   drawText(ctx, G.purse(), SHOP_BOX.x + SHOP_BOX.w - 70, SHOP_BOX.y + 9, '#ffe98a', 1, 'left', '#000000');
-  /* close */
+  /* settings, then close */
+  const gr = shopGearRect();
+  ctx.save();
+  ctx.translate(gr.x + gr.w / 2, gr.y + gr.h / 2);
+  ctx.rotate(G.t * (G.shopOverGear ? 1.1 : 0.25));
+  ctx.scale(0.62, 0.62);
+  ctx.drawImage(Art.ui.gear, -11, -11);
+  ctx.restore();
   const cr = { x: SHOP_BOX.x + SHOP_BOX.w - 18, y: SHOP_BOX.y + 5, w: 13, h: 13 };
   ctx.fillStyle = G.shopOverClose ? '#c9403a' : '#3a3350';
   ctx.fillRect(cr.x, cr.y, cr.w, cr.h);
@@ -2328,13 +2874,20 @@ function updateTitle(dt) {
   } else if (T.phase === 'boom') {
     T.animT += dt;
     G.flashAmt = Math.max(G.flashAmt, 1.5 - T.animT * 2.4);
-    if (T.animT > 0.5) { startGame(); return; }   /* the realm map, not straight into a level */
+    if (T.animT > 0.5) { openFiles(); return; }   /* pick a file, then the realm map */
   }
 
   for (const p of G.particles) p.update(dt);
   G.particles = G.particles.filter(p => !p.dead);
 }
 
+/* a line of control hints, kept inside the screen: a long key name drops the
+   last part rather than running off both edges */
+function fitLine(parts) {
+  const out = parts.slice();
+  while (out.length > 1 && textWidth(out.join('   ')) > VW - 12) out.pop();
+  return out.join('   ');
+}
 function drawTitle() {
   const T = G.title;
   const sk = G.shakeAmt;
@@ -2428,10 +2981,19 @@ function drawTitle() {
   ctx.fillStyle = 'rgba(10,8,18,0.55)'; ctx.fillRect(0, VH - 22, VW, 22);
   if (G.mobile) {
     drawText(ctx, 'MOBILE - TAP THE BUTTONS ON SCREEN', VW / 2, VH - 19, '#9be89a', 1, 'center');
-    drawText(ctx, 'PAD TO MOVE AND JUMP   CUT DSH PRC   E DOOR   S SWIM', VW / 2, VH - 9, '#c9d4e8', 1, 'center');
+    drawText(ctx, fitLine(['PAD MOVES AND JUMPS', 'DOWN CROUCHES', 'TAP A DOOR']),
+             VW / 2, VH - 9, '#c9d4e8', 1, 'center');
   } else {
-    drawText(ctx, 'ARROWS MOVE   UP JUMP   HOLD S TO SWIM   SPACE OR CLICK SWORD', VW / 2, VH - 19, '#c9d4e8', 1, 'center');
-    drawText(ctx, 'D DASH   F PIERCE   E DOOR   ESC SHOP   CHART LEAVES A REALM', VW / 2, VH - 9, '#c9d4e8', 1, 'center');
+    drawText(ctx, fitLine([keyLabel(KEYS.left) + '/' + keyLabel(KEYS.right) + ' MOVE',
+                           keyLabel(KEYS.up) + ' JUMP',
+                           keyLabel(KEYS.down) + ' CROUCH',
+                           keyLabel(KEYS.attack) + ' SWORD']),
+             VW / 2, VH - 19, '#c9d4e8', 1, 'center');
+    drawText(ctx, fitLine([keyLabel(KEYS.dash) + ' DASH',
+                           keyLabel(KEYS.pierce) + ' PIERCE',
+                           'CLICK A DOOR',
+                           keyLabel(KEYS.shop) + ' SHOP']),
+             VW / 2, VH - 9, '#c9d4e8', 1, 'center');
   }
   ctx.restore();
   if (G.audioHint) drawText(ctx, 'CLICK FOR SOUND', VW - 4, 34, '#ffeec0', 1, 'right', '#2a1a10');
@@ -2466,6 +3028,7 @@ function render() {
   ctx.imageSmoothingEnabled = false;
   if (G.state === 'load') { drawLoad(); drawCursor(); return; }
   if (G.state === 'title') { drawTitle(); drawCursor(); return; }
+  if (G.state === 'files') { drawFiles(); drawCursor(); return; }
   if (G.state === 'map') { drawMap(); drawCursor(); return; }
   drawWorld();
 }

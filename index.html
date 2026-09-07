@@ -2,12 +2,22 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#08070c">
 <title>Emberwood — Pixel Platformer</title>
 <style>
   html,body{margin:0;padding:0;height:100%;background:#08070c;overflow:hidden;
-    font-family:ui-monospace,Menlo,Consolas,monospace;color:#cfd6e4;}
+    font-family:ui-monospace,Menlo,Consolas,monospace;color:#cfd6e4;
+    touch-action:none;overscroll-behavior:none;
+    -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;}
   #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;}
+  /* on a phone the canvas takes the whole screen, in either orientation */
+  body.full #wrap{inset:0;padding:0;}
+  body.full canvas#game{box-shadow:none;}
+  body.full #hint{display:none;}
   canvas#game{
     image-rendering:pixelated;image-rendering:crisp-edges;
     background:#0a0a12;display:block;
@@ -24,12 +34,19 @@
 <body>
 <div id="wrap"><canvas id="game" width="384" height="216"></canvas></div>
 <div id="boot">FORGING THE EMBERWOOD…</div>
-<div id="hint">ARROWS move / UP jump &nbsp;·&nbsp; SPACE or CLICK sword &nbsp;·&nbsp; hold S to swim &nbsp;·&nbsp; D dash &nbsp;·&nbsp; F air pierce &nbsp;·&nbsp; E at a doorway &nbsp;·&nbsp; ESC shop &nbsp;·&nbsp; map icon (top right) to leave a realm &nbsp;·&nbsp; M mute</div>
-<script src="js/core.js"></script>
-<script src="js/audio.js"></script>
-<script src="js/art.js"></script>
-<script src="js/world.js"></script>
-<script src="js/entities.js"></script>
-<script src="js/game.js"></script>
+<div id="hint">ARROWS move / UP jump / DOWN crouch &nbsp;·&nbsp; SPACE or CLICK sword &nbsp;·&nbsp; hold S to swim &nbsp;·&nbsp; D dash &nbsp;·&nbsp; F air pierce &nbsp;·&nbsp; CLICK a doorway to enter &nbsp;·&nbsp; ESC shop &nbsp;·&nbsp; map icon (top right) to leave a realm &nbsp;·&nbsp; M mute &nbsp;·&nbsp; keys are yours to change in SETTINGS</div>
+<script>
+/* There is no build step here, so a browser will happily go on serving a stale
+   copy of these files after an edit, and a plain refresh will not shift it.
+   Stamping every src with the load time makes each refresh fetch what is really
+   on disk. document.write keeps them synchronous and in order, exactly as
+   plain tags would. */
+(function () {
+  var v = Date.now();
+  var files = ['core', 'audio', 'art', 'world', 'entities', 'game'];
+  for (var i = 0; i < files.length; i++)
+    document.write('<script src="js/' + files[i] + '.js?v=' + v + '"><\/script>');
+})();
+</script>
 </body>
 </html>

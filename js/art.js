@@ -277,6 +277,29 @@ function poseDash(i) {
     swordAng: -0.35, swordLen: 8, flutter: 6 + i
   };
 }
+/* crouch: the body drops onto its heels, the blade held low and ready */
+function poseCrouch(i) {
+  const b = [4, 4, 5, 4][i % 4];
+  return {
+    bob: b, lean: 1,
+    feet: [[HERO_AX - 4, H_FEET], [HERO_AX + 4, H_FEET]],
+    hands: [[HERO_AX - 5, H_TORT + 7 + b], [HERO_AX + 5, H_TORT + 6 + b]],
+    bend: [4.5, -4.5], abend: [1.6, -1.6],
+    swordAng: -0.25, swordLen: 8, flutter: 0.8
+  };
+}
+/* the roll: knees and elbows tucked into a ball, spun by the draw code */
+function poseRoll(i) {
+  const t = i / 4 * TAU;
+  const tuck = 1 + Math.sin(t) * 0.35;
+  return {
+    bob: 5, lean: 0, sword: false,
+    feet: [[HERO_AX - 3 * tuck, H_FEET - 1], [HERO_AX + 3 * tuck, H_FEET - 2]],
+    hands: [[HERO_AX - 3, H_TORT + 8], [HERO_AX + 3, H_TORT + 8]],
+    bend: [5, -5], abend: [4, -4],
+    flutter: 5
+  };
+}
 /* attack: wind up over the head, then a wide downward arc */
 const ATK_ANG = [-2.5, -2.9, -1.7, -0.45, 0.35, 0.15];
 function poseAtk(i) {
@@ -2911,6 +2934,8 @@ Art.buildKirby = function () {
     climb: frames(6, i => puffFrame(poseClimb(i))),
     swim: frames(6, i => puffFrame(poseSwim(i))),
     swimIdle: frames(4, i => puffFrame(poseSwimIdle(i))),
+    crouch: frames(4, i => puffFrame(poseCrouch(i))),
+    roll: frames(4, i => puffFrame(poseRoll(i))),
     inhale: frames(4, i => puffFrame(poseIdle(i), 'inhale')),
     full: frames(8, i => puffFrame(poseIdle(i), 'full')),
     fullWalk: frames(8, i => puffFrame(poseWalk(i), 'full'))
@@ -2958,7 +2983,9 @@ Art.buildGold = function () {
     pierce: [heroFrame(posePierce(0)).canvas(), heroFrame(posePierce(1)).canvas()],
     climb: frames(6, i => heroFrame(poseClimb(i))),
     swim: frames(6, i => heroFrame(poseSwim(i))),
-    swimIdle: frames(4, i => heroFrame(poseSwimIdle(i)))
+    swimIdle: frames(4, i => heroFrame(poseSwimIdle(i))),
+    crouch: frames(4, i => heroFrame(poseCrouch(i))),
+    roll: frames(4, i => heroFrame(poseRoll(i)))
   };
   const T = { anchor: Art.top.anchor, walk: [], idle: [], atk: [] };
   for (let d = 0; d < 4; d++) {
@@ -3000,6 +3027,8 @@ Art.steps = function () {
     Art.hero.swim = frames(6, i => heroFrame(poseSwim(i)));
     Art.hero.swimIdle = frames(4, i => heroFrame(poseSwimIdle(i)));
     Art.hero.atk = frames(6, i => heroFrame(poseAtk(i)));
+    Art.hero.crouch = frames(4, i => heroFrame(poseCrouch(i)));
+    Art.hero.roll = frames(4, i => heroFrame(poseRoll(i)));
   });
   push('HERO', () => {
     Art.top.anchor = { x: 13, y: 13 };
