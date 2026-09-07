@@ -64,10 +64,9 @@ var iv=setInterval(function(){
       else if(phaseTick===215){ Input.hitKeys['KeyC']=true; }
       else if(phaseTick>216&&phaseTick<250){ Input.typed='BEAR50'.charAt((phaseTick-217)%6); if(phaseTick===223) Input.hitKeys['Enter']=true; }
       else if(phaseTick===249){ G.codes.found['BEAR50']=true; }
-      else if(phaseTick===250){ G.redeem('KIRBY'); }
       else if(phaseTick===252){ G.redeem('ADMIN'); }
       else if(phaseTick===256){ Input.hitKeys['Escape']=true; }
-      else if(phaseTick>260){ note('phase1 shop+codes ok, kirby='+G.codes.kirby+' tickets='+G.codes.tickets+' admin='+G.codes.admin+' purse='+G.purse()+', up='+JSON.stringify(G.player.up)+' maxHp='+G.player.maxHp+' coins='+G.player.coins); phase=2; phaseTick=0; }
+      else if(phaseTick>260){ note('phase1 shop+codes ok, tickets='+G.codes.tickets+' admin='+G.codes.admin+' purse='+G.purse()+', up='+JSON.stringify(G.player.up)+' maxHp='+G.player.maxHp+' coins='+G.player.coins); phase=2; phaseTick=0; }
     } else if(phase===100){
       // never reached; placeholder
     } else if(phase>=2&&phase<=23){                   // 400 ticks inside every room
@@ -98,8 +97,6 @@ var iv=setInterval(function(){
         if(phaseTick%7<4) pts.push({ id:'aim', x:G.aimX + Math.sin(phaseTick*0.3)*4, y:G.aimY + Math.cos(phaseTick*0.4)*4 });
         Input.touches = pts;
       }
-      Input.held['KeyO']=(phaseTick%23)<9;
-      if(phaseTick%31===0) Input.hitKeys['KeyI']=true;
       if(phaseTick%9===0) Input.hitKeys['KeyF']=true;
       if(phaseTick%23===0) Input.hitKeys['KeyE']=true;
       // and click a doorway now and then, the way a player enters one

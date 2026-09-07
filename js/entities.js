@@ -98,7 +98,6 @@ class Player {
     this.swimming = false; this.swimT = 0;
     this.crouching = false; this.rollT = 0; this.rollCd = 0; this.rollDir = 1;
     this.hurtT = 0;
-    this.inhaling = false; this.mouthful = null; this.inhaleT = 0;
     this.onLadder = false; this.climbT = 0; this.ladderOffT = 0;
     this.invuln = 0; this.landT = 0;
     this.trail = [];
@@ -116,7 +115,6 @@ class Player {
     this.crouching = false; this.rollT = 0; this.rollCd = 0; this.hurtT = 0;
     this.x = x - this.w / 2; this.y = y - this.h;
     this.vx = this.vy = 0; this.trail.length = 0; this.spawnFlash = 0.4;
-    this.inhaling = false; this.mouthful = null;
   }
   get speedMax() { return (G.room && G.room.mode === 'top' ? 1.55 : 2.15) * (1 + this.up.speed * 0.16); }
   /* a crouch and a roll both shrink the body, so you fit under a low gap */
@@ -283,82 +281,6 @@ class Player {
       }));
     }
   }
-  /* O draws things in, I fires them back */
-  updatePuff(dt) {
-    if (!G.codes.kirby) { this.inhaling = false; return; }
-    if (Input.actHit('spit')) this.spit();
-    const want = Input.act('inhale') && !this.dead && !this.mouthful && this.dashT <= 0 && this.pierceT <= 0;
-    this.inhaling = want;
-    if (!want) return;
-    this.inhaleT -= dt;
-    if (this.inhaleT <= 0) { this.inhaleT = 0.22; Snd.inhale(); }
-    const top = G.room.mode === 'top';
-    const dx = top ? [0, -1, 0, 1][this.topDir] : this.face;
-    const dy = top ? [1, 0, -1, 0][this.topDir] : 0;
-    const mx = this.cx + dx * 8, my = this.cy + dy * 6;
-    const REACH = 78;
-    for (const en of G.enemies) {
-      if (en.dead) continue;
-      const ex = en.cx - mx, ey = en.cy - my;
-      const d = Math.hypot(ex, ey) || 1;
-      if (d > REACH) continue;
-      /* only what lies in front of the mouth */
-      if ((ex * dx + ey * dy) / d < 0.35) continue;
-      if (this.canSwallow(en) && d < 16) { this.swallow(en); return; }
-      const pull = (1 - d / REACH) * (this.canSwallow(en) ? 2.6 : 0.7);
-      en.x -= ex / d * pull;
-      if (en.vy !== undefined && !en.grounded) en.y -= ey / d * pull;
-      else if (en.box && en.cy !== undefined && en.vy === undefined) en.y -= ey / d * pull;
-    }
-    /* the funnel of air */
-    for (let k = 0; k < 3; k++) {
-      const t2 = rr(0.2, 1);
-      const spread = (1 - t2) * 4 + 2;
-      const ox = dx * REACH * t2 + (-dy) * rr(-spread, spread);
-      const oy = dy * REACH * t2 + dx * rr(-spread, spread);
-      G.particles.push(new Particle({
-        x: mx + ox, y: my + oy, vx: -ox / REACH * rr(3, 7), vy: -oy / REACH * rr(3, 7),
-        life: rr(0.14, 0.3), col: '#ffd6e4', col2: '#f6a8c0', size: rr(1, 2.2), grav: 0, drag: 0.94
-      }));
-    }
-  }
-  canSwallow(en) {
-    if (en === G.boss) return false;
-    return (en.maxHp || en.hp) <= 40;
-  }
-  swallow(en) {
-    this.mouthful = { dmg: Math.max(8, this.atkDmg * 3 + Math.round((en.maxHp || en.hp) * 0.6)) };
-    en.dead = true;
-    G.addCombo();
-    Snd.gulp(); G.shake(3);
-    /* it still pays what it would have paid */
-    const n = Math.max(1, Math.round((en.coinDrop || 2) * G.coinScale() * G.comboMult())) + G.coinBonus();
-    for (let i = 0; i < n; i++) G.spawnCoin(en.cx + rr(-4, 4), en.cy, rr(-2, 2), rr(-3, -1));
-    for (let i = 0; i < 16; i++) G.particles.push(new Particle({
-      x: en.cx, y: en.cy, vx: (this.cx - en.cx) * 0.08 + rr(-1, 1), vy: (this.cy - en.cy) * 0.08 + rr(-1, 1),
-      life: rr(0.2, 0.45), col: '#ffd6e4', col2: '#d97a9c', size: rr(1, 2.4), grav: 0, drag: 0.9
-    }));
-  }
-  spit() {
-    if (!G.codes.kirby) return;
-    if (!this.mouthful) { Snd.puff(); return; }
-    const top = G.room.mode === 'top';
-    let dx = top ? [0, -1, 0, 1][this.topDir] : this.face;
-    let dy = top ? [1, 0, -1, 0][this.topDir] : 0;
-    if (!top) {
-      const a = G.aim(this.cx, this.cy);
-      dx = a.x; dy = a.y;
-    }
-    G.waves.push(new Star(this.cx + dx * 10, this.cy + dy * 8, dx, dy, this.mouthful.dmg));
-    this.mouthful = null;
-    this.inhaling = false;
-    this.vx -= dx * 1.6;
-    Snd.spit(); G.shake(2.5);
-    for (let i = 0; i < 14; i++) G.particles.push(new Particle({
-      x: this.cx + dx * 8, y: this.cy + dy * 6, vx: dx * rr(1, 3) + rr(-1, 1), vy: dy * rr(1, 3) + rr(-1, 1),
-      life: rr(0.15, 0.4), col: '#ffd6e4', col2: '#f6a8c0', size: rr(1, 2.4), grav: 0.02, drag: 0.9
-    }));
-  }
   startDash() {
     if (this.dashCd > 0 || this.dashT > 0 || this.dead) return;
     const a = G.aim(this.cx, this.cy - 2);
@@ -396,7 +318,6 @@ class Player {
        can be held or tapped together */
     const L = Input.act('left'), Rk = Input.act('right');
     const U = Input.act('up'), D = Input.act('down');
-    this.updatePuff(dt);
     if (Input.actHit('dash')) this.startDash();
     if (Input.actHit('pierce')) this.startPierce();
     if (this.rollT <= 0 && (Input.actHit('attack') || G.clickAttack)) this.startAttack();
@@ -865,16 +786,8 @@ class Player {
   }
 
   currentSprite() {
-    const kirby = G.codes && G.codes.kirby && Art.kirby;
-    const H = kirby ? Art.kirby : ((G.codes && G.codes.admin && Art.heroGold) ? Art.heroGold : Art.hero);
-    const T = kirby ? Art.kirbyTop : ((G.codes && G.codes.admin && Art.topGold) ? Art.topGold : Art.top);
-    if (kirby) {
-      if (this.inhaling) return H.inhale[Math.floor(this.animT / 0.09) % 4];
-      if (this.mouthful) {
-        if (this.anim === 'idle' || this.anim === 'tidle') return H.full[this.frame % 8];
-        if (this.anim === 'walk' || this.anim === 'run' || this.anim === 'twalk') return H.fullWalk[this.frame % 8];
-      }
-    }
+    const H = (G.codes && G.codes.admin && Art.heroGold) ? Art.heroGold : Art.hero;
+    const T = (G.codes && G.codes.admin && Art.topGold) ? Art.topGold : Art.top;
     switch (this.anim) {
       case 'idle': return H.idle[this.frame];
       case 'walk': return H.walk[this.frame];
@@ -2291,44 +2204,6 @@ class Guardian extends Enemy {
     if (alpha < 1) c2.globalAlpha = alpha;
     this.drawFlash(c2, img, this.x, this.y, a.x, a.y, this.face > 0);
     c2.restore();
-  }
-}
-
-/* a swallowed foe, fired back out */
-class Star {
-  constructor(x, y, dx, dy, dmg) {
-    this.x = x; this.y = y; this.dx = dx; this.dy = dy; this.dmg = dmg;
-    this.life = 2.2; this.dead = false; this.t = 0;
-  }
-  update(dt) {
-    this.t += dt; this.life -= dt;
-    const s = dt * 60;
-    this.x += this.dx * 5.4 * s; this.y += this.dy * 5.4 * s;
-    for (const en of G.enemies) {
-      if (en.dead) continue;
-      if (!rectsOverlap({ x: this.x - 9, y: this.y - 9, w: 18, h: 18 }, en.box())) continue;
-      en.hurt(this.dmg, this.x, this.y);
-      G.shake(4); G.hitStop(0.05);
-      this.burst();
-      return;
-    }
-    if (Math.random() < 0.8) G.particles.push(new Particle({
-      x: this.x + rr(-4, 4), y: this.y + rr(-4, 4), vx: rr(-0.4, 0.4), vy: rr(-0.4, 0.4),
-      life: rr(0.14, 0.34), col: '#fff4d6', col2: '#f0c93a', size: rr(1, 2.4), grav: 0, drag: 0.9
-    }));
-    if (G.room.solidPx(this.x, this.y) || this.life <= 0) this.burst();
-  }
-  burst() {
-    if (this.dead) return;
-    this.dead = true;
-    Snd.starPop();
-    for (let i = 0; i < 18; i++) G.particles.push(new Particle({
-      x: this.x, y: this.y, vx: rr(-3.4, 3.4), vy: rr(-3.4, 2), life: rr(0.25, 0.6),
-      col: '#fff4d6', col2: '#f0c93a', size: rr(1.4, 3), grav: 0.1, drag: 0.92
-    }));
-  }
-  draw(c2) {
-    blit(c2, Art.item.star[Math.floor(this.t / 0.05) % 6], this.x, this.y, 10, 10);
   }
 }
 

@@ -22,8 +22,9 @@ const G = {
   mapSel: -1, mapT: 0, levelClearT: 0,
   combo: 0, comboT: 0, comboBest: 0,
   waves: [],
-  codes: { found: {}, used: {}, tickets: 0, admin: false, kirby: false },
+  codes: { found: {}, used: {}, tickets: 0, admin: false },
   codesOpen: false, codeBuf: '', codeMsg: '', codeMsgT: 0, codeMsgOk: false,
+  codeKeyHit: null, codeKeyFlash: 0, codeKeyOver: null,
   mobile: false, settingsOpen: false, padOn: {},
   tutorialDone: false, mapMode: 'realm',
   tut: { move: 0, fight: 0, swim: 0, dash: 0, pierce: 0, climb: 0, parry: 0 },
@@ -37,7 +38,7 @@ const G = {
   /* which of the three save files is in play, and what the player chose in settings */
   slot: 0, fileSel: -1, eraseArm: -1,
   opts: { mobile: null, music: 0.7, sfx: 0.8, padAlpha: 0.5, keys: null },
-  setTab: 0, setSel: -1, setDrag: null, bindWait: null
+  setTab: 0, setSel: -1, setDrag: null, setStep: -1, bindWait: null
 };
 
 /* ============================================================
@@ -105,7 +106,7 @@ function packSave() {
     coins: p ? p.coins : 0, up: p ? Object.assign({}, p.up) : {},
     maxHp: p ? p.maxHp : 6, hp: p ? p.hp : 6, hasKey: p ? p.hasKey : false,
     codes: { found: G.codes.found, used: G.codes.used, tickets: G.codes.tickets,
-             admin: G.codes.admin, kirby: G.codes.kirby },
+             admin: G.codes.admin },
     tut: G.tut, stats: G.stats
   };
 }
@@ -141,11 +142,9 @@ function applySave(d) {
   G.codes.used = d.codes && d.codes.used || {};
   G.codes.tickets = (d.codes && d.codes.tickets) || 0;
   G.codes.admin = !!(d.codes && d.codes.admin);
-  G.codes.kirby = !!(d.codes && d.codes.kirby);
   G.tut = Object.assign({ move: 0, fight: 0, swim: 0, dash: 0, pierce: 0, climb: 0, parry: 0 }, d.tut || {});
   G.stats = Object.assign({ coins: 0, kills: 0, time: 0, deaths: 0 }, d.stats || {});
   if (G.codes.admin) { try { Art.buildGold(); } catch (e) { /* art may not be up yet */ } }
-  if (G.codes.kirby) { try { Art.buildKirby(); } catch (e) { /* same */ } }
 }
 /* 100% is every realm cleared, every paper found and every upgrade maxed */
 function slotPercent(d) {
@@ -206,25 +205,6 @@ G.goldAdmin = function () {
 G.redeem = function (raw) {
   const name = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   if (!name) return;
-  if (name === 'KIRBY') {
-    G.codes.kirby = !G.codes.kirby;
-    if (G.codes.kirby) {
-      try { Art.buildKirby(); } catch (err) { console.error('puff', err); }
-      G.codeMsg = 'PUFF FORM - O INHALE, I SPIT'; G.codeMsgOk = true; G.codeMsgT = 4.5;
-      Snd.unlock(); G.flash(0.6);
-      const p2 = G.player;
-      for (let i = 0; i < 90; i++) G.particles.push(new Particle({
-        x: p2.cx, y: p2.cy, vx: rr(-4, 4), vy: rr(-4, 2), life: rr(0.5, 1.2),
-        col: rpick(['#ffd6e4', '#f6a8c0', '#ffffff']), col2: '#d97a9c',
-        size: rr(1, 3), grav: 0.03, drag: 0.93
-      }));
-    } else {
-      G.player.mouthful = null; G.player.inhaling = false;
-      G.codeMsg = 'BACK TO YOURSELF'; G.codeMsgOk = true; G.codeMsgT = 3;
-      Snd.ui();
-    }
-    return;
-  }
   if (name === 'ADMIN') {
     G.goldAdmin();
     G.codeMsg = 'ADMIN - ALL YOURS'; G.codeMsgOk = true; G.codeMsgT = 4;
@@ -571,7 +551,7 @@ function startGame(slot) {
   G.unlocked = 1; G.cleared = []; G.level = 0;
   G.trans = null;
   G.tutorialDone = false;
-  G.codes = { found: {}, used: {}, tickets: 0, admin: false, kirby: false };
+  G.codes = { found: {}, used: {}, tickets: 0, admin: false };
   G.tut = { move: 0, fight: 0, swim: 0, dash: 0, pierce: 0, climb: 0, parry: 0 };
   const d = readSlot(G.slot);
   if (d && d.used) applySave(d);
@@ -1148,8 +1128,9 @@ function drawMap() {
     ctx.fillStyle = 'rgba(58,44,28,0.8)';
     ctx.fillRect(ax - 8, VH / 2 - 14, 16, 28);
     ctx.fillStyle = '#ffeec0';
+    /* k = 0 is the tip, and it lies on the side the arrow sends you */
     for (let k = 0; k < 7; k++)
-      ctx.fillRect(Math.round(ax - dir * 3 + dir * k + dir * pulse), Math.round(VH / 2 - k), 1, k * 2 + 1);
+      ctx.fillRect(Math.round(ax + dir * (3 - k) + dir * pulse), Math.round(VH / 2 - k), 1, k * 2 + 1);
     ctx.restore();
   }
 
@@ -1836,11 +1817,6 @@ function drawHUD() {
     drawText(ctx, 'KEY', dx + 18, stack + 1, '#ffe98a', 1, 'left', '#000000');
     stack += 13;
   }
-  if (G.codes.kirby && p.mouthful) {
-    ctx.drawImage(Art.item.star[Math.floor(G.t / 0.06) % 6], dx - 3, stack - 5);
-    drawText(ctx, 'I TO SPIT', dx + 16, stack, '#ffe98a', 1, 'left', '#000000');
-    stack += 13;
-  }
   if (G.combo >= 2) {
     const m = G.comboMult();
     const col = m >= 3 ? '#ff8b4a' : (m >= 2 ? '#ffd04a' : '#c9d4e8');
@@ -1962,11 +1938,9 @@ const PAD = [
   { act: 'attack', x: 340, y: 186, w: 38, h: 38, label: 'CUT' },
   { act: 'dash',   x: 300, y: 172, w: 30, h: 30, label: 'DSH' },
   { act: 'pierce', x: 330, y: 142, w: 28, h: 28, label: 'PRC' },
-  { act: 'swim',   x: 372, y: 146, w: 24, h: 24, art: 'swimBtn' },
-  { act: 'inhale', x: 292, y: 116, w: 26, h: 26, label: 'O', puff: true },
-  { act: 'spit',   x: 330, y: 106, w: 26, h: 26, label: 'I', puff: true }
+  { act: 'swim',   x: 372, y: 146, w: 24, h: 24, art: 'swimBtn' }
 ];
-function padVisible(b) { return !b.puff || (G.codes.kirby && Art.kirby); }
+function padVisible(b) { void b; return true; }
 function padRect(b) { return { x: b.x - b.w / 2, y: b.y - b.h / 2, w: b.w, h: b.h }; }
 function padActive() {
   return G.mobile && G.state === 'play' && !G.shopOpen && !G.codesOpen && !G.settingsOpen && !G.trans;
@@ -2159,6 +2133,7 @@ G.aim = function (px, py) {
    ============================================================ */
 const SET_BOX = { x: 26, y: 12, w: 332, h: 192 };
 const SET_TABS = ['PLAY', 'KEYS'];
+const SLIDER_STEPS = 22;      /* notches the drag blips through */
 const SLIDERS = [
   { key: 'music', name: 'MUSIC', min: 0, max: 1, hint: 'THE TRACKS' },
   { key: 'sfx', name: 'SOUND', min: 0, max: 1, hint: 'BLOWS, COINS AND THE WIND' },
@@ -2199,12 +2174,17 @@ function updateSettings() {
 
   /* sliders answer to a held finger or a held button, so they can be dragged */
   if (G.setDrag !== null && G.setDrag !== undefined) {
-    if (!Input.mdown) { G.setDrag = null; saveOptions(); }
-    else {
-      const sl = SLIDERS[G.setDrag], r = setSliderRect(G.setDrag);
-      const t = clamp((Input.mx - r.x) / r.w, 0, 1);
+    const sl = SLIDERS[G.setDrag], r = setSliderRect(G.setDrag);
+    const t = clamp((Input.mx - r.x) / r.w, 0, 1);
+    if (!Input.mdown) {
+      Snd.sliderSet(t, sl.key);
+      G.setDrag = null; G.setStep = -1; saveOptions();
+    } else {
       G.opts[sl.key] = sl.min + t * (sl.max - sl.min);
       applyOptions();
+      /* one blip per notch, so the drag ratchets instead of chattering */
+      const step = Math.round(t * SLIDER_STEPS);
+      if (step !== G.setStep) { G.setStep = step; Snd.sliderTick(t, sl.key); }
       return;
     }
   }
@@ -2227,8 +2207,11 @@ function updateSettings() {
       if (Input.tap(grab)) {
         G.setDrag = i;
         const sl = SLIDERS[i];
-        G.opts[sl.key] = sl.min + clamp((Input.mx - r.x) / r.w, 0, 1) * (sl.max - sl.min);
-        applyOptions(); Snd.ui();
+        const t = clamp((Input.mx - r.x) / r.w, 0, 1);
+        G.opts[sl.key] = sl.min + t * (sl.max - sl.min);
+        applyOptions();
+        G.setStep = Math.round(t * SLIDER_STEPS);
+        Snd.sliderTick(t, sl.key);
         return;
       }
     }
@@ -2469,74 +2452,174 @@ function drawFiles() {
 /* ============================================================
    THE CODES BOX
    ============================================================ */
-const CODE_BOX = { x: 52, y: 26, w: 280, h: 164 };
+/* the box grows on a phone, to make room for the keys */
+const CODE_BOX_PC = { x: 52, y: 26, w: 280, h: 164 };
+const CODE_BOX_MOB = { x: 4, y: 4, w: 376, h: 208 };
+function codeBox() { return G.mobile ? CODE_BOX_MOB : CODE_BOX_PC; }
+function codeCloseRect() { const B = codeBox(); return { x: B.x + B.w - 18, y: B.y + 5, w: 13, h: 13 }; }
+
+/* ---- the keyboard built into the game, for a phone with no keys ---- */
+const CODE_ROWS = ['1234567890', 'QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM'];
+const CODE_KEY_W = 34, CODE_KEY_H = 26, CODE_KEY_GAP = 2;
+/* one row of keys, already laid out and centred */
+function codeKeyRow(r) {
+  const B = codeBox();
+  const keys = CODE_ROWS[r].split('').map(c => ({ ch: c, w: CODE_KEY_W }));
+  if (r === CODE_ROWS.length - 1) {
+    keys.push({ ch: 'DEL', w: 46, wide: true });
+    keys.push({ ch: 'ENTER', w: 58, wide: true });
+  }
+  let total = (keys.length - 1) * CODE_KEY_GAP;
+  for (const k of keys) total += k.w;
+  let x = B.x + (B.w - total) / 2;
+  const y = B.y + B.h - 116 + r * (CODE_KEY_H + CODE_KEY_GAP);
+  for (const k of keys) { k.x = x; k.y = y; k.h = CODE_KEY_H; x += k.w + CODE_KEY_GAP; }
+  return keys;
+}
+function codeKeys() {
+  const out = [];
+  for (let r = 0; r < CODE_ROWS.length; r++) for (const k of codeKeyRow(r)) out.push(k);
+  return out;
+}
+/* the papers you carry, listed down the box on a desktop and as chips on a phone */
+function codePaperMax() { return G.mobile ? 8 : 6; }
+function codePaperRect(i) {
+  const B = codeBox();
+  if (G.mobile) {
+    const col = i % 4, row = (i / 4) | 0;
+    return { x: B.x + 14 + col * 90, y: B.y + 58 + row * 14, w: 86, h: 12 };
+  }
+  return { x: B.x + 10, y: B.y + 72 + i * 11, w: 142, h: 10 };
+}
+function closeCodes() {
+  G.codesOpen = false; G.codeKeyHit = null;
+  Snd.ui(); Snd.musicLevel(0.34, 0.5);
+}
+/* a key the player just pressed, typed or tapped */
+function codeType(ch) {
+  if (ch === 'ENTER') { G.redeem(G.codeBuf); G.codeBuf = ''; return; }
+  if (ch === 'DEL') { G.codeBuf = G.codeBuf.slice(0, -1); Snd.ui(); return; }
+  if (G.codeBuf.length < 18) { G.codeBuf += ch; Snd.ui(); }
+  else Snd.uiBad();
+}
 function updateCodes(dt) {
+  const B = codeBox();
   G.codeMsgT = Math.max(0, G.codeMsgT - dt);
-  if (Input.hit('Escape')) { G.codesOpen = false; Snd.ui(); Snd.musicLevel(0.34, 0.5); return; }
+  G.codeKeyFlash = Math.max(0, (G.codeKeyFlash || 0) - dt);
+  if (G.codeKeyFlash <= 0) G.codeKeyHit = null;
+  if (Input.hit('Escape')) { closeCodes(); return; }
   if (Input.hit('Backspace')) G.codeBuf = G.codeBuf.slice(0, -1);
   if (Input.hit('Enter')) { G.redeem(G.codeBuf); G.codeBuf = ''; }
   for (const ch of Input.typed) {
     if (/[A-Za-z0-9]/.test(ch) && G.codeBuf.length < 18) G.codeBuf += ch.toUpperCase();
   }
-  const cr = { x: CODE_BOX.x + CODE_BOX.w - 18, y: CODE_BOX.y + 5, w: 13, h: 13 };
-  G.codeOverClose = Input.mx >= cr.x && Input.mx <= cr.x + cr.w && Input.my >= cr.y && Input.my <= cr.y + cr.h;
-  /* clicking a found code fills the box */
+  G.codeOverClose = Input.over(codeCloseRect());
+
+  /* the built-in keyboard */
+  G.codeKeyOver = null;
+  if (G.mobile) {
+    for (const k of codeKeys()) {
+      const r = { x: k.x, y: k.y, w: k.w, h: k.h };
+      if (Input.over(r)) G.codeKeyOver = k.ch;
+      if (Input.tap(r)) {
+        G.codeKeyHit = k.ch; G.codeKeyFlash = 0.12;
+        codeType(k.ch);
+        return;
+      }
+    }
+  }
+
+  /* tapping a paper you carry fills the box */
   const found = Object.keys(G.codes.found).filter(c => !G.codes.used[c]);
   G.codeHover = -1;
-  found.forEach((c, i) => {
-    const y = CODE_BOX.y + 72 + i * 11;
-    if (Input.mx > CODE_BOX.x + 10 && Input.mx < CODE_BOX.x + 150 && Input.my > y && Input.my < y + 10) G.codeHover = i;
+  found.slice(0, codePaperMax()).forEach((c, i) => {
+    if (Input.over(codePaperRect(i))) G.codeHover = i;
   });
-  if (Input.mhit) {
-    if (G.codeOverClose) { G.codesOpen = false; Snd.ui(); Snd.musicLevel(0.34, 0.5); }
-    else if (G.codeHover >= 0) { G.codeBuf = found[G.codeHover]; Snd.ui(); }
+  if (Input.tap(codeCloseRect())) { closeCodes(); return; }
+  if (G.codeHover >= 0 && Input.mhit) { G.codeBuf = found[G.codeHover]; Snd.ui(); }
+  void B;
+}
+function drawCodeKeyboard() {
+  const keys = codeKeys();
+  for (const k of keys) {
+    const hit = G.codeKeyHit === k.ch;
+    const isEnter = k.ch === 'ENTER', isDel = k.ch === 'DEL';
+    ctx.fillStyle = hit ? '#6fc46a' : (isEnter ? '#2f4a34' : (isDel ? '#3a2c34' : '#2b2740'));
+    ctx.fillRect(k.x, k.y, k.w, k.h);
+    ctx.fillStyle = hit ? '#ffffff' : (isEnter ? '#6fc46a' : '#4a4468');
+    ctx.fillRect(k.x, k.y, k.w, 1);
+    ctx.fillRect(k.x, k.y + k.h - 1, k.w, 1);
+    ctx.fillRect(k.x, k.y, 1, k.h);
+    ctx.fillRect(k.x + k.w - 1, k.y, 1, k.h);
+    const col = hit ? '#12200e' : (isEnter ? '#ffeec0' : '#e6edf6');
+    const sc = k.wide ? 1 : 2;
+    drawText(ctx, k.ch, k.x + k.w / 2, k.y + (k.h - GH * sc) / 2, col, sc, 'center');
   }
 }
 function drawCodes() {
+  const B = codeBox();
   ctx.save();
   ctx.fillStyle = 'rgba(8,6,16,0.74)'; ctx.fillRect(0, 0, VW, VH);
-  panel(ctx, CODE_BOX.x, CODE_BOX.y, CODE_BOX.w, CODE_BOX.h);
-  drawText(ctx, 'CODES', CODE_BOX.x + 10, CODE_BOX.y + 9, '#f2e2b8', 1, 'left', '#000000');
-  drawText(ctx, 'TICKETS ' + G.codes.tickets, CODE_BOX.x + CODE_BOX.w - 24, CODE_BOX.y + 9, '#6fc46a', 1, 'right');
-  const cr = { x: CODE_BOX.x + CODE_BOX.w - 18, y: CODE_BOX.y + 5, w: 13, h: 13 };
+  panel(ctx, B.x, B.y, B.w, B.h);
+  drawText(ctx, 'CODES', B.x + 10, B.y + 9, '#f2e2b8', 1, 'left', '#000000');
+  drawText(ctx, 'TICKETS ' + G.codes.tickets, B.x + B.w - 24, B.y + 9, '#6fc46a', 1, 'right');
+  const cr = codeCloseRect();
   ctx.fillStyle = G.codeOverClose ? '#c9403a' : '#3a3350';
   ctx.fillRect(cr.x, cr.y, cr.w, cr.h);
   drawText(ctx, 'X', cr.x + 4, cr.y + 3, '#f2e2b8', 1, 'left');
 
   /* the entry line */
-  const fx = CODE_BOX.x + 10, fy = CODE_BOX.y + 26;
-  ctx.fillStyle = '#12101c'; ctx.fillRect(fx - 2, fy - 3, CODE_BOX.w - 16, 18);
-  ctx.fillStyle = '#3a3350'; ctx.fillRect(fx - 2, fy - 3, CODE_BOX.w - 16, 1);
+  const fx = B.x + 10, fy = B.y + 26;
+  ctx.fillStyle = '#12101c'; ctx.fillRect(fx - 2, fy - 3, B.w - 16, 18);
+  ctx.fillStyle = '#3a3350'; ctx.fillRect(fx - 2, fy - 3, B.w - 16, 1);
   const shown = G.codeBuf || '';
   drawText(ctx, shown, fx + 2, fy + 2, '#ffe98a', 2, 'left');
   if (Math.floor(G.t * 2.4) % 2 === 0) {
     ctx.fillStyle = '#6fc46a';
     ctx.fillRect(fx + 2 + textWidth(shown) * 2 + 2, fy + 1, 2, 12);
   }
-  drawText(ctx, 'TYPE A CODE, THEN ENTER', fx, fy + 20, '#6d7994', 1, 'left');
+  drawText(ctx, G.mobile ? 'TAP THE KEYS, THEN ENTER' : 'TYPE A CODE, THEN ENTER',
+           fx, fy + 20, '#6d7994', 1, 'left');
 
   /* codes you have found but not spent */
   const found = Object.keys(G.codes.found).filter(c => !G.codes.used[c]);
-  drawText(ctx, 'PAPERS IN YOUR POCKET', fx, CODE_BOX.y + 60, '#a9b3c9', 1, 'left');
-  if (!found.length) drawText(ctx, 'NONE YET - SEARCH THE REALMS', fx + 10, CODE_BOX.y + 74, '#5b6480', 1, 'left');
-  found.slice(0, 6).forEach((c, i) => {
-    const y = CODE_BOX.y + 72 + i * 11;
-    if (G.codeHover === i) { ctx.fillStyle = '#332c4c'; ctx.fillRect(fx, y - 1, 142, 11); }
-    ctx.drawImage(Art.item.paper, fx + 1, y - 2, 8, 9);
-    drawText(ctx, c, fx + 13, y + 1, '#ffeec0', 1, 'left');
+  if (!G.mobile) drawText(ctx, 'PAPERS IN YOUR POCKET', fx, B.y + 60, '#a9b3c9', 1, 'left');
+  if (!found.length) {
+    drawText(ctx, 'NO PAPERS YET - SEARCH THE REALMS',
+             G.mobile ? B.x + B.w / 2 : fx + 10, B.y + (G.mobile ? 62 : 74),
+             '#5b6480', 1, G.mobile ? 'center' : 'left');
+  }
+  found.slice(0, codePaperMax()).forEach((c, i) => {
+    const r = codePaperRect(i);
+    if (G.codeHover === i) { ctx.fillStyle = '#332c4c'; ctx.fillRect(r.x - 1, r.y - 1, r.w + 2, r.h + 2); }
+    if (G.mobile) {
+      ctx.fillStyle = G.codeHover === i ? '#3a3350' : '#211c32';
+      ctx.fillRect(r.x, r.y, r.w, r.h);
+      drawText(ctx, c, r.x + r.w / 2, r.y + 3, '#ffeec0', 1, 'center');
+    } else {
+      ctx.drawImage(Art.item.paper, r.x + 1, r.y - 1, 8, 9);
+      drawText(ctx, c, r.x + 13, r.y + 2, '#ffeec0', 1, 'left');
+    }
   });
   const usedN = Object.keys(G.codes.used).length;
   drawText(ctx, 'REDEEMED ' + usedN + '/' + World.CODES.length,
-           CODE_BOX.x + CODE_BOX.w - 12, CODE_BOX.y + 60, '#5b6480', 1, 'right');
+           B.x + B.w - 12, B.y + (G.mobile ? 44 : 60), '#5b6480', 1, 'right');
+
+  if (G.mobile) drawCodeKeyboard();
 
   if (G.codeMsgT > 0) {
     ctx.save(); ctx.globalAlpha = Math.min(1, G.codeMsgT * 2);
-    drawText(ctx, G.codeMsg, CODE_BOX.x + CODE_BOX.w / 2, CODE_BOX.y + CODE_BOX.h - 30,
+    const my = G.mobile ? B.y + 44 : B.y + B.h - 30;
+    ctx.fillStyle = 'rgba(8,6,16,0.85)';
+    ctx.fillRect(B.x + 4, my - 2, B.w - 8, 16);
+    drawText(ctx, G.codeMsg, B.x + B.w / 2, my,
              G.codeMsgOk ? '#6fc46a' : '#c9403a', 2, 'center', '#000000');
     ctx.restore();
   }
-  drawText(ctx, 'A CODE ONLY WORKS WITH ITS PAPER IN HAND   -   ESC TO CLOSE',
-           CODE_BOX.x + CODE_BOX.w / 2, CODE_BOX.y + CODE_BOX.h - 14, '#a9b3c9', 1, 'center');
+  if (!G.mobile) {
+    drawText(ctx, 'A CODE ONLY WORKS WITH ITS PAPER IN HAND   -   ESC TO CLOSE',
+             B.x + B.w / 2, B.y + B.h - 14, '#a9b3c9', 1, 'center');
+  }
   ctx.restore();
 }
 

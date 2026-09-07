@@ -37,6 +37,10 @@ in the shop, so it is reachable at any time. **BACK** closes it.
 | **SOUND** | How loud blows, coins and the wind are |
 | **BUTTONS** | How bright the touch buttons sit over the game |
 
+Each slider blips as you drag it, pitched to where the handle sits, so you hear the value
+climb and fall. A volume slider sends its blip through the very bus it sets, so dragging
+**MUSIC** plays at the music volume you are choosing.
+
 The game guesses the mode when it starts — a touch device begins in mobile mode — and the
 setting overrides that guess either way, so you can try the touch controls on a desktop.
 Every choice is kept on the machine.
@@ -58,16 +62,16 @@ sets how faint.
   and how you roll
 - on the right: **CUT** (sword icon), **DSH** (dash), **PRC** (air pierce), and a
   **swimmer** for swimming
-- **O** and **I** appear beside them only in puff form
 - there is no door button: tap the doorway itself
+- the codes box brings its own keyboard, so no code needs a real one
 
 Multiple fingers work at once, so you can run, jump and cut together. The buttons hide
 whenever the shop, codes box or map is open, and the cursor is not drawn.
 
 A **draggable aim ring** stands in for the cursor. Put a finger on it and it follows;
 let go and it stays put. A dotted line runs from the hero to it, gold when the dash is
-ready. Everything that would aim at a cursor on a desktop — the dash, the top-down sword
-swing, the spat star — aims at the ring instead.
+ready. Everything that would aim at a cursor on a desktop — the dash and the top-down
+sword swing — aims at the ring instead.
 
 It ignores fingers that land on a button, so you can hold the pad and drag the ring at
 the same time, and it resets to just ahead of you whenever you enter a realm.
@@ -100,7 +104,6 @@ page in Settings.
 | Esc, or click the shop sign (top left) | Open the shop |
 | Click the chart (top right), or Backspace | Leave the realm, back to the map |
 | Click the codes panel (left edge), or C | Open the codes box |
-| O (hold) / I | Inhale / spit a star, in puff form only |
 | M | Mute |
 
 Directions are read one at a time, so any two of them hold together — up and left to jump
@@ -225,8 +228,12 @@ you its code. Open the **codes box** (the panel under the shop sign, the button 
 map, or press `C`), type the code and press Enter. Found codes are listed in the box, so
 there is nothing to write down; click one to fill the field.
 
+In mobile mode the box fills the screen and carries **a keyboard of its own**, drawn in the
+game's own pixel font: the digits, a QWERTY block, **DEL** and **ENTER**. Tap the keys, then
+tap ENTER. The papers you carry sit above it as chips — tap one to fill the field.
+
 A code only works while you are carrying its paper — knowing the word is not enough. The
-two hidden codes, `kirby` and `admin`, are the exceptions.
+hidden code `admin` is the exception.
 
 Each code works once. Rewards climb sharply with the realm:
 
@@ -234,12 +241,6 @@ Each code works once. Rewards climb sharply with the realm:
 | --- | --- | --- | --- | --- |
 | Coins | `BEAR50` — 50 | `SPORE300` — 300 | `ANGLER1600` — 1600 | `IFRIT5000` — 5000 |
 | Tickets | `ITEMUPGRADE` — 1 | `SPOREUPGRADE` — 1 | `ABYSSUPGRADE` — 2 | `MOLTENUPGRADE` — 4 |
-
-Typing `kirby` turns you into a pink puff. **Hold `O`** to inhale — anything in front of
-the mouth is dragged in, and a small enough creature is swallowed whole (it still pays out
-its coins). **Press `I`** to spit it back as a star that hits far harder than a sword blow,
-aimed at your cursor. Bosses are too big to swallow; they only get tugged. Typing `kirby`
-again changes you back.
 
 Typing `admin` opens every realm, maxes every upgrade at the full nine-realm caps, hands
 you all three relics, sets your purse to the infinity mark, and turns the hero gold.

@@ -369,12 +369,12 @@ function drawText(ctx, str, x, y, col, scale, align, shadow) {
 const DEFAULT_KEYS = {
   left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: 'ArrowDown',
   attack: 'Space', dash: 'KeyD', pierce: 'KeyF', swim: 'KeyS', interact: 'KeyE',
-  inhale: 'KeyO', spit: 'KeyI', shop: 'Escape', codes: 'KeyC', map: 'Backspace', mute: 'KeyM'
+  shop: 'Escape', codes: 'KeyC', map: 'Backspace', mute: 'KeyM'
 };
 /* extra keys that keep working whatever the player binds */
 const ALT_KEYS = { attack: ['KeyX', 'KeyZ'] };
 const KEYS = Object.assign(Object.create(null), DEFAULT_KEYS);
-/* the order the settings panel lists them in */
+/* the controls the settings panel lists, in order */
 const ACTIONS = [
   { key: 'left', name: 'MOVE LEFT' },
   { key: 'right', name: 'MOVE RIGHT' },
@@ -388,9 +388,7 @@ const ACTIONS = [
   { key: 'shop', name: 'SHOP' },
   { key: 'codes', name: 'CODES BOX' },
   { key: 'map', name: 'LEAVE THE REALM' },
-  { key: 'mute', name: 'MUTE' },
-  { key: 'inhale', name: 'INHALE (PUFF)' },
-  { key: 'spit', name: 'SPIT (PUFF)' }
+  { key: 'mute', name: 'MUTE' }
 ];
 /* a short name a player recognises, from the raw event code */
 function keyLabel(code) {

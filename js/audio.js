@@ -230,23 +230,6 @@ const Snd = {
     const t = this.t();
     for (let i = 0; i < 3; i++) this.noise({ fc: 2400, fc2: 900, d: 0.04, v: 0.11, q: 3, filt: 'bandpass', t: t + i * 0.06 });
   },
-  inhale() {
-    const t = this.t();
-    this.noise({ fc: 300, fc2: 2200, d: 0.24, v: 0.11, q: 0.6, t: t });
-    this.tone({ f: 180, f2: 620, d: 0.22, v: 0.05, type: 'triangle', t: t });
-  },
-  spit() {
-    const t = this.t();
-    this.noise({ fc: 2600, fc2: 500, d: 0.18, v: 0.22, q: 1.1, t: t });
-    this.tone({ f: 900, f2: 220, d: 0.16, v: 0.12, type: 'square', t: t });
-  },
-  puff() { this.noise({ fc: 1400, fc2: 600, d: 0.1, v: 0.06, q: 0.9 }); },
-  starPop() {
-    const t = this.t();
-    this.tone({ f: 1318, d: 0.07, v: 0.13, type: 'square', t: t });
-    this.tone({ f: 1760, d: 0.11, v: 0.10, type: 'square', t: t + 0.05, echo: true });
-    this.noise({ fc: 3000, fc2: 900, d: 0.12, v: 0.09, q: 1.2, t: t });
-  },
   gulp() {
     const t = this.t();
     this.tone({ f: 160, f2: 520, d: 0.2, v: 0.14, type: 'sine', t: t });
@@ -310,6 +293,21 @@ const Snd = {
     this.tone({ f: 90, f2: 35, d: 0.7, v: 0.26, type: 'sawtooth', t: t });
   },
   ui() { this.tone({ f: 880, d: 0.07, v: 0.13, type: 'square' }); },
+  /* the sliders. The blip is pitched to where the handle sits, so you hear the
+     value climb and fall under your finger. A volume slider sends its blip
+     through the very bus it sets, so you also hear how loud that bus will be. */
+  sliderBus(which) { return which === 'music' ? this.musVol : this.sfx; },
+  sliderTick(v, which) {
+    const f = 300 + clamp(v, 0, 1) * 900, dest = this.sliderBus(which);
+    this.tone({ f: f, d: 0.05, v: 0.09, a: 0.002, type: 'square', dest: dest });
+    this.tone({ f: f * 2, d: 0.035, v: 0.03, a: 0.002, type: 'triangle', dest: dest });
+  },
+  /* letting go rings a small two note chime off the value you settled on */
+  sliderSet(v, which) {
+    const t = this.t(), f = 300 + clamp(v, 0, 1) * 900, dest = this.sliderBus(which);
+    this.tone({ f: f, d: 0.09, v: 0.10, type: 'square', t: t, dest: dest, echo: true });
+    this.tone({ f: f * 1.5, d: 0.16, v: 0.08, type: 'triangle', t: t + 0.055, dest: dest, echo: true });
+  },
   uiBad() { this.tone({ f: 220, f2: 150, d: 0.16, v: 0.16, type: 'square' }); },
   buy() {
     const t = this.t();
