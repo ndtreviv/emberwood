@@ -939,14 +939,14 @@ function drawTutorialMap() {
   ctx.fillRect(50, 4, VW - 100, 24);
   ctx.fillStyle = '#b8862f';
   ctx.fillRect(50, 4, VW - 100, 1); ctx.fillRect(50, 27, VW - 100, 1);
-  drawText(ctx, 'BEFORE YOU SET OUT', VW / 2, 7, '#ffeec0', 2, 'center', '#2a1a10');
-  drawText(ctx, World.TUTORIAL.sub, VW / 2, 19, '#d8c49a', 1, 'center');
+  drawText(ctx, 'BEFORE YOU SET OUT', VW / 2, 5, '#ffeec0', 2, 'center', '#2a1a10');
+  drawText(ctx, World.TUTORIAL.sub, VW / 2, 20, '#d8c49a', 1, 'center');
 
   ctx.fillStyle = 'rgba(58,44,28,0.82)';
   ctx.fillRect(0, VH - 14, VW, 14);
   drawText(ctx, G.mapSel === 0 ? 'CLICK TO STEP INTO THE TUTORIAL'
-                               : 'THE REALM OPENS ONCE YOU KNOW THE MOVES',
-           VW / 2, VH - 11, '#ebdcb6', 1, 'center');
+                               : 'THE REALMS OPEN ONCE YOU COMPLETE THE TUTORIAL',
+           mapFootX(), VH - 11, '#ebdcb6', 1, 'center');
   drawMapCorners();
   if (G.bannerT > 0) {
     ctx.save(); ctx.globalAlpha = Math.min(1, G.bannerT * 2);
@@ -959,8 +959,12 @@ function drawTutorialMap() {
     ctx.fillRect(0, 0, VW, VH); ctx.restore();
   }
 }
-function mapBackRect() { return { x: 6, y: VH - 20, w: 58, h: 15 }; }
+/* BACK sits top left, clear of the chapter banner. The bottom left corner
+   already carries the codes icon and the purse. */
+function mapBackRect() { return { x: 5, y: 6, w: 42, h: 14 }; }
 function mapGearRect() { return { x: VW - 30, y: VH - 26, w: 24, h: 22 }; }
+/* the footer line shares its strip with the cog, so it stops short of it */
+function mapFootX() { return (mapGearRect().x - 4) / 2; }
 /* the same pair of corner buttons on both maps */
 function drawMapCorners() {
   const b = mapBackRect();
@@ -1152,10 +1156,10 @@ function drawMap() {
   const foot = G.mapSel >= 0
     ? (G.mapSel < G.unlocked ? World.LEVELS[G.mapSel].sub + '   -   CLICK TO ENTER'
                              : 'SEALED   -   CLEAR THE REALM BEFORE IT')
-    : 'SCROLL OR ARROWS TO PAGE   -   BACK FOR YOUR FILES';
+    : 'SCROLL OR ARROWS TO PAGE   -   BACK FOR FILES';
   ctx.fillStyle = 'rgba(58,44,28,0.82)';
   ctx.fillRect(0, VH - 14, VW, 14);
-  drawText(ctx, foot, VW / 2, VH - 11, '#ebdcb6', 1, 'center');
+  drawText(ctx, foot, mapFootX(), VH - 11, '#ebdcb6', 1, 'center');
   {
     const chov = G.overCodeIcon;
     if (chov) {
