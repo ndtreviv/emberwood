@@ -1,0 +1,119 @@
+<!doctype html>
+<!-- Headless test rig. Run:
+     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --disable-gpu \
+       --virtual-time-budget=180000 --dump-dom file://$PWD/tools/browser-test.html
+     It drives a full session and prints results into the #err block. --><html><head><meta charset="utf-8"><title>Emberwood browser test</title></head><body>
+<canvas id="game" width="384" height="216"></canvas>
+<div id="boot"></div><div id="hint"></div>
+<pre id="err">PENDING</pre>
+<script>
+window.__log=[];
+function dump(){ document.getElementById('err').textContent = window.__log.join('\n===\n') || 'no-error'; }
+window.addEventListener('error', function(e){
+  window.__log.push('ERROR: '+e.message+' @ '+String(e.filename).split('/').pop()+':'+e.lineno+':'+e.colno
+    + '\nSTACK: '+((e.error&&e.error.stack)||'(none)').split('\n').slice(0,6).join(' | '));
+  dump();
+});
+var _ce=console.error;
+console.error=function(){ window.__log.push('CONSOLE.ERROR: '+Array.prototype.map.call(arguments,function(a){
+  return (a&&a.stack)?a.stack.split('\n').slice(0,6).join(' | '):String(a); }).join(' ')); dump(); _ce.apply(console,arguments); };
+</script>
+<script>
+/* headless has no compositor, so rAF never fires: drive frames from a timer */
+window.requestAnimationFrame = function(cb){ return setTimeout(function(){ cb(performance.now()); }, 16); };
+</script>
+<script src="../js/core.js"></script>
+<script src="../js/audio.js"></script>
+<script src="../js/art.js"></script>
+<script src="../js/world.js"></script>
+<script src="../js/entities.js"></script>
+<script src="../js/game.js"></script>
+<script>
+var ticks=0, phase=0, phaseTick=0;
+var ROOMS=['glade','deep','maze','cave','mine','lair','cloud1','olympus','mush1','mushboss','shore','shoreEnd','drowned','drownedEnd','abyss','abyssEnd','cinder','cinderEnd','obsidian','obsidianEnd','molten','moltenEnd'];
+function note(m){ window.__log.push(m); dump(); }
+var iv=setInterval(function(){
+  try{
+    if(typeof G==='undefined') return;
+    ticks++; phaseTick++;
+    if(G.state==='title'){ Input.hitKeys['Enter']=true; return; }
+    if(G.state==='map'){ G.tutorialDone=true; G.mapMode='realm'; G.unlocked=9; var n=World.LEVELS[0].node; Input.mx=n.x; Input.my=n.y; Input.mhit=true; return; }
+    if(G.state!=='play'&&G.state!=='dead'&&G.state!=='victory') return;
+
+    if(phase===0){                                   // free play in the glade
+      Input.held['ArrowRight']=(phaseTick%4)!==0;
+      Input.held['ArrowLeft']=(phaseTick%37)===0;
+      Input.held['KeyS']=(phaseTick%9)<5;
+      if(phaseTick%30===0) Input.hitKeys['ArrowUp']=true;
+      Input.held['ArrowUp']=(phaseTick%30)<8;
+      if(phaseTick%17===0) Input.hitKeys['Space']=true;
+      if(phaseTick%53===0) Input.hitKeys['KeyD']=true;
+      if(phaseTick%11===0) Input.hitKeys['KeyF']=true;
+      Input.mx=40+(phaseTick*7)%300; Input.my=30+(phaseTick*3)%150;
+      if(phaseTick>600){ note('phase0 glade ok, x='+G.player.x.toFixed(0)+' coins='+G.player.coins+' hp='+G.player.hp); phase=1; phaseTick=0; }
+    } else if(phase===1){                            // the shop: hover and buy everything affordable
+      if(phaseTick===1){ G.player.coins=99999; G.unlocked=9; Input.hitKeys['Escape']=true; }
+      else if(phaseTick<200){
+        var row=Math.floor(phaseTick/22)%7;
+        Input.mx=SHOP_BOX.x+40; Input.my=SHOP_BOX.y+32+row*18+8;
+        if(phaseTick%22===10) Input.mhit=true;
+      } else if(phaseTick===210){ Input.hitKeys['Escape']=true; }
+      else if(phaseTick===215){ Input.hitKeys['KeyC']=true; }
+      else if(phaseTick>216&&phaseTick<250){ Input.typed='BEAR50'.charAt((phaseTick-217)%6); if(phaseTick===223) Input.hitKeys['Enter']=true; }
+      else if(phaseTick===249){ G.codes.found['BEAR50']=true; }
+      else if(phaseTick===250){ G.redeem('KIRBY'); }
+      else if(phaseTick===252){ G.redeem('ADMIN'); }
+      else if(phaseTick===256){ Input.hitKeys['Escape']=true; }
+      else if(phaseTick>260){ note('phase1 shop+codes ok, kirby='+G.codes.kirby+' tickets='+G.codes.tickets+' admin='+G.codes.admin+' purse='+G.purse()+', up='+JSON.stringify(G.player.up)+' maxHp='+G.player.maxHp+' coins='+G.player.coins); phase=2; phaseTick=0; }
+    } else if(phase===100){
+      // never reached; placeholder
+    } else if(phase>=2&&phase<=23){                   // 400 ticks inside every room
+      var id=ROOMS[phase-2];
+      if(phaseTick===1){ G.trans=null; G.player.hasKey=true; G.unlocked=9; G.level=0; for(var L=0;L<World.LEVELS.length;L++) if(World.LEVELS[L].rooms.indexOf(id)>=0) G.level=L; G.enterRoom(id,null); }
+      Input.held['ArrowRight']=(phaseTick%3)!==0;
+      Input.held['ArrowDown']=(phaseTick%11)===0;
+      Input.held['KeyS']=(phaseTick%7)<4;   // hold S on and off, to swim
+      if(phaseTick%26===0) Input.hitKeys['ArrowUp']=true;
+      if(phaseTick%13===0) Input.hitKeys['Space']=true;
+      if(phaseTick%41===0) Input.hitKeys['KeyD']=true;
+      if(phaseTick%17===0) G.player.up.wings=1;
+      if(phaseTick===2){ G.mobile=true; }
+      if(G.mobile && phaseTick>4){
+        var want=[]; 
+        if(phaseTick%3) want.push('ArrowRight');
+        if(phaseTick%26<4) want.push('ArrowUp');
+        if(phaseTick%13<3) want.push('Space');
+        if(phaseTick%41<3) want.push('KeyD');
+        var pts = want.map(function(c){
+          var b=null; for(var i=0;i<PAD.length;i++) if(PAD[i].code===c) b=PAD[i];
+          return { id:c, x:b.x, y:b.y };
+        });
+        // and a finger dragging the aim ring around
+        if(phaseTick%7<4) pts.push({ id:'aim', x:G.aimX + Math.sin(phaseTick*0.3)*4, y:G.aimY + Math.cos(phaseTick*0.4)*4 });
+        Input.touches = pts;
+      }
+      Input.held['KeyO']=(phaseTick%23)<9;
+      if(phaseTick%31===0) Input.hitKeys['KeyI']=true;
+      if(phaseTick%9===0) Input.hitKeys['KeyF']=true;
+      if(phaseTick%23===0) Input.hitKeys['KeyE']=true;
+      Input.mx=(phaseTick*11)%380; Input.my=(phaseTick*5)%210;
+      G.player.hp=G.player.maxHp;
+      if(phaseTick>150){ Input.touches=[]; G.mobile=false; note('room '+id+' ok, enemies='+G.enemies.length+' particles='+G.particles.length+' coins='+G.coins.length); phase++; phaseTick=0; }
+    } else if(phase===24){                            // kill the dragon
+      if(phaseTick===1){ G.trans=null; G.level=0; G.enterRoom('lair',null); G.boss.wake(); }
+      G.player.hp=G.player.maxHp; G.player.invuln=0.3;
+      if(phaseTick%4===0&&G.boss) G.boss.hurt(4,G.player.cx,G.player.cy);
+      if(G.state==='victory'||phaseTick>1500){ note('boss phase ok, state='+G.state); phase=25; phaseTick=0; }
+    } else if(phase===25){                            // death and respawn
+      if(phaseTick===1){ G.state='play'; G.enterRoom('glade',null); G.player.dead=false; G.player.hp=1; G.player.hurt(9,0,0); }
+      if(phaseTick>140) Input.hitKeys['Space']=true;
+      if(phaseTick>200){ note('death/respawn ok, state='+G.state+' hp='+G.player.hp); phase=26; phaseTick=0; }
+    } else {
+      clearInterval(iv);
+      note('FINAL state='+G.state+' ticks='+ticks
+        +' crash='+((typeof crashInfo!=='undefined'&&crashInfo)?(crashInfo.msg+' | '+crashInfo.stack.split('\n').slice(0,5).join(' | ')):'NONE'));
+    }
+  }catch(e){ note('DRIVER: '+e.stack); clearInterval(iv); }
+},16);
+</script>
+</body></html>
