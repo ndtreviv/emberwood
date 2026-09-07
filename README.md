@@ -164,6 +164,9 @@ move both survive it.
 | **Flip cut** | Swing in the air with a direction held | A front flip. The blade goes right round, so every side of you bites, and it reaches below your boots. You hang a little longer than a plain fall |
 | **Roll cut** | Swing part way through a roll | The roll runs on under it, the body stays low, and the blade sweeps out ahead |
 
+Both, and the air pierce with them, hit harder for every step of the **Duellist's Sigil**
+in the shop — up to three times as hard.
+
 Swinging in the air with **no** direction held is still a plain swing, as is any swing with
 your feet on the ground. Each cut has a short cooldown, so neither can be chained.
 
@@ -330,12 +333,25 @@ from the coins scattered through each area.
 | Windstep Charm | Shorter dash cooldown |
 | Lodestone | Coins drift toward you, straight through rock |
 | Ward Charm | A chance to shrug off a blow |
+| Duellist's Sigil | The flip cut, the roll cut and the air pierce all bite harder |
 | Forest Tonic | Refill your hearts now |
 | Stormfeather Wings | **999 coins.** A second jump in mid-air. Bought once, never scales |
 
 **Every realm you unlock raises every cap by two.** With one realm open the Whetstone
 stops at four; with all three open it goes to eight. Prices climb with each level
 bought, so the deeper stock is meant to be paid for with later-realm coins.
+
+The **Duellist's Sigil** is the exception: its eight steps are fixed, and never grow with
+the realms. Each step adds a quarter to the damage of the three moves that come out of a
+dive or a spin — the **flip cut**, the **roll cut** and the **air pierce**. The ordinary
+swing is untouched.
+
+| Step | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Damage | 1.25x | 1.5x | 1.75x | 2x | 2.25x | 2.5x | 2.75x | **3x** |
+| Costs | 20 | 27 | 36 | 47 | 63 | 84 | 112 | **150** |
+
+All eight together come to 539 coins.
 
 ## Files
 

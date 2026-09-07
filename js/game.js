@@ -134,7 +134,7 @@ function applySave(d) {
                         roomFlags: unpackFlags(st.roomFlags), flags: st.flags || {} };
   }
   p.coins = d.coins || 0;
-  p.up = Object.assign({ sword: 0, speed: 0, dash: 0, magnet: 0, armour: 0, wings: 0, mantle: 0, emberheart: 0, heart: 0 }, d.up || {});
+  p.up = Object.assign({ sword: 0, speed: 0, dash: 0, magnet: 0, armour: 0, special: 0, wings: 0, mantle: 0, emberheart: 0, heart: 0 }, d.up || {});
   p.maxHp = d.maxHp || 6;
   p.hp = clamp(d.hp || p.maxHp, 1, p.maxHp);
   p.hasKey = !!d.hasKey;
@@ -155,7 +155,7 @@ function slotTally(d) {
   let cap = 0, have = 0;
   for (const it of SHOP_ITEMS) {
     if (it.key === 'tonic') continue;              /* a drink, not progress */
-    const m = it.relic ? it.max : it.max + (realms - 1) * 2;
+    const m = shopFullMax(it);
     cap += m;
     have += Math.min(m, (d && d.up && d.up[it.key]) || 0);
   }
@@ -2695,20 +2695,28 @@ const SHOP_ITEMS = [
   { key: 'dash', name: 'WINDSTEP CHARM', desc: 'THE DASH RETURNS TO YOU SOONER', base: 32, mul: 1.8, max: 3, icon: () => Art.item.ring },
   { key: 'magnet', name: 'LODESTONE', desc: 'COINS COME FROM FURTHER OFF, STRAIGHT THROUGH ROCK', base: 18, mul: 1.8, max: 3, icon: () => Art.item.magnet },
   { key: 'armour', name: 'WARD CHARM', desc: 'A CHANCE TO SHRUG OFF ANY BLOW', base: 34, mul: 1.8, max: 3, icon: () => Art.item.ward },
+  /* eight steps of a quarter each: 1.25x at the first, 3x at the last.
+     20 coins for the first step, 150 for the last. */
+  { key: 'special', name: 'DUELLISTS SIGIL', desc: 'THE FLIP, THE ROLL CUT AND THE DIVE ALL BITE HARDER',
+    base: 20, mul: 1.3335, max: 8, fixed: true, icon: () => Art.item.sigil },
   { key: 'wings', name: 'STORMFEATHER WINGS', desc: 'A SECOND JUMP IN MID AIR', base: 999, mul: 1, max: 1, relic: true, unlockAt: 1, icon: () => Art.item.wings },
   { key: 'mantle', name: 'RIPTIDE MANTLE', desc: 'YOUR DASH CUTS CLEAN THROUGH ANYTHING IT TOUCHES', base: 4500, mul: 1, max: 1, relic: true, unlockAt: 3, icon: () => Art.item.mantle },
   { key: 'emberheart', name: 'THE EMBERHEART', desc: 'EVERY SWORD SWING LOOSES A BURNING WAVE', base: 12000, mul: 1, max: 1, relic: true, unlockAt: 6, icon: () => Art.item.emberheart },
   { key: 'tonic', name: 'FOREST TONIC', desc: 'DRINK NOW AND REFILL EVERY HEART', base: 8, mul: 1.0, max: 99, icon: () => Art.item.potion }
 ];
 function shopLevel(it) { const p = G.player; return it.key === 'tonic' ? 0 : (p.up[it.key] || 0); }
-/* every realm you open lets the pedlar carry a deeper stock */
-function shopMax(it) { return (it.key === 'tonic' || it.relic) ? it.max : it.max + (G.unlocked - 1) * 2; }
+/* every realm you open lets the pedlar carry a deeper stock, except for the
+   rows whose steps are fixed: the tonic, the relics and the sigil */
+function shopStepped(it) { return it.key !== 'tonic' && !it.relic && !it.fixed; }
+function shopMax(it) { return shopStepped(it) ? it.max + (G.unlocked - 1) * 2 : it.max; }
+/* the same ceiling, with every realm open — what a finished file holds */
+function shopFullMax(it) { return shopStepped(it) ? it.max + (World.LEVELS.length - 1) * 2 : it.max; }
 /* relics only appear once you have reached the realm that forges them */
 function shopVisible(it) { return it.unlockAt === undefined || G.unlocked > it.unlockAt; }
 function shopRows() { return SHOP_ITEMS.filter(shopVisible); }
 function shopPrice(it) { return Math.round(it.base * Math.pow(it.mul, shopLevel(it))); }
-const SHOP_BOX = { x: 34, y: 10, w: 316, h: 196 };
-function shopRowRect(i) { return { x: SHOP_BOX.x + 8, y: SHOP_BOX.y + 30 + i * 17, w: SHOP_BOX.w - 16, h: 16 }; }
+const SHOP_BOX = { x: 34, y: 6, w: 316, h: 206 };
+function shopRowRect(i) { return { x: SHOP_BOX.x + 8, y: SHOP_BOX.y + 26 + i * 15, w: SHOP_BOX.w - 16, h: 14 }; }
 function shopGearRect() { return { x: SHOP_BOX.x + SHOP_BOX.w - 36, y: SHOP_BOX.y + 5, w: 13, h: 13 }; }
 function updateShop(dt) {
   void dt;
@@ -2785,19 +2793,19 @@ function drawShop() {
     if (!afford) ctx.globalAlpha = 0.45;
     ctx.drawImage(ic, r.x + 4, r.y + Math.round((r.h - ic.height) / 2));
     ctx.restore();
-    drawText(ctx, it.name, r.x + 24, r.y + 3, maxed ? '#7f8aa3' : (afford ? '#f2e2b8' : '#9a8f8f'), 1, 'left');
+    drawText(ctx, it.name, r.x + 24, r.y + 2, maxed ? '#7f8aa3' : (afford ? '#f2e2b8' : '#9a8f8f'), 1, 'left');
     /* level pips */
     if (it.key !== 'tonic') {
       for (let k = 0; k < mx; k++) {
         ctx.fillStyle = k < lvl ? '#6fc46a' : '#3a3350';
-        ctx.fillRect(r.x + 24 + k * 3, r.y + 11, 2, 3);
+        ctx.fillRect(r.x + 24 + k * 3, r.y + 10, 2, 3);
       }
     }
-    if (maxed) drawText(ctx, 'MAX', r.x + r.w - 8, r.y + 5, '#6fc46a', 1, 'right');
-    else if (ticketable) drawText(ctx, 'FREE', r.x + r.w - 8, r.y + 5, '#6fc46a', 1, 'right');
+    if (maxed) drawText(ctx, 'MAX', r.x + r.w - 8, r.y + 4, '#6fc46a', 1, 'right');
+    else if (ticketable) drawText(ctx, 'FREE', r.x + r.w - 8, r.y + 4, '#6fc46a', 1, 'right');
     else {
-      drawText(ctx, String(cost), r.x + r.w - 20, r.y + 5, afford ? '#ffe98a' : '#c9403a', 1, 'right');
-      ctx.drawImage(Art.item.coin[0], r.x + r.w - 17, r.y + 3);
+      drawText(ctx, String(cost), r.x + r.w - 20, r.y + 4, afford ? '#ffe98a' : '#c9403a', 1, 'right');
+      ctx.drawImage(Art.item.coin[0], r.x + r.w - 17, r.y + 2);
     }
     if (it.relic) { ctx.fillStyle = '#c68e3f'; ctx.fillRect(r.x, r.y, 1, r.h); ctx.fillRect(r.x + 1, r.y, 1, 1); ctx.fillRect(r.x + 1, r.y + r.h - 1, 1, 1); }
   }

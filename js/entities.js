@@ -104,7 +104,7 @@ class Player {
     this.trail = [];
     this.stepT = 0; this.wasGrounded = false; this.inWater = false;
     this.topDir = 0;
-    this.up = { sword: 0, speed: 0, dash: 0, magnet: 0, armour: 0, wings: 0, mantle: 0, emberheart: 0 };
+    this.up = { sword: 0, speed: 0, dash: 0, magnet: 0, armour: 0, special: 0, wings: 0, mantle: 0, emberheart: 0 };
     this.airJumps = 0;
     this.dead = false; this.deadT = 0;
     this.spawnFlash = 0;
@@ -151,6 +151,10 @@ class Player {
   get dashCdMax() { return 1.15 * Math.pow(0.76, this.up.dash); }
   get magnetR() { return 70 + this.up.magnet * 40; }
   get atkDmg() { return 2 + this.up.sword; }
+  /* the sigil sharpens the moves that come out of a dive or a spin:
+     the air pierce, the flip cut and the roll cut. A quarter a step. */
+  get specialMult() { return 1 + (this.up.special || 0) * 0.25; }
+  get specialDmg() { return Math.max(1, Math.round(this.atkDmg * this.specialMult)); }
 
   hurt(dmg, fromX, fromY) {
     if (this.invuln > 0 || this.dashT > 0 || this.dead) return false;
@@ -253,7 +257,7 @@ class Player {
       if (e.dead || this.spinHit.has(e)) continue;
       if (!rectsOverlap(box, e.box())) continue;
       this.spinHit.add(e);
-      e.hurt(this.atkDmg, this.cx, this.cy, 2);      /* 2 = double the coin drop */
+      e.hurt(this.specialDmg, this.cx, this.cy, 2);  /* 2 = double the coin drop */
       struck = true; G.tutMark('fight');
     }
     /* a shot caught on a spinning blade goes back the same way */
@@ -262,7 +266,7 @@ class Player {
       if (this.spinHit.has(pr)) continue;
       if (!rectsOverlap(box, { x: pr.x - 8, y: pr.y - 8, w: 16, h: 16 })) continue;
       this.spinHit.add(pr);
-      deflectShot(pr, this.atkDmg * 2);
+      deflectShot(pr, this.specialDmg * 2);
       G.addCombo(); G.tutMark('parry');
       Snd.parry(); G.shake(4); G.hitStop(0.06);
     }
@@ -343,7 +347,7 @@ class Player {
       if (en.dead || this.pierceHit.has(en)) continue;
       if (!rectsOverlap(box, en.box())) continue;
       this.pierceHit.add(en);
-      en.hurt(this.atkDmg, this.cx, this.cy, 2);      /* 2 = double the coin drop */
+      en.hurt(this.specialDmg, this.cx, this.cy, 2);  /* 2 = double the coin drop */
       this.endPierce(true);
       return;
     }

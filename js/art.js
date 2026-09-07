@@ -1017,6 +1017,24 @@ function ringIcon(col) {
   g.outline(C('#20182c'));
   return g;
 }
+/* the duellist's sigil: a spinning blade struck through a ring, for the
+   upgrade that sharpens the flip, the roll cut and the dive */
+function sigilIcon() {
+  const g = new Pix(14, 14);
+  /* the turning ring */
+  g.ell(7, 7, 6, 6, C('#c68e3f'));
+  g.ell(7, 7, 4, 4, [0, 0, 0, 0]);
+  /* a gap, so the ring reads as a sweep rather than a band */
+  g.rect(8, 0, 6, 4, [0, 0, 0, 0]);
+  /* the blade through it, corner to corner */
+  g.thick(3, 11, 11, 3, 2, C('#c9d4e8'));
+  g.line(3, 10, 10, 3, C('#f6f8ff'));
+  g.rect(2, 10, 3, 3, C('#8a5f26'));           /* the grip */
+  g.set(11, 2, C('#fff4d6'));                  /* the point catches the light */
+  g.shade({ top: 0.22, bot: 0.2 });
+  g.outline(C('#20182c'));
+  return g;
+}
 function paperSprite() {
   const g = new Pix(16, 18), r = new RNG(707);
   g.rect(2, 1, 12, 16, C('#ebdcb6'));
@@ -2965,6 +2983,7 @@ Art.steps = function () {
     Art.item.ring = ringIcon('#59c9e8').canvas();
     Art.item.ward = ringIcon('#c9403a').canvas();
     Art.item.magnet = magnetIcon().canvas();
+    Art.item.sigil = sigilIcon().canvas();
     Art.item.wings = wingsIcon().canvas();
     Art.item.mantle = mantleIcon().canvas();
     Art.item.emberheart = emberheartIcon().canvas();
