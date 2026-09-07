@@ -241,6 +241,20 @@ Six areas make up Emberwood: forest, deep wood, a top-down maze holding the cave
 cavern, an old mineshaft, and the dragon's lair. Aether City is marble ruins on the cloud
 tops. Sporewood has **spring caps** that launch you past any jump.
 
+Every realm has its own track. The deep is bright and bubbly at the shore, slower and
+dreamier in the hall, and wide and sparse in the trench; the ash is warm and lilting. The
+guardians of chapters two and three each have a driving track of their own, so a fight
+sounds nothing like the walk in.
+
+| Track | Where | Feel |
+| --- | --- | --- |
+| `tide` | Tidewrack | D major, skipping like water off stones |
+| `deep` | Drowned Hall | slower, warm, notes falling like drops |
+| `trench` | The Trench | wide and slow, a long way between notes |
+| `ember` | all three ash realms | F major, warm and lilting |
+| `bossDeep` | the three guardians of the deep | D minor, driving |
+| `bossAsh` | the three guardians of the ash | C minor, lower and faster than anything before |
+
 ### Chapter Two — The Sunken Depths
 
 | Realm | Guardian |
@@ -391,7 +405,7 @@ All eight together come to 539 coins.
 | --- | --- |
 | `index.html` | Canvas, page shell, script order |
 | `js/core.js` | Maths, seeded RNG, the `Pix` pixel buffer, the 5x7 bitmap font, input, keybinds, local storage, display scaling and fullscreen |
-| `js/audio.js` | Web Audio synthesizer: sound effects, seven music tracks, wind and birdsong |
+| `js/audio.js` | Web Audio synthesizer: sound effects, thirteen music tracks, wind and birdsong |
 | `js/art.js` | Every sprite, tile, prop, backdrop and the map, drawn pixel by pixel |
 | `js/world.js` | Tile types, the `Room` type, the level generators and the realm table |
 | `js/entities.js` | Hero, all enemies, four bosses, projectiles, coins, particles |

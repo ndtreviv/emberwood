@@ -1,6 +1,6 @@
 /* ============================================================
    audio.js — Web Audio synthesizer.
-   Sound effects, three music tracks and forest ambience.
+   Sound effects, thirteen music tracks and forest ambience.
    No external files: every sound is generated.
    ============================================================ */
 'use strict';
@@ -432,6 +432,65 @@ const Snd = {
       lead: [466.16, 0, 554.37, 0, 622.25, 554.37, 466.16, 0,
              415.30, 0, 466.16, 0, 554.37, 0, 415.30, 369.99],
       padGain: 0.10, leadGain: 0.08, bassGain: 0.12, drums: true, leadType: 'triangle'
+    },
+    /* ---- four calm ones, bright and bubbly ---- */
+    tide: {
+      /* Tidewrack: D major, the lead skipping like water off stones */
+      bpm: 100,
+      chords: [[293.66, 369.99, 440.00], [220.00, 277.18, 329.63],
+               [246.94, 293.66, 369.99], [196.00, 246.94, 293.66]],
+      lead: [587.33, 739.99, 880.00, 739.99, 987.77, 880.00, 739.99, 659.25,
+             587.33, 659.25, 739.99, 880.00, 1174.66, 987.77, 880.00, 739.99],
+      padGain: 0.095, leadGain: 0.08, bassGain: 0.10, drums: true, leadType: 'triangle'
+    },
+    deep: {
+      /* the Drowned Hall: slower, warm, notes falling like drops */
+      bpm: 78,
+      chords: [[220.00, 261.63, 329.63], [174.61, 220.00, 261.63],
+               [261.63, 329.63, 392.00], [196.00, 246.94, 293.66]],
+      lead: [440.00, 0, 523.25, 0, 587.33, 523.25, 0, 440.00,
+             392.00, 0, 440.00, 523.25, 0, 587.33, 0, 523.25],
+      padGain: 0.11, leadGain: 0.07, bassGain: 0.10, drums: false, leadType: 'triangle'
+    },
+    trench: {
+      /* the Trench: wide and slow, with a long way between notes.
+         A minor throughout: Am, Dm, F, Em */
+      bpm: 68,
+      chords: [[220.00, 261.63, 329.63], [146.83, 174.61, 220.00],
+               [174.61, 220.00, 261.63], [164.81, 196.00, 246.94]],
+      lead: [440.00, 0, 0, 523.25, 0, 0, 587.33, 0,
+             392.00, 0, 0, 440.00, 0, 329.63, 0, 0],
+      padGain: 0.12, leadGain: 0.055, bassGain: 0.11, drums: false, leadType: 'triangle'
+    },
+    ember: {
+      /* the Ashen Reach at rest: F major, warm and lilting */
+      bpm: 88,
+      chords: [[174.61, 220.00, 261.63], [233.08, 293.66, 349.23],
+               [261.63, 329.63, 392.00], [293.66, 349.23, 440.00]],
+      lead: [698.46, 783.99, 880.00, 1046.50, 880.00, 783.99, 698.46, 587.33,
+             523.25, 587.33, 698.46, 783.99, 880.00, 783.99, 698.46, 587.33],
+      padGain: 0.10, leadGain: 0.078, bassGain: 0.11, drums: true, leadType: 'triangle'
+    },
+    /* ---- and two for the guardians of the later chapters ---- */
+    bossDeep: {
+      /* the deep guardians: D minor, driving, the lead hammering the root.
+         Dm, Bb, F, Am - every note of it out of the one scale */
+      bpm: 138,
+      chords: [[146.83, 174.61, 220.00], [116.54, 146.83, 174.61],
+               [174.61, 220.00, 261.63], [110.00, 130.81, 164.81]],
+      lead: [587.33, 587.33, 698.46, 587.33, 523.25, 587.33, 880.00, 587.33,
+             523.25, 523.25, 659.25, 523.25, 466.16, 523.25, 659.25, 698.46],
+      padGain: 0.075, leadGain: 0.105, bassGain: 0.14, drums: true, leadType: 'square'
+    },
+    bossAsh: {
+      /* the last three: lower, faster and harder than anything before it.
+         C minor: Cm, Ab, Fm, Gm */
+      bpm: 160,
+      chords: [[130.81, 155.56, 196.00], [103.83, 130.81, 155.56],
+               [174.61, 207.65, 261.63], [196.00, 233.08, 293.66]],
+      lead: [523.25, 622.25, 523.25, 783.99, 698.46, 622.25, 523.25, 466.16,
+             415.30, 523.25, 415.30, 698.46, 622.25, 523.25, 466.16, 392.00],
+      padGain: 0.07, leadGain: 0.115, bassGain: 0.16, drums: true, leadType: 'sawtooth'
     },
     victory: {
       bpm: 96,

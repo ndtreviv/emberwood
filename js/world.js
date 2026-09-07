@@ -593,7 +593,7 @@ function buildGullet(seed) {
   const rng = new RNG(seed);
   const W = 40, H = 58;
   const room = new Room({ id: 'gullet', name: 'THE GULLET', mode: 'side',
-                          w: W, h: H, music: 'boss', bg: 'abyss', ambient: 0.1, dark: 0.42 });
+                          w: W, h: H, music: 'bossDeep', bg: 'abyss', ambient: 0.1, dark: 0.42 });
   room.fillRect(0, 0, W, H, T_EMPTY);
   const L = 4, R = W - 4;                      /* the walls of the throat */
   for (let y = 0; y < H; y++) {
@@ -1064,7 +1064,7 @@ function buildChapterArena(o) {
   const rng = new RNG(o.seed);
   const W = 52, H = 26;
   const room = new Room({ id: o.id, name: o.name, mode: 'side', w: W, h: H,
-                          music: 'boss', bg: o.bg, ambient: o.ambient, dark: o.dark || 0 });
+                          music: o.music || 'boss', bg: o.bg, ambient: o.ambient, dark: o.dark || 0 });
   room.fillRect(0, 0, W, H, o.ground);
   room.fillRect(3, 3, W - 6, H - 8, T_EMPTY);
   for (let x = 3; x < W - 3; x++) room.set(x, H - 5, o.groundTop);
@@ -1191,23 +1191,23 @@ World.build = function () {
   const seaDecor = [{ kind: 'coral', n: 3, p: 0.22 }, { kind: 'kelp', n: 3, p: 0.26 },
                     { kind: 'rock', n: 3, p: 0.06 }, { kind: 'crystal', n: 3, p: 0.05 }];
   const deepRooms = [
-    { id: 'shore', name: 'TIDEWRACK SHORE', seed: 4101, w: 150, pools: 4, ambient: 0.4, dark: 0,
+    { id: 'shore', music: 'tide', name: 'TIDEWRACK SHORE', seed: 4101, w: 150, pools: 4, ambient: 0.4, dark: 0,
       spawns: [{ type: 'crab', n: 14 }, { type: 'jelly', n: 12, air: true }, { type: 'angler', n: 6, air: true }],
       to: 'shoreEnd', toLabel: 'THE WARDEN', boss: 'tideWarden' },
-    { id: 'drowned', name: 'THE DROWNED HALL', seed: 4102, w: 158, pools: 7, ambient: 0.3, dark: 0.3,
+    { id: 'drowned', music: 'deep', name: 'THE DROWNED HALL', seed: 4102, w: 158, pools: 7, ambient: 0.3, dark: 0.3,
       spawns: [{ type: 'crab', n: 12 }, { type: 'jelly', n: 16, air: true }, { type: 'angler', n: 10, air: true }],
       to: 'drownedEnd', toLabel: 'THE KRAKEN MAW', boss: 'kraken' },
-    { id: 'abyss', name: 'THE ABYSSAL TRENCH', seed: 4103, w: 166, pools: 9, ambient: 0.2, dark: 0.45,
+    { id: 'abyss', music: 'trench', name: 'THE ABYSSAL TRENCH', seed: 4103, w: 166, pools: 9, ambient: 0.2, dark: 0.45,
       spawns: [{ type: 'crab', n: 12 }, { type: 'jelly', n: 18, air: true }, { type: 'angler', n: 14, air: true }],
       to: 'abyssEnd', toLabel: 'THE LEVIATHAN', boss: 'leviathan' }
   ];
   for (const d of deepRooms) {
     World.rooms[d.id] = buildChapterRoom(Object.assign({}, d, {
-      music: 'spore', bg: 'deep', ground: T_DEEPSTONE, groundTop: T_DEEPTOP, plat: T_SAND,
+      bg: 'deep', ground: T_DEEPSTONE, groundTop: T_DEEPTOP, plat: T_SAND,
       decor: seaDecor, doorKind: 'mush'
     }));
     World.rooms[d.id + 'End'] = buildChapterArena({
-      id: d.id + 'End', name: d.toLabel, seed: d.seed + 500, bg: 'deep',
+      id: d.id + 'End', name: d.toLabel, seed: d.seed + 500, bg: 'deep', music: 'bossDeep',
       ground: T_DEEPSTONE, groundTop: T_DEEPTOP, plat: T_SAND,
       ambient: d.ambient, dark: d.dark, decor: seaDecor, boss: d.boss
     });
@@ -1229,11 +1229,11 @@ World.build = function () {
   ];
   for (const d of ashRooms) {
     World.rooms[d.id] = buildChapterRoom(Object.assign({}, d, {
-      music: 'boss', bg: 'ash', ground: T_ASH, groundTop: T_ASHTOP, plat: T_OBSID,
+      music: 'ember', bg: 'ash', ground: T_ASH, groundTop: T_ASHTOP, plat: T_OBSID,
       decor: ashDecor, doorKind: 'cave'
     }));
     World.rooms[d.id + 'End'] = buildChapterArena({
-      id: d.id + 'End', name: d.toLabel, seed: d.seed + 500, bg: 'ash',
+      id: d.id + 'End', name: d.toLabel, seed: d.seed + 500, bg: 'ash', music: 'bossAsh',
       ground: T_ASH, groundTop: T_ASHTOP, plat: T_OBSID,
       ambient: d.ambient, dark: d.dark, decor: ashDecor, boss: d.boss
     });
