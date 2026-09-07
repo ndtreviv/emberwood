@@ -1035,6 +1035,22 @@ function sigilIcon() {
   g.outline(C('#20182c'));
   return g;
 }
+/* the quest roll: a scroll with a tick on it, for the chart */
+function questsIcon() {
+  const g = new Pix(11, 11);
+  g.rect(1, 1, 9, 9, C('#ebdcb6'));
+  g.rect(1, 1, 9, 1, C('#fff4d6'));
+  g.rect(1, 9, 9, 1, C('#c0a97e'));
+  g.rect(0, 0, 1, 11, C('#8a6a3a'));
+  g.rect(10, 0, 1, 11, C('#8a6a3a'));
+  /* two ruled lines and a tick over them */
+  g.rect(3, 3, 5, 1, C('#b9a375'));
+  g.rect(3, 5, 5, 1, C('#b9a375'));
+  g.thick(3, 7, 5, 9, 1, C('#2f7a34'));
+  g.thick(5, 9, 8, 4, 1, C('#3f9a3f'));
+  g.outline(C('#20182c'));
+  return g;
+}
 function paperSprite() {
   const g = new Pix(16, 18), r = new RNG(707);
   g.rect(2, 1, 12, 16, C('#ebdcb6'));
@@ -2146,8 +2162,23 @@ function leviathanFrame(mode, i, n) {           /* level 6 */
     g.disc(x, y + 2, Math.max(1, 6 - t * 4), C('#8fd0c0'));
     if (k % 2 === 0) g.poly([[x - 2, y - 8 + t * 4], [x, y - 14 + t * 7], [x + 2, y - 8 + t * 4]], C('#c9f0e0'));
   }
-  /* head */
+  /* the neck, running from the head of the coil up to the skull. Without it
+     the head floated clear of the body. */
+  const ang0 = p * 0.4;
+  const nx = cx - 6 + Math.cos(ang0) * 10, ny = base - 22 + Math.sin(ang0) * 7 + bob;
   const hx = cx + 22, hy = base - 56 + bob;
+  const bx = hx - 9, by = hy + 4;                 /* where the neck meets the skull */
+  for (let k = 0; k <= 12; k++) {
+    const t = k / 12;
+    /* a slight bow, so the neck arcs rather than running straight */
+    const x = lerp(nx, bx, t) + Math.sin(t * Math.PI) * 5;
+    const y = lerp(ny, by, t) - Math.sin(t * Math.PI) * 3;
+    const r = 9.5 - t * 3.2;
+    g.disc(x, y, r, t > 0.5 ? C('#2f8080') : C('#1d5a5a'));
+    g.disc(x, y + 1.6, Math.max(1, r - 4), C('#8fd0c0'));
+    if (k % 3 === 0) g.poly([[x - 2, y - r + 1], [x, y - r - 5], [x + 2, y - r + 1]], C('#c9f0e0'));
+  }
+  /* head */
   g.ell(hx, hy, 13, 9, C('#2f8080'));
   g.ell(hx + 7, hy + 2, 9, 5, C('#2f8080'));
   const open = mode === 'attack' ? 8 : 2;
@@ -2984,6 +3015,7 @@ Art.steps = function () {
     Art.item.ward = ringIcon('#c9403a').canvas();
     Art.item.magnet = magnetIcon().canvas();
     Art.item.sigil = sigilIcon().canvas();
+    Art.ui.quests = questsIcon().canvas();
     Art.item.wings = wingsIcon().canvas();
     Art.item.mantle = mantleIcon().canvas();
     Art.item.emberheart = emberheartIcon().canvas();

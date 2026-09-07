@@ -49,6 +49,7 @@ in the shop, so it is reachable at any time. **BACK** closes it.
 | **MUSIC** | How loud the tracks are |
 | **SOUND** | How loud blows, coins and the wind are |
 | **BUTTONS** | How bright the touch buttons sit over the game |
+| **SHAKE** | How hard the view shakes. At zero it never shakes at all |
 
 Each slider blips as you drag it, pitched to where the handle sits, so you hear the value
 climb and fall. A volume slider sends its blip through the very bus it sets, so dragging
@@ -273,6 +274,29 @@ who has ten times. While a guardian is on its feet the air pierce is
 rationed to one dive a second; a bar under the dash meter shows when it is back.
 
 Dying costs you a fifth of your coins, and each realm claims them in its own words.
+
+## Quests
+
+The chart carries a **quest roll** beside the codes panel. It holds ten standing tasks —
+creatures felled, papers found, realms cleared, upgrades bought, and the longest chain you
+have struck. Each shows how far along you are, and pays **coins or free-upgrade tickets**
+when you take it.
+
+A green row is ready; click it to take the reward. A badge on the roll counts what is
+waiting. Quests are kept per save file, and each pays once.
+
+| Quest | Asks for | Pays |
+| --- | --- | --- |
+| First Blood | 25 felled | 150 coins |
+| Woodsman | 150 felled | 700 coins |
+| Slayer | 500 felled | 1 ticket |
+| Paper Trail | 6 papers | 500 coins |
+| Archivist | all 18 papers | 3 tickets |
+| Two Realms Down | 2 realms cleared | 600 coins |
+| Half the Road | 5 realms cleared | 2 tickets |
+| The Whole Road | all 9 realms cleared | 5 tickets |
+| Well Armed | 12 upgrades bought | 900 coins |
+| Ten in a Row | a 10 hit chain | 1 ticket |
 
 ## Codes
 

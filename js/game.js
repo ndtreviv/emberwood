@@ -25,6 +25,8 @@ const G = {
   waves: [],
   codes: { found: {}, used: {}, tickets: 0, admin: false },
   codesOpen: false, codeBuf: '', codeMsg: '', codeMsgT: 0, codeMsgOk: false,
+  questsOpen: false, questSel: -1, questMsg: '', questMsgT: 0,
+  quests: { claimed: {} },
   codeKeyHit: null, codeKeyFlash: 0, codeKeyOver: null,
   mobile: false, settingsOpen: false, padOn: {},
   tutorialDone: false, mapMode: 'realm',
@@ -38,7 +40,7 @@ const G = {
 
   /* which of the three save files is in play, and what the player chose in settings */
   slot: 0, fileSel: -1, eraseArm: -1,
-  opts: { mobile: null, music: 0.7, sfx: 0.8, padAlpha: 0.5, keys: null },
+  opts: { mobile: null, music: 0.7, sfx: 0.8, padAlpha: 0.5, shake: 1, keys: null },
   setTab: 0, setSel: -1, setDrag: null, setStep: -1, bindWait: null
 };
 
@@ -65,6 +67,7 @@ function loadOptions() {
     if (typeof o.music === 'number') G.opts.music = clamp(o.music, 0, 1);
     if (typeof o.sfx === 'number') G.opts.sfx = clamp(o.sfx, 0, 1);
     if (typeof o.padAlpha === 'number') G.opts.padAlpha = clamp(o.padAlpha, 0.12, 1);
+    if (typeof o.shake === 'number') G.opts.shake = clamp(o.shake, 0, 1);
     if (o.keys) G.opts.keys = o.keys;
   }
   applyOptions();
@@ -108,6 +111,8 @@ function packSave() {
     maxHp: p ? p.maxHp : 6, hp: p ? p.hp : 6, hasKey: p ? p.hasKey : false,
     codes: { found: G.codes.found, used: G.codes.used, tickets: G.codes.tickets,
              admin: G.codes.admin },
+    quests: { claimed: (G.quests && G.quests.claimed) || {} },
+    comboBest: G.comboBest || 0,
     tut: G.tut, stats: G.stats
   };
 }
@@ -143,6 +148,8 @@ function applySave(d) {
   G.codes.used = d.codes && d.codes.used || {};
   G.codes.tickets = (d.codes && d.codes.tickets) || 0;
   G.codes.admin = !!(d.codes && d.codes.admin);
+  G.quests = { claimed: (d.quests && d.quests.claimed) || {} };
+  G.comboBest = d.comboBest || 0;
   G.tut = Object.assign({ move: 0, fight: 0, swim: 0, dash: 0, pierce: 0, climb: 0, parry: 0 }, d.tut || {});
   G.stats = Object.assign({ coins: 0, kills: 0, time: 0, deaths: 0 }, d.stats || {});
   if (G.codes.admin) { try { Art.buildGold(); } catch (e) { /* art may not be up yet */ } }
@@ -175,7 +182,7 @@ function slotPercent(d) {
 }
 
 /* ---------- effects ---------- */
-G.shake = function (a) { G.shakeAmt = Math.min(12, G.shakeAmt + a); };
+G.shake = function (a) { G.shakeAmt = Math.min(12, G.shakeAmt + a * G.opts.shake); };
 G.flash = function (a) { G.flashAmt = Math.max(G.flashAmt, a); };
 G.hitStop = function (t) { G.hitStopT = Math.max(G.hitStopT, t); };
 G.banner = function (txt, dur) { G.bannerTxt = txt; G.bannerT = dur || 2.0; };
@@ -393,13 +400,20 @@ G.swallowInto = function (boss) {
 };
 /* cut your way out at the top, and the fight picks up where it left off */
 G.escapeGullet = function () {
-  const sw = G.swallowed;
-  if (!sw) { G.leaveLevel(); return; }
+  let sw = G.swallowed;
+  if (!sw) {
+    /* no record of being swallowed, so head for the guardian's own room
+       rather than dropping the player out to the chart */
+    const lv = World.LEVELS[G.level];
+    const back = lv && World.rooms[lv.boss] ? lv.boss : (lv ? lv.start : 'glade');
+    sw = { roomId: back, level: G.level, bossHp: null, x: null, y: null };
+  }
   G.swallowed = null;
   G.acid = null;
   G.escaped = sw;
   G.banner('BACK INTO THE FIGHT', 2.4);
-  G.trans = { t: 0, phase: 'out', dur: 0.5, id: sw.roomId, exit: { spawnAt: { x: sw.x, y: sw.y } }, escaped: true };
+  const exit = (sw.x === null) ? null : { spawnAt: { x: sw.x, y: sw.y } };
+  G.trans = { t: 0, phase: 'out', dur: 0.5, id: sw.roomId, exit: exit, escaped: true };
 };
 
 /* ---------- transitions: a pixel flush between areas ---------- */
@@ -600,6 +614,7 @@ function startGame(slot) {
   G.codes = { found: {}, used: {}, tickets: 0, admin: false };
   G.tut = { move: 0, fight: 0, swim: 0, dash: 0, pierce: 0, climb: 0, parry: 0 };
   G.relicSeen = {}; G.relicShow = null; G.swallowed = null; G.acid = null;
+  G.quests = { claimed: {} }; G.comboBest = 0; G.questsOpen = false;
   const d = readSlot(G.slot);
   if (d && d.used) applySave(d);
   G.mapMode = G.tutorialDone ? 'realm' : 'tutorial';
@@ -1188,6 +1203,7 @@ function updateMap(dt) {
   G.overMapBack = Input.over(backR);
   G.overMapGear = Input.over(gearR);
   if (G.settingsOpen) { updateSettings(); return; }
+  if (G.questsOpen) { updateQuests(dt); return; }
   if (Input.tap(gearR)) { G.settingsOpen = true; G.setSel = -1; Snd.ui(); return; }
   if (Input.tap(backR) || Input.hit('Escape')) { G.saveGame(); Snd.ui(); openFiles(); return; }
 
@@ -1197,8 +1213,12 @@ function updateMap(dt) {
     else { Snd.uiBad(); G.banner('CLEAR THE REALM BEFORE IT', 1.8); }
   }
   const cbtn = { x: 6, y: VH - 46, w: 22, h: 22 };
+  const qbtn = { x: 32, y: VH - 46, w: 22, h: 22 };
   G.overCodeIcon = Input.over(cbtn);
+  G.overQuestIcon = Input.over(qbtn);
+  if (G.questsOpen) { updateQuests(dt); return; }
   if (G.codesOpen) { updateCodes(dt); return; }
+  if (Input.tap(qbtn)) { G.questsOpen = true; G.questSel = -1; G.questMsgT = 0; Snd.ui(); return; }
   if (Input.tap(cbtn) || Input.actHit('codes')) {
     G.codesOpen = true; G.codeBuf = ''; G.codeMsgT = 0; Snd.ui(); return;
   }
@@ -1323,6 +1343,21 @@ function drawMap() {
                        drawText(ctx, String(Math.min(9, unspent)), 26, VH - 43, '#12200e', 1, 'left'); }
     if (chov) drawText(ctx, 'CODES', 17, VH - 21, '#9be89a', 1, 'center', '#3a2c1c');
   }
+  /* the quest roll, beside it */
+  {
+    const qhov = G.overQuestIcon;
+    if (qhov) {
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.25;
+      ctx.fillStyle = '#ffd66a'; ctx.beginPath(); ctx.arc(43, VH - 35, 16, 0, TAU); ctx.fill(); ctx.restore();
+    }
+    blit(ctx, Art.ui.quests, 43, VH - 35, 5, 5);
+    const ready = questsReady();
+    if (ready > 0) {
+      ctx.fillStyle = '#6fc46a'; ctx.fillRect(48, VH - 44, 6, 6);
+      drawText(ctx, String(Math.min(9, ready)), 50, VH - 43, '#12200e', 1, 'left');
+    }
+    if (qhov) drawText(ctx, 'QUESTS', 43, VH - 21, '#ffe98a', 1, 'center', '#3a2c1c');
+  }
   if (G.player) {
     ctx.drawImage(Art.item.coin[Math.floor(G.mapT / 0.09) % 8], 6, VH - 28);
     drawText(ctx, G.purse(), 20, VH - 26, '#5a4326', 1, 'left', '#ebdcb6');
@@ -1359,6 +1394,7 @@ function drawMap() {
     ctx.fillRect(0, 0, VW, VH); ctx.restore();
   }
   if (G.codesOpen) drawCodes();
+  if (G.questsOpen) drawQuests();
   if (G.settingsOpen) drawSettings();
 }
 
@@ -2314,14 +2350,15 @@ const SLIDER_STEPS = 22;      /* notches the drag blips through */
 const SLIDERS = [
   { key: 'music', name: 'MUSIC', min: 0, max: 1, hint: 'THE TRACKS' },
   { key: 'sfx', name: 'SOUND', min: 0, max: 1, hint: 'BLOWS, COINS AND THE WIND' },
-  { key: 'padAlpha', name: 'BUTTONS', min: 0.12, max: 1, hint: 'HOW BRIGHT THE TOUCH BUTTONS SIT' }
+  { key: 'padAlpha', name: 'BUTTONS', min: 0.12, max: 1, hint: 'HOW BRIGHT THE TOUCH BUTTONS SIT' },
+  { key: 'shake', name: 'SHAKE', min: 0, max: 1, hint: 'HOW HARD THE VIEW SHAKES - NONE AT ZERO' }
 ];
 function setTabRect(i) { return { x: SET_BOX.x + 10 + i * 76, y: SET_BOX.y + 20, w: 72, h: 14 }; }
 function setCloseRect() { return { x: SET_BOX.x + SET_BOX.w - 18, y: SET_BOX.y + 5, w: 13, h: 13 }; }
 function setBackRect() { return { x: SET_BOX.x + 10, y: SET_BOX.y + SET_BOX.h - 20, w: 60, h: 15 }; }
 function setResetRect() { return { x: SET_BOX.x + SET_BOX.w - 88, y: SET_BOX.y + SET_BOX.h - 20, w: 78, h: 15 }; }
 function setModeRect(i) { return { x: SET_BOX.x + 14 + i * 156, y: SET_BOX.y + 50, w: 148, h: 26 }; }
-function setSliderRect(i) { return { x: SET_BOX.x + 108, y: SET_BOX.y + 96 + i * 24, w: 174, h: 9 }; }
+function setSliderRect(i) { return { x: SET_BOX.x + 108, y: SET_BOX.y + 82 + i * 21, w: 174, h: 9 }; }
 /* fifteen controls in two columns, eight then seven */
 function keyRowRect(i) {
   const col = i < 8 ? 0 : 1, row = i < 8 ? i : i - 8;
@@ -2430,7 +2467,8 @@ function drawSlider(i) {
   const hx = Math.round(r.x + r.w * t);
   ctx.fillStyle = '#12101c'; ctx.fillRect(hx - 3, r.y - 3, 6, r.h + 6);
   ctx.fillStyle = G.setDrag === i ? '#ffffff' : '#f2e2b8'; ctx.fillRect(hx - 2, r.y - 2, 4, r.h + 4);
-  drawText(ctx, Math.round(t * 100) + '%', r.x + r.w + 8, r.y + 1, '#a9b3c9', 1, 'left');
+  drawText(ctx, (sl.key === 'shake' && v <= 0.001) ? 'OFF' : (Math.round(t * 100) + '%'),
+           r.x + r.w + 8, r.y + 1, (sl.key === 'shake' && v <= 0.001) ? '#c9403a' : '#a9b3c9', 1, 'left');
 }
 function drawSettings() {
   ctx.save();
@@ -2472,9 +2510,9 @@ function drawSettings() {
       drawText(ctx, o.sub, r.x + 22, r.y + 15, '#7f8aa3', 1, 'left');
     });
     for (let i = 0; i < SLIDERS.length; i++) drawSlider(i);
-    drawText(ctx, G.mobile ? 'BUTTON BRIGHTNESS APPLIES TO THE TOUCH PAD'
-                           : 'BUTTON BRIGHTNESS APPLIES IN MOBILE MODE',
-             SET_BOX.x + SET_BOX.w / 2, SET_BOX.y + SET_BOX.h - 34, '#6d7994', 1, 'center');
+    drawText(ctx, G.opts.shake <= 0.001 ? 'THE VIEW WILL NOT SHAKE AT ALL'
+                                       : 'BUTTON BRIGHTNESS APPLIES IN MOBILE MODE',
+             SET_BOX.x + SET_BOX.w / 2, SET_BOX.y + SET_BOX.h - 30, '#6d7994', 1, 'center');
   } else {
     drawText(ctx, 'CLICK A ROW, THEN PRESS THE KEY YOU WANT', SET_BOX.x + SET_BOX.w / 2,
              SET_BOX.y + 40, '#a9b3c9', 1, 'center');
@@ -2799,6 +2837,130 @@ function drawCodes() {
     drawText(ctx, 'A CODE ONLY WORKS WITH ITS PAPER IN HAND   -   ESC TO CLOSE',
              B.x + B.w / 2, B.y + B.h - 14, '#a9b3c9', 1, 'center');
   }
+  ctx.restore();
+}
+
+/* ============================================================
+   QUESTS — standing tasks, read from the chart, paid in coins
+   and free-upgrade tickets
+   ============================================================ */
+const QUESTS = [
+  { id: 'kill25',  name: 'FIRST BLOOD',    goal: 25,  coins: 150,  stat: 'kills',    unit: 'FELLED' },
+  { id: 'kill150', name: 'WOODSMAN',       goal: 150, coins: 700,  stat: 'kills',    unit: 'FELLED' },
+  { id: 'kill500', name: 'SLAYER',         goal: 500, tickets: 1,  stat: 'kills',    unit: 'FELLED' },
+  { id: 'paper6',  name: 'PAPER TRAIL',    goal: 6,   coins: 500,  stat: 'papers',   unit: 'PAPERS' },
+  { id: 'paperAll', name: 'ARCHIVIST',     goal: 18,  tickets: 3,  stat: 'papers',   unit: 'PAPERS' },
+  { id: 'realm2',  name: 'TWO REALMS DOWN', goal: 2,  coins: 600,  stat: 'realms',   unit: 'CLEARED' },
+  { id: 'realm5',  name: 'HALF THE ROAD',  goal: 5,   tickets: 2,  stat: 'realms',   unit: 'CLEARED' },
+  { id: 'realm9',  name: 'THE WHOLE ROAD', goal: 9,   tickets: 5,  stat: 'realms',   unit: 'CLEARED' },
+  { id: 'up12',    name: 'WELL ARMED',     goal: 12,  coins: 900,  stat: 'upgrades', unit: 'UPGRADES' },
+  { id: 'chain10', name: 'TEN IN A ROW',   goal: 10,  tickets: 1,  stat: 'combo',    unit: 'HIT CHAIN' }
+];
+function questValue(stat) {
+  const p = G.player;
+  switch (stat) {
+    case 'kills': return G.stats.kills || 0;
+    case 'papers': return Object.keys(G.codes.found || {}).length;
+    case 'realms': return (G.cleared || []).filter(Boolean).length;
+    case 'upgrades': {
+      let n = 0;
+      if (p) for (const it of SHOP_ITEMS) { if (it.key !== 'tonic') n += (p.up[it.key] || 0); }
+      return n;
+    }
+    case 'combo': return G.comboBest || 0;
+  }
+  return 0;
+}
+function questDone(q) { return questValue(q.stat) >= q.goal; }
+function questClaimed(q) { return !!(G.quests && G.quests.claimed && G.quests.claimed[q.id]); }
+/* how many rewards are sitting there waiting to be taken */
+function questsReady() {
+  let n = 0;
+  for (const q of QUESTS) if (questDone(q) && !questClaimed(q)) n++;
+  return n;
+}
+function questReward(q) {
+  return q.tickets ? (q.tickets + ' TICKET' + (q.tickets > 1 ? 'S' : '')) : (q.coins + ' COINS');
+}
+function claimQuest(q) {
+  if (!questDone(q) || questClaimed(q)) { Snd.uiBad(); return; }
+  G.quests.claimed[q.id] = true;
+  if (q.tickets) G.codes.tickets += q.tickets;
+  else if (G.player) G.player.coins += q.coins;
+  Snd.buy(); G.flash(0.3);
+  G.questMsg = 'TAKEN - ' + questReward(q); G.questMsgT = 2.6;
+  G.saveGame();
+}
+
+const QUEST_BOX_PC = { x: 28, y: 8, w: 328, h: 200 };
+const QUEST_BOX_MOB = { x: 4, y: 6, w: 376, h: 204 };
+function questBox() { return G.mobile ? QUEST_BOX_MOB : QUEST_BOX_PC; }
+function questRowRect(i) {
+  const B = questBox();
+  return { x: B.x + 8, y: B.y + 26 + i * 15, w: B.w - 16, h: 14 };
+}
+function questCloseRect() { const B = questBox(); return { x: B.x + B.w - 18, y: B.y + 5, w: 13, h: 13 }; }
+function updateQuests(dt) {
+  G.questMsgT = Math.max(0, (G.questMsgT || 0) - dt);
+  if (Input.hit('Escape')) { G.questsOpen = false; Snd.ui(); return; }
+  const cr = questCloseRect();
+  G.questOverClose = Input.over(cr);
+  if (Input.tap(cr)) { G.questsOpen = false; Snd.ui(); return; }
+  G.questSel = -1;
+  for (let i = 0; i < QUESTS.length; i++) {
+    const r = questRowRect(i);
+    if (Input.over(r)) G.questSel = i;
+    if (Input.tap(r)) { claimQuest(QUESTS[i]); return; }
+  }
+}
+function drawQuests() {
+  const B = questBox();
+  ctx.save();
+  ctx.fillStyle = 'rgba(8,6,16,0.76)'; ctx.fillRect(0, 0, VW, VH);
+  panel(ctx, B.x, B.y, B.w, B.h);
+  drawText(ctx, 'QUESTS', B.x + 10, B.y + 9, '#f2e2b8', 1, 'left', '#000000');
+  const ready = questsReady();
+  drawText(ctx, ready ? ready + ' READY TO TAKE' : 'TICKETS ' + G.codes.tickets,
+           B.x + B.w - 24, B.y + 9, ready ? '#6fc46a' : '#a9b3c9', 1, 'right');
+  const cr = questCloseRect();
+  ctx.fillStyle = G.questOverClose ? '#c9403a' : '#3a3350';
+  ctx.fillRect(cr.x, cr.y, cr.w, cr.h);
+  drawText(ctx, 'X', cr.x + 4, cr.y + 3, '#f2e2b8', 1, 'left');
+
+  QUESTS.forEach((q, i) => {
+    const r = questRowRect(i);
+    const have = questValue(q.stat), done = have >= q.goal, taken = questClaimed(q);
+    const hot = G.questSel === i;
+    ctx.fillStyle = taken ? '#1a2418' : (done ? (hot ? '#3c5a40' : '#2f4a34') : (hot ? '#332c4c' : '#211c32'));
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    if (done && !taken) {
+      ctx.fillStyle = '#6fc46a';
+      ctx.fillRect(r.x, r.y, r.w, 1); ctx.fillRect(r.x, r.y + r.h - 1, r.w, 1);
+    }
+    /* four columns that never meet: name, bar, tally, reward */
+    drawText(ctx, q.name, r.x + 5, r.y + 4, taken ? '#5b7a58' : (done ? '#ffeec0' : '#c9d4e8'), 1, 'left');
+    const px = r.x + 106, bw = 58;
+    ctx.fillStyle = '#12101c'; ctx.fillRect(px - 1, r.y + 4, bw + 2, 7);
+    ctx.fillStyle = '#2b2740'; ctx.fillRect(px, r.y + 5, bw, 5);
+    ctx.fillStyle = taken ? '#4a6a48' : (done ? '#6fc46a' : '#c68e3f');
+    ctx.fillRect(px, r.y + 5, Math.round(bw * clamp(have / q.goal, 0, 1)), 5);
+    drawText(ctx, Math.min(have, q.goal) + '/' + q.goal, px + bw + 6, r.y + 4,
+             taken ? '#5b7a58' : '#a9b3c9', 1, 'left');
+    /* the reward, or the word that it is spent */
+    drawText(ctx, taken ? 'TAKEN' : (done ? 'CLAIM' : questReward(q)),
+             r.x + r.w - 5, r.y + 4,
+             taken ? '#5b7a58' : (done ? '#ffe98a' : (q.tickets ? '#6fc46a' : '#c9d4e8')), 1, 'right');
+  });
+
+  let foot;
+  if (G.questMsgT > 0) foot = G.questMsg;
+  else if (G.questSel >= 0) {
+    const q = QUESTS[G.questSel];
+    foot = (questDone(q) && !questClaimed(q)) ? 'CLICK TO TAKE ' + questReward(q)
+         : questValue(q.stat) + ' OF ' + q.goal + ' ' + q.unit + '   -   ' + questReward(q);
+  } else foot = ready ? 'GREEN ROWS ARE READY - CLICK ONE' : 'COME BACK AS YOU GO';
+  drawText(ctx, foot, B.x + B.w / 2, B.y + B.h - 13,
+           G.questMsgT > 0 ? '#6fc46a' : '#a9b3c9', 1, 'center');
   ctx.restore();
 }
 
