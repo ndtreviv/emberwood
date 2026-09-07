@@ -585,6 +585,79 @@ function buildTutorial(seed) {
 }
 
 /* ============================================================
+   THE GULLET — inside the Leviathan. A shaft you must climb out of
+   before the acid below reaches you. Dash the gaps, jump the ledges,
+   roll under the low bones.
+   ============================================================ */
+function buildGullet(seed) {
+  const rng = new RNG(seed);
+  const W = 40, H = 58;
+  const room = new Room({ id: 'gullet', name: 'THE GULLET', mode: 'side',
+                          w: W, h: H, music: 'boss', bg: 'abyss', ambient: 0.1, dark: 0.42 });
+  room.fillRect(0, 0, W, H, T_EMPTY);
+  const L = 4, R = W - 4;                      /* the walls of the throat */
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < L; x++) room.set(x, y, T_DEEPSTONE);
+    for (let x = R; x < W; x++) room.set(x, y, T_DEEPSTONE);
+  }
+  for (let x = 0; x < W; x++) room.set(x, H - 1, T_DEEPSTONE);
+
+  /* Ledges climb three tiles at a time, which a held jump clears, and they
+     overlap across the middle so there is always a way straight up. Every
+     third one is split by a gap wide enough to want a dash, a running jump or
+     the speed a roll carries. */
+  const surf = new Int16Array(W);
+  for (let x = 0; x < W; x++) surf[x] = H - 1;
+  /* the shelves are ribs you can rise through and drop back down, so the
+     climb never traps you under one */
+  const put = (x0, x1, y) => {
+    for (let x = Math.max(L, x0); x < Math.min(R, x1); x++) {
+      room.set(x, y, T_WOOD);
+      surf[x] = Math.min(surf[x], y);
+    }
+  };
+  const ledges = [];
+  let side = 1;
+  for (let y = H - 5, n = 0; y > 5; y -= 3, n++) {
+    const wide = 20;
+    const x0 = side > 0 ? L + 1 : R - 1 - wide;
+    const x1 = x0 + wide;
+    if (n > 0 && n % 3 === 0) {
+      /* a dash gap: two shelves with five clear tiles between them */
+      put(x0, x0 + 7, y);
+      put(x0 + 12, x1, y);
+      ledges.push({ x: x0, y: y, w: wide, gap: true });
+    } else {
+      put(x0, x1, y);
+      ledges.push({ x: x0, y: y, w: wide, gap: false });
+    }
+    side *= -1;
+  }
+  room.surface = surf;
+  const first = ledges[0];
+  room.start = { x: (first.x + 3) * TILE, y: first.y * TILE };
+
+  /* the way out, on the topmost shelf */
+  const top = ledges[ledges.length - 1];
+  const dx = (top.x + 4) * TILE;
+  room.exits.push({ x: dx - 18, y: (top.y - 3) * TILE, w: 36, h: 3 * TILE,
+                    to: 'gulletOut', label: 'CUT YOUR WAY OUT', kind: 'arch',
+                    door: { x: dx, y: top.y * TILE } });
+
+  /* coins on the way, and a glow off the ribs */
+  ledges.forEach((l, i) => {
+    if (i === 0) return;
+    room.spawns.push({ type: 'coin', x: (l.x + 2) * TILE, y: (l.y - 2) * TILE });
+    if (i % 2 === 0) room.spawns.push({ type: 'coin', x: (l.x + l.w - 3) * TILE, y: (l.y - 2) * TILE });
+    if (i % 3 === 0) room.decor.push({ kind: 'crystal', idx: rng.i(0, 2), x: (l.x + l.w - 1) * TILE, y: (l.y - 1) * TILE, layer: 1 });
+  });
+
+  /* the acid starts under the first shelf and climbs after you */
+  room.acid = { y: (H - 2) * TILE, rate: 11 };
+  return room;
+}
+
+/* ============================================================
    THE OLD MINESHAFT — dug, not worn: square tunnels, timber
    supports, rails and spiders.
    ============================================================ */
@@ -1106,6 +1179,7 @@ World.build = function () {
   World.rooms.cave = buildCave(5150);
   World.rooms.mine = buildMine(2468);
   World.rooms.tutorial = buildTutorial(1717);
+  World.rooms.gullet = buildGullet(4444);
   World.rooms.lair = buildLair(666);
 
   World.rooms.cloud1 = buildCloud(7788);
@@ -1202,18 +1276,26 @@ World.LEVELS = [
     rooms: ['mush1', 'mushboss'], start: 'mush1', boss: 'mushboss', coinScale: 2,
     node: { x: 310, y: 148 } },
 
-  { name: 'TIDEWRACK', taker: 'THE TIDE TAKES', sub: 'THE TIDE WARDEN', theme: 'shore', enemyHp: 4, coinScale: 3,
+  /* the deep and the ash: guardians many times hardier, and kills that pay
+     for the deeper shop stock */
+  { name: 'TIDEWRACK', taker: 'THE TIDE TAKES', sub: 'THE TIDE WARDEN', theme: 'shore', enemyHp: 4,
+    coinScale: 7, coinBonus: 2, bossHp: 9,
     rooms: ['shore', 'shoreEnd'], start: 'shore', boss: 'shoreEnd', node: { x: 76, y: 152 } },
-  { name: 'DROWNED HALL', taker: 'THE DEEP TAKES', sub: 'THE KRAKEN MAW', theme: 'drowned', enemyHp: 5, coinScale: 3.5,
+  { name: 'DROWNED HALL', taker: 'THE DEEP TAKES', sub: 'THE KRAKEN MAW', theme: 'drowned', enemyHp: 5,
+    coinScale: 9, coinBonus: 3, bossHp: 11,
     rooms: ['drowned', 'drownedEnd'], start: 'drowned', boss: 'drownedEnd', node: { x: 194, y: 74 } },
-  { name: 'THE TRENCH', taker: 'THE TRENCH TAKES', sub: 'THE LEVIATHAN', theme: 'abyss', enemyHp: 6, coinScale: 4,
+  { name: 'THE TRENCH', taker: 'THE TRENCH TAKES', sub: 'THE LEVIATHAN', theme: 'abyss', enemyHp: 6,
+    coinScale: 12, coinBonus: 4, bossHp: 13,
     rooms: ['abyss', 'abyssEnd'], start: 'abyss', boss: 'abyssEnd', node: { x: 310, y: 148 } },
 
-  { name: 'CINDER FIELDS', taker: 'THE ASH TAKES', sub: 'THE FORGEFIEND', theme: 'cinder', enemyHp: 8, coinScale: 6,
+  { name: 'CINDER FIELDS', taker: 'THE ASH TAKES', sub: 'THE FORGEFIEND', theme: 'cinder', enemyHp: 8,
+    coinScale: 18, coinBonus: 6, bossHp: 14,
     rooms: ['cinder', 'cinderEnd'], start: 'cinder', boss: 'cinderEnd', node: { x: 76, y: 152 } },
-  { name: 'OBSIDIAN STEPS', taker: 'THE DARK TAKES', sub: 'THE ASHEN TITAN', theme: 'obsidian', enemyHp: 10, coinScale: 7,
+  { name: 'OBSIDIAN STEPS', taker: 'THE DARK TAKES', sub: 'THE ASHEN TITAN', theme: 'obsidian', enemyHp: 10,
+    coinScale: 22, coinBonus: 8, bossHp: 16,
     rooms: ['obsidian', 'obsidianEnd'], start: 'obsidian', boss: 'obsidianEnd', node: { x: 194, y: 74 } },
-  { name: 'MOLTEN CROWN', taker: 'THE MAGMA TAKES', sub: 'IFRIT, THE LAST FLAME', theme: 'molten', enemyHp: 12, coinScale: 9,
+  { name: 'MOLTEN CROWN', taker: 'THE MAGMA TAKES', sub: 'IFRIT, THE LAST FLAME', theme: 'molten', enemyHp: 12,
+    coinScale: 28, coinBonus: 10, bossHp: 18,
     rooms: ['molten', 'moltenEnd'], start: 'molten', boss: 'moltenEnd', node: { x: 310, y: 148 } }
 ];
 

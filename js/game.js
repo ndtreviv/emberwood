@@ -16,7 +16,8 @@ const G = {
   roomFlags: {},
   flags: {},
   bannerTxt: '', bannerT: 0,
-  trans: null,
+  trans: null, swallowed: null, escaped: null, acid: null, acidBurnT: 0,
+  relicShow: null,
   shopOpen: false, shopSel: -1,
   level: 0, unlocked: 1, cleared: [false, false, false], levelState: {},
   mapSel: -1, mapT: 0, levelClearT: 0,
@@ -365,12 +366,40 @@ G.enterRoom = function (id, spawn) {
   G.player.place(s.x, room.mode === 'top' ? s.y + G.player.h / 2 : s.y);
   G.player.dashT = 0; G.player.atkT = 0;
   G.exitLock = true; G.nearExit = null;
+  G.acid = room.acid ? { y: room.acid.y } : null;
+  G.acidBurnT = 0;
   G.aimX = clamp(VW / 2 + 60, 20, VW - 20); G.aimY = VH * 0.42; G.aimDrag = null;
   snapCamera();
   Snd.play(room.music);
   Snd.ambienceLevel(room.ambient, 1.4);
   G.banner(room.name, 2.4);
+  G.checkRelics();
   G.saveGame();                 /* every new area is a point worth keeping */
+};
+
+/* ============================================================
+   SWALLOWED — the Leviathan takes you down, and you climb out
+   ============================================================ */
+G.swallowInto = function (boss) {
+  if (G.trans || G.swallowed) return;
+  saveLevelState();
+  G.swallowed = {
+    roomId: G.roomId, level: G.level,
+    bossHp: boss ? boss.hp : null,
+    x: G.player.cx, y: G.player.y + G.player.h
+  };
+  G.banner('SWALLOWED WHOLE', 2.6);
+  G.trans = { t: 0, phase: 'out', dur: 0.5, id: 'gullet', exit: null, swallow: true };
+};
+/* cut your way out at the top, and the fight picks up where it left off */
+G.escapeGullet = function () {
+  const sw = G.swallowed;
+  if (!sw) { G.leaveLevel(); return; }
+  G.swallowed = null;
+  G.acid = null;
+  G.escaped = sw;
+  G.banner('BACK INTO THE FIGHT', 2.4);
+  G.trans = { t: 0, phase: 'out', dur: 0.5, id: sw.roomId, exit: { spawnAt: { x: sw.x, y: sw.y } }, escaped: true };
 };
 
 /* ---------- transitions: a pixel flush between areas ---------- */
@@ -387,7 +416,15 @@ function updateTransition(dt) {
     if (tr.toMap) { openMap(false); G.trans = null; return; }
     const room = World.rooms[tr.id];
     G.enterRoom(tr.id, resolveSpawn(room, tr.exit));
-    saveLevelState();
+    if (tr.escaped && G.escaped) {
+      /* the guardian picks up where it left off, wounds and all */
+      const sw = G.escaped; G.escaped = null;
+      if (G.boss && sw.bossHp !== null) {
+        G.boss.hp = Math.max(1, Math.min(G.boss.maxHp, sw.bossHp));
+        G.boss.awake = true; G.boss.state = 'rest'; G.boss.stateT = 1.2;
+      }
+    }
+    if (!tr.swallow) saveLevelState();
     G.flash(0.35);
     tr.phase = 'in'; tr.t = 0;
   } else if (tr.phase === 'in' && tr.t >= tr.dur) {
@@ -562,6 +599,7 @@ function startGame(slot) {
   G.tutorialDone = false;
   G.codes = { found: {}, used: {}, tickets: 0, admin: false };
   G.tut = { move: 0, fight: 0, swim: 0, dash: 0, pierce: 0, climb: 0, parry: 0 };
+  G.relicSeen = {}; G.relicShow = null; G.swallowed = null; G.acid = null;
   const d = readSlot(G.slot);
   if (d && d.used) applySave(d);
   G.mapMode = G.tutorialDone ? 'realm' : 'tutorial';
@@ -603,6 +641,7 @@ function openMap(fresh) {
 function saveLevelState() {
   if (!G.room || !G.player || G.player.dead) return;
   if (G.roomId === 'tutorial') return;      /* the tutorial is never resumed */
+  if (G.roomId === 'gullet') return;        /* nor the inside of a Leviathan */
   G.levelState[G.level] = {
     roomId: G.roomId,
     x: G.player.cx, y: G.player.y + G.player.h,
@@ -610,6 +649,19 @@ function saveLevelState() {
     roomFlags: G.roomFlags, flags: G.flags
   };
 }
+/* watch for a relic coming within reach, and announce it once */
+G.checkRelics = function () {
+  if (!G.player) return;
+  G.relicSeen = G.relicSeen || {};
+  for (const it of SHOP_ITEMS) {
+    if (!it.relic || !shopVisible(it)) continue;
+    if (G.relicSeen[it.key]) continue;
+    G.relicSeen[it.key] = true;
+    if (G.player.up[it.key]) continue;      /* already owned, nothing to show */
+    G.showRelic(it);
+    return;                                  /* one at a time */
+  }
+};
 G.startLevel = function (i) {
   const lv = World.LEVELS[i];
   if (!lv || i >= G.unlocked) { Snd.uiBad(); return; }
@@ -708,6 +760,7 @@ function updatePlay(dt) {
   if (G.comboT > 0) { G.comboT -= dt; if (G.comboT <= 0) G.combo = 0; }
   G.bannerT = Math.max(0, G.bannerT - dt);
   G.lockedMsgT = Math.max(0, G.lockedMsgT - dt);
+  updateRelicShow(dt);
   G.flashAmt = Math.max(0, G.flashAmt - dt * 2.2);
   G.shakeAmt = Math.max(0, G.shakeAmt - dt * 26);
 
@@ -817,8 +870,51 @@ function updatePlay(dt) {
     }));
   }
 
+  updateAcid(dt);
   checkExits();
   if (!G.trans) updateCamera(dt);
+}
+
+/* the acid in the gullet, climbing while you climb */
+function updateAcid(dt) {
+  const room = G.room;
+  if (!room || !room.acid) { G.acid = null; return; }
+  if (!G.acid) G.acid = { y: room.acid.y };
+  G.acid.y -= room.acid.rate * dt;
+  const p = G.player;
+  if (!p.dead && p.y + p.h > G.acid.y) {
+    /* standing in it burns fast */
+    p.invuln = 0;
+    if (!G.acidBurnT || G.acidBurnT <= 0) {
+      G.acidBurnT = 0.42;
+      p.hurt(2, p.cx, G.acid.y + 40);
+      G.flash(0.2);
+    }
+  }
+  G.acidBurnT = Math.max(0, (G.acidBurnT || 0) - dt);
+  /* bubbles off the surface */
+  if (Math.random() < dt * 26) G.particles.push(new Particle({
+    x: G.cam.x + rr(0, VW), y: G.acid.y + rr(-2, 6), vx: rr(-0.3, 0.3), vy: rr(-1.4, -0.4),
+    life: rr(0.4, 1), col: '#9be89a', col2: '#3f7a3a', size: rr(1, 2.6), grav: -0.01
+  }));
+}
+function drawAcid(camX, camY) {
+  if (!G.acid || !G.room.acid) return;
+  const y = Math.round(G.acid.y - camY);
+  if (y > VH + 8) return;
+  ctx.save();
+  ctx.globalAlpha = 0.82;
+  ctx.fillStyle = '#2f6f37';
+  ctx.fillRect(0, Math.max(0, y), VW, VH - Math.max(0, y));
+  ctx.globalAlpha = 1;
+  for (let x = 0; x < VW; x++) {
+    const h = Math.sin(x * 0.13 + G.t * 3.4) * 2 + Math.sin(x * 0.05 - G.t * 2.1) * 1.6;
+    const top = y - Math.round(h);
+    ctx.fillStyle = '#9be89a'; ctx.fillRect(x, top, 1, 1);
+    ctx.fillStyle = '#6fc46a'; ctx.fillRect(x, top + 1, 1, 2);
+  }
+  ctx.restore();
+  void camX;
 }
 
 /* click the door or its prompt with the cursor, tap either with a finger,
@@ -845,6 +941,12 @@ function checkExits() {
       G.nearExit = ex; G.nearExitLocked = true;
       continue;
     }
+    if (ex.to === 'gulletOut') {
+      G.nearExit = ex; G.nearExitLocked = false;
+      if (!enterPressed(ex)) continue;
+      G.escapeGullet();
+      return;
+    }
     if (ex.to === 'tutorialDone') {
       const left = G.tutLeft();
       G.nearExit = ex; G.nearExitLocked = left.length > 0;
@@ -868,6 +970,19 @@ function checkExits() {
 
 function respawn() {
   const p = G.player;
+  if (G.roomId === 'gullet' && G.swallowed) {
+    /* the belly does not keep you: you wash back into the fight */
+    const sw = G.swallowed; G.swallowed = null; G.acid = null;
+    const lost = Math.floor(p.coins * 0.2);
+    p.coins = Math.max(0, p.coins - lost);
+    p.dead = false; p.hp = p.maxHp; p.invuln = 1.6;
+    G.state = 'play';
+    Snd.musicLevel(0.34, 0.6);
+    G.enterRoom(sw.roomId, { spawnAt: { x: sw.x, y: sw.y } });
+    G.flash(0.6);
+    if (lost > 0) G.texts.push(new FloatText(p.cx, p.cy - 20, '-' + lost + ' COINS', '#ff9a8a'));
+    return;
+  }
   const lost = Math.floor(p.coins * 0.2);
   p.coins = Math.max(0, p.coins - lost);
   p.dead = false; p.hp = p.maxHp; p.invuln = 1.4;
@@ -1766,6 +1881,7 @@ function drawWorld() {
   for (const tx of G.texts) tx.draw(ctx);
   drawDecor(2, camX, camY);
   ctx.restore();
+  drawAcid(camX, camY);
   drawLighting(camX, camY);
   drawHUD();
   drawTransition(ctx);
@@ -1779,6 +1895,7 @@ function drawWorld() {
   drawPad();
   if (G.shopOpen) drawShop();
   if (G.codesOpen) drawCodes();
+  drawRelicShow();
   if (G.settingsOpen) drawSettings();
   drawCursor();
 }
@@ -2686,22 +2803,90 @@ function drawCodes() {
 }
 
 /* ============================================================
+   A RELIC COMES INTO REACH — it rises in the middle of the screen,
+   named and glowing, then draws away into the shop sign.
+   ============================================================ */
+G.showRelic = function (it) {
+  G.relicShow = { key: it.key, name: it.name, desc: it.desc, t: 0, dur: 3.4, icon: it.icon };
+  Snd.unlock(); G.flash(0.5); G.shake(4);
+};
+function updateRelicShow(dt) {
+  const r = G.relicShow;
+  if (!r) return;
+  r.t += dt;
+  if (r.t < r.dur * 0.66 && Math.random() < dt * 30) G.particles.push(new Particle({
+    x: VW / 2 + rr(-30, 30), y: VH / 2 + rr(-22, 22), vx: rr(-0.6, 0.6), vy: rr(-1.4, -0.2),
+    life: rr(0.4, 1), col: rpick(['#ffeec0', '#ffd04a', '#ffffff']), col2: '#b8862f',
+    size: rr(1, 2.6), grav: -0.01, drag: 0.96
+  }));
+  if (r.t >= r.dur) G.relicShow = null;
+}
+function drawRelicShow() {
+  const r = G.relicShow;
+  if (!r) return;
+  const k = r.t / r.dur;
+  /* rise, hold, then draw away to the shop sign in the corner */
+  const rise = clamp(r.t / 0.5, 0, 1);
+  const leave = clamp((r.t - r.dur * 0.72) / (r.dur * 0.28), 0, 1);
+  const cx = lerp(VW / 2, 15, leave * leave);
+  const cy = lerp(VH / 2 - 6 - (1 - rise) * 14, 15, leave * leave);
+  const sc = lerp(1 + (1 - rise) * 0.6, 0.35, leave);
+  const a = Math.min(rise, 1 - leave);
+  ctx.save();
+  ctx.globalAlpha = a * 0.72;
+  ctx.fillStyle = 'rgba(8,6,16,0.75)';
+  ctx.fillRect(0, 0, VW, VH);
+  /* the glow behind it */
+  ctx.globalAlpha = a * (0.32 + Math.sin(r.t * 5) * 0.1);
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.fillStyle = '#ffd04a';
+  ctx.beginPath(); ctx.arc(cx, cy, 34 * sc + Math.sin(r.t * 3) * 3, 0, TAU); ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+  /* rays */
+  ctx.globalAlpha = a * 0.5;
+  for (let i = 0; i < 12; i++) {
+    const ang = i / 12 * TAU + r.t * 0.6;
+    const r0 = 20 * sc, r1 = (34 + Math.sin(r.t * 6 + i) * 8) * sc;
+    ctx.fillStyle = '#ffeec0';
+    for (let d = r0; d < r1; d += 3)
+      ctx.fillRect(Math.round(cx + Math.cos(ang) * d), Math.round(cy + Math.sin(ang) * d), 1, 1);
+  }
+  /* the relic itself */
+  ctx.globalAlpha = a;
+  const img = r.icon();
+  if (img) {
+    ctx.save();
+    ctx.translate(Math.round(cx), Math.round(cy));
+    ctx.scale(sc * 2, sc * 2);
+    ctx.drawImage(img, -img.width / 2, -img.height / 2);
+    ctx.restore();
+  }
+  if (leave < 0.4) {
+    ctx.globalAlpha = a;
+    drawText(ctx, r.name, VW / 2, cy + 34 * sc, '#ffeec0', 2, 'center', '#2a1a10');
+    drawText(ctx, r.desc, VW / 2, cy + 34 * sc + 18, '#d8c49a', 1, 'center', '#2a1a10');
+    drawText(ctx, 'NOW IN THE SHOP', VW / 2, cy + 34 * sc + 30, '#9be89a', 1, 'center', '#2a1a10');
+  }
+  ctx.restore();
+}
+
+/* ============================================================
    SHOP
    ============================================================ */
 const SHOP_ITEMS = [
-  { key: 'heart', name: 'HEART VESSEL', desc: 'ONE MORE HEART ON YOUR LIFE BAR', base: 24, mul: 1.75, max: 3, icon: () => Art.item.heart.full },
-  { key: 'sword', name: 'WHETSTONE', desc: 'THE BLADE BITES DEEPER AND REACHES FURTHER', base: 20, mul: 1.7, max: 4, icon: () => Art.item.sword },
-  { key: 'speed', name: 'SWIFT BOOTS', desc: 'RUN FASTER THROUGH WOOD AND MAZE', base: 26, mul: 1.7, max: 3, icon: () => Art.item.boot },
-  { key: 'dash', name: 'WINDSTEP CHARM', desc: 'THE DASH RETURNS TO YOU SOONER', base: 32, mul: 1.8, max: 3, icon: () => Art.item.ring },
-  { key: 'magnet', name: 'LODESTONE', desc: 'COINS COME FROM FURTHER OFF, STRAIGHT THROUGH ROCK', base: 18, mul: 1.8, max: 3, icon: () => Art.item.magnet },
-  { key: 'armour', name: 'WARD CHARM', desc: 'A CHANCE TO SHRUG OFF ANY BLOW', base: 34, mul: 1.8, max: 3, icon: () => Art.item.ward },
+  { key: 'heart', name: 'HEART VESSEL', desc: 'ONE MORE HEART ON YOUR LIFE BAR', base: 20, mul: 1.52, max: 3, icon: () => Art.item.heart.full },
+  { key: 'sword', name: 'WHETSTONE', desc: 'THE BLADE BITES DEEPER AND REACHES FURTHER', base: 17, mul: 1.48, max: 4, icon: () => Art.item.sword },
+  { key: 'speed', name: 'SWIFT BOOTS', desc: 'RUN FASTER THROUGH WOOD AND MAZE', base: 22, mul: 1.48, max: 3, icon: () => Art.item.boot },
+  { key: 'dash', name: 'WINDSTEP CHARM', desc: 'THE DASH RETURNS TO YOU SOONER', base: 26, mul: 1.5, max: 3, icon: () => Art.item.ring },
+  { key: 'magnet', name: 'LODESTONE', desc: 'COINS COME FROM FURTHER OFF, STRAIGHT THROUGH ROCK', base: 15, mul: 1.5, max: 3, icon: () => Art.item.magnet },
+  { key: 'armour', name: 'WARD CHARM', desc: 'A CHANCE TO SHRUG OFF ANY BLOW', base: 28, mul: 1.5, max: 3, icon: () => Art.item.ward },
   /* eight steps of a quarter each: 1.25x at the first, 3x at the last.
      20 coins for the first step, 150 for the last. */
   { key: 'special', name: 'DUELLISTS SIGIL', desc: 'THE FLIP, THE ROLL CUT AND THE DIVE ALL BITE HARDER',
     base: 20, mul: 1.3335, max: 8, fixed: true, icon: () => Art.item.sigil },
-  { key: 'wings', name: 'STORMFEATHER WINGS', desc: 'A SECOND JUMP IN MID AIR', base: 999, mul: 1, max: 1, relic: true, unlockAt: 1, icon: () => Art.item.wings },
-  { key: 'mantle', name: 'RIPTIDE MANTLE', desc: 'YOUR DASH CUTS CLEAN THROUGH ANYTHING IT TOUCHES', base: 4500, mul: 1, max: 1, relic: true, unlockAt: 3, icon: () => Art.item.mantle },
-  { key: 'emberheart', name: 'THE EMBERHEART', desc: 'EVERY SWORD SWING LOOSES A BURNING WAVE', base: 12000, mul: 1, max: 1, relic: true, unlockAt: 6, icon: () => Art.item.emberheart },
+  { key: 'wings', name: 'STORMFEATHER WINGS', desc: 'A SECOND JUMP IN MID AIR', base: 850, mul: 1, max: 1, relic: true, unlockAt: 1, icon: () => Art.item.wings },
+  { key: 'mantle', name: 'RIPTIDE MANTLE', desc: 'YOUR DASH CUTS CLEAN THROUGH ANYTHING IT TOUCHES', base: 3600, mul: 1, max: 1, relic: true, unlockAt: 3, icon: () => Art.item.mantle },
+  { key: 'emberheart', name: 'THE EMBERHEART', desc: 'EVERY SWORD SWING LOOSES A BURNING WAVE', base: 9000, mul: 1, max: 1, relic: true, unlockAt: 6, icon: () => Art.item.emberheart },
   { key: 'tonic', name: 'FOREST TONIC', desc: 'DRINK NOW AND REFILL EVERY HEART', base: 8, mul: 1.0, max: 99, icon: () => Art.item.potion }
 ];
 function shopLevel(it) { const p = G.player; return it.key === 'tonic' ? 0 : (p.up[it.key] || 0); }

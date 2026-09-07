@@ -83,6 +83,8 @@ class FloatText {
    PLAYER
    ============================================================ */
 const PW = 10, PH = 16;
+/* how long before a spinning cut comes round again */
+const FLIP_CD = 0.85, ROLLCUT_CD = 0.9;
 
 class Player {
   constructor() {
@@ -98,6 +100,8 @@ class Player {
     this.swimming = false; this.swimT = 0;
     this.crouching = false; this.rollT = 0; this.rollCd = 0; this.rollDir = 1;
     this.spinT = 0; this.spinKind = null; this.spinDir = 1; this.spinHit = null; this.spinSaid = false;
+    this.flipCd = 0; this.rollCutCd = 0; this.chain = 0; this.chainT = 0;
+    this.heldBy = null; this.heldT = 0; this.heldDmg = 0; this.heldPaid = 0;
     this.hurtT = 0;
     this.onLadder = false; this.climbT = 0; this.ladderOffT = 0;
     this.invuln = 0; this.landT = 0;
@@ -111,8 +115,66 @@ class Player {
   }
   get cx() { return this.x + this.w / 2; }
   get cy() { return this.y + this.h / 2; }
+  /* Taken up in a Kraken's arm. You are held, squeezed, then thrown clear. */
+  seize(by, dur, dmg) {
+    if (this.dead || this.heldBy) return;
+    this.heldBy = by; this.heldT = dur; this.heldMax = dur;
+    this.heldDmg = dmg; this.heldPaid = 0; this.heldStruggle = 0;
+    this.spinT = 0; this.rollT = 0; this.pierceT = 0; this.dashT = 0;
+    this.vx = 0; this.vy = 0;
+    G.breakCombo();
+    G.texts.push(new FloatText(this.cx, this.y - 8, 'SEIZED', '#c9a8ff'));
+  }
+  updateHeld(dt) {
+    const by = this.heldBy;
+    if (!by || by.dead || by.dying) { this.release(true); return; }
+    this.heldT -= dt;
+    /* held out in front of the maw, shaken about */
+    const dir = by.face || 1;
+    const sc = by.scale || 1;
+    const tx = by.x + dir * 26 * sc, ty = by.y - 44 * sc;
+    this.x = lerp(this.x, tx - this.w / 2, 0.35) + rr(-1.4, 1.4);
+    this.y = lerp(this.y, ty - this.h / 2, 0.35) + rr(-1.4, 1.4);
+    this.vx = 0; this.vy = 0; this.grounded = false;
+    /* mash any way key to shorten the squeeze */
+    if (Input.actHit('left') || Input.actHit('right') || Input.actHit('up') ||
+        Input.actHit('down') || Input.actHit('attack')) {
+      this.heldStruggle += 0.055;
+      this.heldT -= 0.055;
+      G.particles.push(new Particle({
+        x: this.cx + rr(-8, 8), y: this.cy + rr(-8, 8), vx: rr(-2, 2), vy: rr(-2, 2),
+        life: rr(0.15, 0.3), col: '#ffeec0', col2: '#c68e3f', size: rr(1, 2), grav: 0
+      }));
+    }
+    /* the damage is paid out across the squeeze, not all at once */
+    const want = Math.round(this.heldDmg * clamp(1 - this.heldT / this.heldMax, 0, 1));
+    if (want > this.heldPaid) {
+      const n = want - this.heldPaid;
+      this.heldPaid = want;
+      this.hp -= n;
+      this.invuln = 0;
+      Snd.hurt(); G.shake(4);
+      for (let i = 0; i < 10; i++) G.particles.push(new Particle({
+        x: this.cx, y: this.cy, vx: rr(-2.6, 2.6), vy: rr(-2.6, 1), life: rr(0.25, 0.5),
+        col: '#e8433f', col2: '#7a1e22', size: rr(1, 2.4), grav: 0.2
+      }));
+      if (this.hp <= 0) { this.hp = 0; this.release(false); this.die(); return; }
+    }
+    if (this.heldT <= 0) this.release(true);
+  }
+  release(thrown) {
+    const by = this.heldBy;
+    this.heldBy = null; this.heldT = 0;
+    if (!thrown || !by) return;
+    const dir = -(by.face || 1);
+    this.vx = dir * 5.4; this.vy = -4.4;
+    this.invuln = Math.max(this.invuln, 1.0);
+    this.hurtT = 0.24;
+    Snd.hurt(); G.shake(5);
+  }
   place(x, y) {
     this.h = PH;
+    this.heldBy = null; this.heldT = 0;
     this.crouching = false; this.rollT = 0; this.rollCd = 0; this.hurtT = 0;
     this.spinT = 0; this.spinKind = null; this.spinHit = null;
     this.x = x - this.w / 2; this.y = y - this.h;
@@ -154,7 +216,23 @@ class Player {
   /* the sigil sharpens the moves that come out of a dive or a spin:
      the air pierce, the flip cut and the roll cut. A quarter a step. */
   get specialMult() { return 1 + (this.up.special || 0) * 0.25; }
-  get specialDmg() { return Math.max(1, Math.round(this.atkDmg * this.specialMult)); }
+  /* and one special straight into the next builds on it: a flip into a dive,
+     or a dive into a flip, up to half again by the third link */
+  get chainMult() { return 1 + Math.min(3, this.chain) * 0.25; }
+  get specialDmg() { return Math.max(1, Math.round(this.atkDmg * this.specialMult * this.chainMult)); }
+  linkChain(name) {
+    this.chain = Math.min(3, this.chain + 1);
+    this.chainT = 1.25;
+    if (this.chain > 1) {
+      Snd.comboUp();
+      G.texts.push(new FloatText(this.cx, this.y - 12, 'CHAIN X' + this.chain, '#8fd0ff'));
+      for (let i = 0; i < 12; i++) G.particles.push(new Particle({
+        x: this.cx + rr(-8, 8), y: this.cy + rr(-10, 10), vx: rr(-1.6, 1.6), vy: rr(-2, -0.2),
+        life: rr(0.2, 0.5), col: '#8fd0ff', col2: '#3f6fd8', size: rr(1, 2.4), grav: 0.02
+      }));
+    }
+    void name;
+  }
 
   hurt(dmg, fromX, fromY) {
     if (this.invuln > 0 || this.dashT > 0 || this.dead) return false;
@@ -221,20 +299,26 @@ class Player {
     }
   }
   startFlip(dir) {
-    if (this.dead || this.spinT > 0 || this.atkCd > 0) return false;
+    if (this.dead || this.spinT > 0 || this.atkCd > 0 || this.flipCd > 0) return false;
     if (G.room.mode !== 'side' || this.grounded) return false;
     if (this.dashT > 0 || this.pierceT > 0 || this.onLadder || this.swimming || this.inWater) return false;
+    this.linkChain('flip');
     this.beginSpin('flip', dir, 0.42, 0.30);
+    this.flipCd = FLIP_CD;
     this.vx = dir * this.speedMax * 1.55;
     this.vy = Math.min(this.vy, -1.9);        /* a little lift into the turn */
+    G.waves.push(new AirSlash(this.cx + dir * 14, this.cy, dir, this.specialDmg, 'flip'));
     return true;
   }
   startRollCut() {
-    if (this.dead || this.spinT > 0 || this.rollT <= 0) return false;
+    if (this.dead || this.spinT > 0 || this.rollT <= 0 || this.rollCutCd > 0) return false;
     if (G.room.mode !== 'side') return false;
+    this.linkChain('rollcut');
     this.beginSpin('rollcut', this.rollDir, 0.34, 0.28);
+    this.rollCutCd = ROLLCUT_CD;
     this.rollT = Math.max(this.rollT, 0.34);  /* the roll runs on under the cut */
     this.vx = this.rollDir * this.speedMax * 1.75;
+    G.waves.push(new AirSlash(this.cx + this.rollDir * 14, this.cy + 2, this.rollDir, this.specialDmg, 'rollcut'));
     return true;
   }
   spinBox() {
@@ -329,6 +413,7 @@ class Player {
       return;
     }
     this.pierceT = 0.001; this.pierceHit = new Set();
+    this.linkChain('pierce');
     if (G.bossFightOn()) this.pierceCd = 1.0;     /* rationed against a guardian */
     this.atkT = 0; this.atkHit = null;
     this.vy = 7.4; this.vx *= 0.35;
@@ -358,7 +443,9 @@ class Player {
     if (hit) {
       this.vy = -4.7; this.grounded = false;
       this.invuln = Math.max(this.invuln, 0.3);
-      Snd.pierceHit(); G.shake(4.5); G.hitStop(0.08);
+      Snd.pierceHit(); Snd.spinCut(); G.shake(4.5); G.hitStop(0.08);
+      /* the landing throws a sheet of air out along the ground */
+      G.waves.push(new AirSlash(this.cx, this.y + this.h - 2, this.face, this.specialDmg, 'pierce'));
       G.texts.push(new FloatText(this.cx, this.y - 4, 'PIERCE X2', '#ffe98a'));
       for (let i = 0; i < 20; i++) G.particles.push(new Particle({
         x: this.cx, y: this.y + this.h, vx: rr(-3.4, 3.4), vy: rr(-2.6, 1.4),
@@ -391,6 +478,7 @@ class Player {
   update(dt) {
     const room = G.room;
     if (this.dead) { this.deadT += dt; return; }
+    if (this.heldBy) { this.updateHeld(dt); this.updateAnim(dt); return; }
     this.spawnFlash = Math.max(0, this.spawnFlash - dt);
     this.invuln = Math.max(0, this.invuln - dt);
     this.landT = Math.max(0, this.landT - dt);
@@ -403,7 +491,11 @@ class Player {
     if (cdBefore > 0 && this.dashCd === 0 && !this.dashWasReady) { this.dashWasReady = true; Snd.dashReady(); }
 
     this.rollCd = Math.max(0, this.rollCd - dt);
+    this.flipCd = Math.max(0, this.flipCd - dt);
+    this.rollCutCd = Math.max(0, this.rollCutCd - dt);
     this.hurtT = Math.max(0, this.hurtT - dt);
+    /* a chain link lapses if you do not follow it up */
+    if (this.chainT > 0) { this.chainT -= dt; if (this.chainT <= 0) this.chain = 0; }
 
     /* --- input --- every direction is read on its own, so any two of them
        can be held or tapped together */
@@ -1071,14 +1163,31 @@ class Enemy {
     if (rectsOverlap(this.box(), { x: p.x, y: p.y, w: p.w, h: p.h }))
       p.hurt(dmg || this.damage || 1, this.cx, this.cy);
   }
-  drawFlash(c2, img, x, y, ax, ay, flip) {
-    blit(c2, img, x, y, ax, ay, flip);
+  drawFlash(c2, img, x, y, ax, ay, flip, scale) {
+    blit(c2, img, x, y, ax, ay, flip, 1, scale);
     if (this.flash > 0) {
       /* a struck creature turns white, then fades back to its own colour */
       c2.save();
       c2.globalAlpha = clamp(this.flash / 0.22, 0, 1);
-      blit(c2, whiteSprite(img), x, y, ax, ay, flip);
+      blit(c2, whiteSprite(img), x, y, ax, ay, flip, 1, scale);
       c2.restore();
+    }
+  }
+  /* A guardian knits itself back together while it stands. The mending stalls
+     for a moment after every blow, so a steady attack still gains on it. */
+  bossRegen(dt, perSecond) {
+    if (this.dead || this.dying || !this.awake) return;
+    this.regenHold = Math.max(0, (this.regenHold || 0) - dt);
+    if (this.regenHold > 0 || this.hp >= this.maxHp) return;
+    this.regenAcc = (this.regenAcc || 0) + this.maxHp * (perSecond || 0.006) * dt;
+    if (this.regenAcc >= 1) {
+      const n = Math.floor(this.regenAcc);
+      this.regenAcc -= n;
+      this.hp = Math.min(this.maxHp, this.hp + n);
+      if (Math.random() < 0.5) G.particles.push(new Particle({
+        x: this.cx + rr(-16, 16), y: this.cy + rr(-18, 18), vx: rr(-0.3, 0.3), vy: rr(-1, -0.3),
+        life: rr(0.3, 0.7), col: '#9be89a', col2: '#2f6f37', size: rr(1, 2.2), grav: -0.02
+      }));
     }
   }
 }
@@ -1677,7 +1786,7 @@ class Angler extends Enemy {
    ============================================================ */
 class Emberling extends Enemy {
   constructor(x, y) {
-    super({ x: x, y: y, w: 16, h: 18, hp: 4, damage: 1, coinDrop: ri(6, 9), blood: '#ff7a2a' });
+    super({ x: x, y: y, w: 16, h: 18, hp: 4, damage: 4, coinDrop: ri(6, 9), blood: '#ff7a2a' });
     this.face = rpick([-1, 1]); this.hopT = rr(0.2, 1);
   }
   kill() {
@@ -1721,7 +1830,7 @@ class Emberling extends Enemy {
 }
 class Golem extends Enemy {
   constructor(x, y) {
-    super({ x: x, y: y, w: 30, h: 30, hp: 10, damage: 2, coinDrop: ri(12, 18), blood: '#4a3a44' });
+    super({ x: x, y: y, w: 30, h: 30, hp: 10, damage: 6, coinDrop: ri(12, 18), blood: '#4a3a44' });
     this.face = rpick([-1, 1]); this.speed = 0.34;
   }
   update(dt) {
@@ -1768,7 +1877,7 @@ class Golem extends Enemy {
 }
 class Cinderwing extends Enemy {
   constructor(x, y) {
-    super({ x: x, y: y, w: 18, h: 14, hp: 4, damage: 2, coinDrop: ri(7, 11), blood: '#ff7a2a' });
+    super({ x: x, y: y, w: 18, h: 14, hp: 4, damage: 5, coinDrop: ri(7, 11), blood: '#ff7a2a' });
     this.home = { x: x, y: y }; this.t = rr(0, 8);
   }
   box() { return { x: this.x - 9, y: this.y - 7, w: 18, h: 14 }; }
@@ -1980,6 +2089,7 @@ class Zeus extends Enemy {
   }
   update(dt) {
     this.flash = Math.max(0, this.flash - dt);
+    this.bossRegen(dt, 0.005);
     this.animT += dt;
     const p = G.player;
     if (this.dying) {
@@ -2128,25 +2238,25 @@ class Shot {
 }
 
 const GUARDIANS = {
-  tideWarden: { art: 'tideWarden', title: 'THE TIDE WARDEN', hp: 70,
-    attacks: ['volley', 'aimed'], shots: 7, spread: 1.5,
-    proj: { col: '#a8cbd6', col2: '#2f6fb0', dmg: 1, grav: 0.02, snd: 'splash' } },
-  kraken: { art: 'kraken', title: 'THE KRAKEN MAW', hp: 88,
-    attacks: ['volley', 'summon'], shots: 9, spread: 2.4, minion: 'Jelly', brood: 3,
-    proj: { col: '#c9a8ff', col2: '#4a1f6b', dmg: 2, grav: 0.01, snd: 'gulp' } },
-  leviathan: { art: 'leviathan', title: 'THE LEVIATHAN', hp: 104,
-    attacks: ['charge', 'aimed', 'strike'], shots: 3, spread: 0.5, strikeCol: '#8fd0c0',
-    proj: { col: '#8fd0c0', col2: '#1d5a5a', dmg: 2, grav: 0, home: 1.6, snd: 'gulp' } },
-  forgefiend: { art: 'forgefiend', title: 'THE FORGEFIEND', hp: 120,
-    attacks: ['slam', 'aimed'], shots: 3, spread: 0.34,
-    proj: { col: '#ffd06a', col2: '#c0341a', dmg: 2, grav: 0.05, fiery: true, snd: 'fireball' } },
-  ashTitan: { art: 'ashTitan', title: 'THE ASHEN TITAN', hp: 140,
-    attacks: ['strike', 'summon', 'slam'], minion: 'Emberling', brood: 3, strikeCol: '#ff7a2a',
+  tideWarden: { art: 'tideWarden', title: 'THE TIDE WARDEN', hp: 70, scale: 1.8,
+    attacks: ['volley', 'shock', 'aimed'], shots: 7, spread: 1.5,
+    proj: { col: '#a8cbd6', col2: '#2f6fb0', dmg: 2, grav: 0.02, snd: 'splash' } },
+  kraken: { art: 'kraken', title: 'THE KRAKEN MAW', hp: 88, scale: 2.1,
+    attacks: ['volley', 'sweep', 'summon', 'grab'], shots: 9, spread: 2.4, minion: 'Jelly', brood: 3,
+    proj: { col: '#c9a8ff', col2: '#4a1f6b', dmg: 3, grav: 0.01, snd: 'gulp' } },
+  leviathan: { art: 'leviathan', title: 'THE LEVIATHAN', hp: 104, scale: 2.4,
+    attacks: ['charge', 'aimed', 'swallow', 'strike'], shots: 3, spread: 0.5, strikeCol: '#8fd0c0',
+    proj: { col: '#8fd0c0', col2: '#1d5a5a', dmg: 3, grav: 0, home: 1.6, snd: 'gulp' } },
+  forgefiend: { art: 'forgefiend', title: 'THE FORGEFIEND', hp: 120, scale: 1.5,
+    attacks: ['slam', 'forge', 'aimed'], shots: 3, spread: 0.34,
+    proj: { col: '#ffd06a', col2: '#c0341a', dmg: 4, grav: 0.05, fiery: true, snd: 'fireball' } },
+  ashTitan: { art: 'ashTitan', title: 'THE ASHEN TITAN', hp: 140, scale: 1.7,
+    attacks: ['strike', 'quake', 'summon', 'slam'], minion: 'Emberling', brood: 3, strikeCol: '#ff7a2a',
     shots: 5, spread: 1.2,
-    proj: { col: '#ff7a2a', col2: '#4a3a44', dmg: 2, grav: 0.04, fiery: true, snd: 'fireball' } },
-  ifrit: { art: 'ifrit', title: 'IFRIT, THE MOLTEN CROWN', hp: 168,
-    attacks: ['volley', 'charge', 'strike'], shots: 11, spread: 2.8, strikeCol: '#ffd06a',
-    proj: { col: '#ffd06a', col2: '#8a2410', dmg: 2, grav: 0, home: 1.2, fiery: true, snd: 'fireball' } }
+    proj: { col: '#ff7a2a', col2: '#4a3a44', dmg: 4, grav: 0.04, fiery: true, snd: 'fireball' } },
+  ifrit: { art: 'ifrit', title: 'IFRIT, THE MOLTEN CROWN', hp: 168, scale: 1.9,
+    attacks: ['volley', 'nova', 'charge', 'strike'], shots: 11, spread: 2.8, strikeCol: '#ffd06a',
+    proj: { col: '#ffd06a', col2: '#8a2410', dmg: 4, grav: 0, home: 1.2, fiery: true, snd: 'fireball' } }
 };
 
 class Guardian extends Enemy {
@@ -2160,10 +2270,15 @@ class Guardian extends Enemy {
     this.awake = false; this.dying = false; this.deathT = 0; this.mode = 'idle';
     this.turn = 0;
   }
-  box() { return { x: this.x - 24, y: this.y - 62, w: 48, h: 62 }; }
+  get scale() { return this.cfg.scale || 1; }
+  box() {
+    const s = this.scale;
+    return { x: this.x - 24 * s, y: this.y - 62 * s, w: 48 * s, h: 62 * s };
+  }
   hurt(dmg, fx, fy, mult) {
     if (this.dying) return;
     if (!this.awake) this.wake();
+    this.regenHold = 1.4;             /* the mending stalls when it is struck */
     super.hurt(dmg, fx, fy, mult);
     this.vx = 0; this.vy = 0;
     if (!this.dead) {
@@ -2211,6 +2326,7 @@ class Guardian extends Enemy {
       if (Math.abs(p.cx - this.x) < 220) this.wake();
       return;
     }
+    this.bossRegen(dt, 0.007);
     this.stateT -= dt;
     this.face = p.cx > this.x ? 1 : -1;
     const sp = this.phase === 3 ? 1.55 : (this.phase === 2 ? 1.26 : 1);
@@ -2261,6 +2377,115 @@ class Guardian extends Enemy {
           }
           Snd.charge();
         }
+        break;
+      }
+      /* the Tide Warden stamps, and the sea itself blasts you off your feet */
+      case 'shock': {
+        this.mode = 'attack';
+        if (!this.shocked && this.stateT < 1.25) {
+          this.shocked = true;
+          const gy = this.y;
+          G.waves.push(new Shockwave(this.x, gy, 4, cfg.proj.col, cfg.proj.col2));
+          Snd.boom(); G.shake(10); G.flash(0.16);
+          for (let i = 0; i < 30; i++) G.particles.push(new Particle({
+            x: this.x + rr(-24, 24), y: gy, vx: rr(-4, 4), vy: rr(-4, -0.5), life: rr(0.3, 0.8),
+            col: cfg.proj.col, col2: cfg.proj.col2, size: rr(1.4, 3.4), grav: 0.16
+          }));
+        }
+        if (this.stateT <= 0) this.shocked = false;
+        break;
+      }
+      /* the Kraken lashes out with an arm */
+      case 'sweep': {
+        this.mode = 'attack';
+        if (!this.swept && this.stateT < 1.4) {
+          this.swept = true;
+          const dir = p.cx > this.x ? 1 : -1;
+          G.waves.push(new Tentacle(this.x + dir * 10, this.y - 34 * this.scale, dir, 4, 150));
+          Snd.gulp(); G.shake(5);
+        }
+        if (this.stateT <= 0) this.swept = false;
+        break;
+      }
+      /* and takes you up in one, and squeezes */
+      case 'grab': {
+        this.mode = 'attack';
+        if (!this.grabbed && this.stateT < 1.45) {
+          this.grabbed = true;
+          const near = Math.abs(p.cx - this.x) < 120 * this.scale && Math.abs(p.cy - this.y) < 110 * this.scale;
+          if (near && !p.dead && p.heldBy === null) {
+            p.seize(this, 1.35, 6);       /* three hearts, over the squeeze */
+            Snd.gulp(); G.shake(6);
+          } else {
+            /* out of reach, so it lashes instead of leaving you alone */
+            const dir = p.cx > this.x ? 1 : -1;
+            G.waves.push(new Tentacle(this.x + dir * 10, this.y - 34 * this.scale, dir, 4, 170));
+            Snd.gulp();
+          }
+        }
+        if (this.stateT <= 0) this.grabbed = false;
+        break;
+      }
+      /* the Leviathan takes you down whole */
+      case 'swallow': {
+        this.mode = 'attack';
+        if (!this.gulped && this.stateT < 1.4) {
+          this.gulped = true;
+          const near = Math.abs(p.cx - this.x) < 130 * this.scale && Math.abs(p.cy - this.y) < 120 * this.scale;
+          if (near && !p.dead && G.swallowInto) {
+            Snd.gulp(); G.shake(9); G.flash(0.5);
+            G.swallowInto(this);
+          } else {
+            const dir = p.cx > this.x ? 1 : -1;
+            G.waves.push(new Tentacle(this.x + dir * 10, this.y - 30 * this.scale, dir, 4, 180));
+            Snd.gulp();
+          }
+        }
+        if (this.stateT <= 0) this.gulped = false;
+        break;
+      }
+      /* the Forgefiend beats the floor, and fire walks out of it */
+      case 'forge': {
+        this.mode = 'attack';
+        this.shotT -= dt;
+        if (this.shotT <= 0 && this.brood < 7) {
+          this.shotT = 0.13;
+          const dir = p.cx > this.x ? 1 : -1;
+          const px = this.x + dir * (34 + this.brood * 34);
+          G.waves.push(new FirePillar(px, this.y, 5, cfg.proj.col, cfg.proj.col2));
+          this.brood++;
+          Snd.fire(); G.shake(2);
+        }
+        break;
+      }
+      /* the Ashen Titan brings the roof down */
+      case 'quake': {
+        this.mode = 'attack';
+        this.shotT -= dt;
+        if (this.shotT <= 0 && this.brood < 9) {
+          this.shotT = 0.16;
+          const px = G.cam.x + rr(20, VW - 20);
+          const gy = G.room.groundBelow(px, G.cam.y + 10);
+          G.waves.push(new FirePillar(px, gy, 5, '#c9a89a', '#4a3a44'));
+          this.brood++;
+          if (this.brood === 1) { Snd.boom(); G.shake(9); }
+        }
+        break;
+      }
+      /* Ifrit throws a crown of fire out on every side */
+      case 'nova': {
+        this.mode = 'attack';
+        if (!this.novaed && this.stateT < 1.35) {
+          this.novaed = true;
+          const n = 14;
+          for (let i = 0; i < n; i++) {
+            const a = i / n * TAU;
+            G.projectiles.push(new Shot(this.x, this.y - 34 * this.scale,
+              Math.cos(a) * 2.6, Math.sin(a) * 2.6, cfg.proj));
+          }
+          Snd.explode(); G.shake(11); G.flash(0.3);
+        }
+        if (this.stateT <= 0) this.novaed = false;
         break;
       }
       case 'summon': {
@@ -2326,7 +2551,223 @@ class Guardian extends Enemy {
     if (this.dying) alpha = 0.55 + Math.sin(this.deathT * 22) * 0.45;
     c2.save();
     if (alpha < 1) c2.globalAlpha = alpha;
-    this.drawFlash(c2, img, this.x, this.y, a.x, a.y, this.face > 0);
+    this.drawFlash(c2, img, this.x, this.y, a.x, a.y, this.face > 0, this.scale);
+    c2.restore();
+  }
+}
+
+/* The wide arc of air a special swing throws off. It is the swipe you see,
+   and it carries the blow well past the blade itself. */
+class AirSlash {
+  constructor(x, y, dir, dmg, kind) {
+    this.x = x; this.y = y; this.dir = dir; this.dmg = dmg;
+    this.kind = kind || 'flip';
+    this.t = 0; this.life = 0.46; this.dead = false; this.hit = new Set();
+    this.speed = kind === 'pierce' ? 2.4 : 5.0;
+    this.col = kind === 'pierce' ? '#dcefff' : '#e8f4ff';
+    this.col2 = kind === 'pierce' ? '#7fb6e8' : '#8fd0ff';
+    /* the pierce throws its arc out flat along the ground on both sides */
+    this.flat = kind === 'pierce';
+  }
+  box() {
+    const grow = 1 + this.t * 2.4;
+    if (this.flat) return { x: this.x - 46 * grow, y: this.y - 12, w: 92 * grow, h: 26 };
+    return { x: this.dir > 0 ? this.x : this.x - 54 * grow, y: this.y - 26 * grow,
+             w: 54 * grow, h: 52 * grow };
+  }
+  update(dt) {
+    this.t += dt; this.life -= dt;
+    if (!this.flat) this.x += this.dir * this.speed * dt * 60;
+    const box = this.box();
+    for (const en of G.enemies) {
+      if (en.dead || this.hit.has(en)) continue;
+      if (!rectsOverlap(box, en.box())) continue;
+      this.hit.add(en);
+      en.hurt(this.dmg, this.x, this.y, 2);        /* the arc pays double too */
+      G.hitStop(0.03);
+    }
+    for (let i = 0; i < 2; i++) G.particles.push(new Particle({
+      x: this.x + (this.flat ? rr(-40, 40) : this.dir * rr(0, 40)), y: this.y + rr(-18, 18),
+      vx: (this.flat ? rr(-2, 2) : this.dir * rr(1, 3)), vy: rr(-0.8, 0.8),
+      life: rr(0.12, 0.3), col: this.col, col2: this.col2, size: rr(1, 2.4), grav: 0, drag: 0.9
+    }));
+    if (this.life <= 0) this.dead = true;
+  }
+  draw(c2) {
+    const k = clamp(1 - this.life / 0.46, 0, 1);
+    const a = 1 - k;
+    c2.save();
+    c2.globalAlpha = a * 0.9;
+    c2.globalCompositeOperation = 'lighter';
+    if (this.flat) {
+      /* a low sheet of air running both ways from the landing */
+      const w = Math.round(46 * (1 + k * 2.4));
+      for (let i = 0; i < 3; i++) {
+        c2.fillStyle = i === 0 ? '#ffffff' : (i === 1 ? this.col : this.col2);
+        const hh = 3 - i;
+        c2.fillRect(Math.round(this.x - w), Math.round(this.y - hh), w * 2, hh * 2);
+      }
+    } else {
+      /* a crescent, opening as it flies */
+      const r = 22 * (1 + k * 2.2);
+      for (let step = 0; step < 26; step++) {
+        const ang = -1.15 + (step / 25) * 2.3;
+        const px = this.x + this.dir * Math.cos(ang) * r;
+        const py = this.y + Math.sin(ang) * r;
+        const thick = Math.round(4 - Math.abs(step - 12.5) / 5);
+        c2.fillStyle = step % 5 === 0 ? '#ffffff' : this.col;
+        c2.fillRect(Math.round(px), Math.round(py), Math.max(1, thick), Math.max(1, thick));
+        c2.fillStyle = this.col2;
+        c2.fillRect(Math.round(px - this.dir * 3), Math.round(py), 2, 2);
+      }
+    }
+    c2.restore();
+  }
+}
+
+/* A ring of force running out along the ground. The Tide Warden throws it,
+   and it blasts you off your feet rather than merely stinging. */
+class Shockwave {
+  constructor(x, y, dmg, col, col2) {
+    this.x = x; this.y = y; this.dmg = dmg || 2;
+    this.col = col || '#a8cbd6'; this.col2 = col2 || '#2f6fb0';
+    this.r = 6; this.life = 1.15; this.dead = false; this.t = 0; this.hit = false;
+  }
+  update(dt) {
+    this.t += dt; this.life -= dt;
+    this.r += 210 * dt;
+    const p = G.player;
+    if (!this.hit && !p.dead) {
+      const dx = p.cx - this.x, d = Math.abs(dx);
+      /* it catches you as the ring passes, and only near the ground */
+      if (Math.abs(d - this.r) < 14 && Math.abs(p.cy - this.y) < 46) {
+        this.hit = true;
+        if (p.hurt(this.dmg, this.x, this.y + 20)) {
+          /* blasted away, far harder than an ordinary blow */
+          const dir = Math.sign(dx) || 1;
+          p.vx = dir * 8.5; p.vy = -5.2; p.hurtT = 0.42;
+          p.spinT = 0; p.rollT = 0;
+          G.shake(9);
+        }
+      }
+    }
+    for (let i = 0; i < 3; i++) {
+      const side = Math.random() < 0.5 ? -1 : 1;
+      G.particles.push(new Particle({
+        x: this.x + side * this.r + rr(-4, 4), y: this.y + rr(-4, 4),
+        vx: side * rr(0.5, 2), vy: rr(-2.4, -0.3), life: rr(0.2, 0.5),
+        col: this.col, col2: this.col2, size: rr(1, 2.6), grav: 0.1
+      }));
+    }
+    if (this.life <= 0) this.dead = true;
+  }
+  draw(c2) {
+    const a = clamp(this.life / 1.15, 0, 1);
+    c2.save();
+    c2.globalAlpha = a;
+    for (const side of [-1, 1]) {
+      const x = Math.round(this.x + side * this.r);
+      const h = Math.round(10 + a * 16);
+      c2.fillStyle = this.col2; c2.fillRect(x - 2, Math.round(this.y - h), 4, h);
+      c2.fillStyle = this.col;  c2.fillRect(x - 1, Math.round(this.y - h), 2, h);
+      c2.fillStyle = '#ffffff'; c2.fillRect(x, Math.round(this.y - h), 1, Math.round(h * 0.4));
+    }
+    c2.restore();
+  }
+}
+
+/* A tentacle thrown out in an arc. It knocks you back hard. */
+class Tentacle {
+  constructor(x, y, dir, dmg, reach) {
+    this.x = x; this.y = y; this.dir = dir; this.dmg = dmg || 4;
+    this.reach = reach || 130;
+    this.t = 0; this.life = 0.62; this.dead = false; this.hit = false;
+  }
+  tipAt(k) {
+    const bend = Math.sin(k * Math.PI) * 26;
+    return { x: this.x + this.dir * this.reach * k, y: this.y - bend };
+  }
+  update(dt) {
+    this.t += dt; this.life -= dt;
+    const k = clamp(this.t / 0.34, 0, 1);
+    const tip = this.tipAt(k);
+    const p = G.player;
+    if (!this.hit && !p.dead && this.t > 0.06 &&
+        rectsOverlap({ x: tip.x - 14, y: tip.y - 14, w: 28, h: 28 },
+                     { x: p.x, y: p.y, w: p.w, h: p.h })) {
+      this.hit = true;
+      if (p.hurt(this.dmg, this.x, this.y)) {
+        p.vx = this.dir * 7.6; p.vy = -4.2; p.hurtT = 0.34;
+        p.spinT = 0; p.rollT = 0;
+        G.shake(7);
+      }
+    }
+    if (Math.random() < 0.8) G.particles.push(new Particle({
+      x: tip.x + rr(-5, 5), y: tip.y + rr(-5, 5), vx: rr(-1, 1), vy: rr(-1, 0.4),
+      life: rr(0.16, 0.4), col: '#c9a8ff', col2: '#4a1f6b', size: rr(1, 2.6), grav: 0.04
+    }));
+    if (this.life <= 0) this.dead = true;
+  }
+  draw(c2) {
+    const k = clamp(this.t / 0.34, 0, 1);
+    const fade = clamp(this.life / 0.62, 0, 1);
+    c2.save(); c2.globalAlpha = 0.5 + fade * 0.5;
+    let px = this.x, py = this.y;
+    const steps = 14;
+    for (let i = 1; i <= steps; i++) {
+      const q = k * i / steps, pt = this.tipAt(q);
+      const w = Math.max(2, Math.round(7 * (1 - i / steps) + 2));
+      c2.fillStyle = i % 3 === 0 ? '#4a1f6b' : '#8f5fc0';
+      c2.fillRect(Math.round(pt.x - w / 2), Math.round(pt.y - w / 2), w, w);
+      px = pt.x; py = pt.y;
+    }
+    c2.fillStyle = '#c9a8ff';
+    c2.fillRect(Math.round(px - 3), Math.round(py - 3), 6, 6);
+    c2.restore();
+  }
+}
+
+/* A pillar of fire that erupts from the floor after a warning scorch. */
+class FirePillar {
+  constructor(x, groundY, dmg, col, col2) {
+    this.x = x; this.gy = groundY; this.dmg = dmg || 4;
+    this.col = col || '#ffd06a'; this.col2 = col2 || '#c0341a';
+    this.t = 0; this.warn = 0.55; this.live = 0.42; this.dead = false; this.hit = false;
+  }
+  get y() { return this.gy - 24; }
+  update(dt) {
+    this.t += dt;
+    if (this.t > this.warn && this.t < this.warn + this.live) {
+      const p = G.player;
+      if (!this.hit && !p.dead &&
+          rectsOverlap({ x: this.x - 10, y: this.gy - 54, w: 20, h: 58 },
+                       { x: p.x, y: p.y, w: p.w, h: p.h })) {
+        this.hit = true; p.hurt(this.dmg, this.x, this.gy - 20);
+      }
+      if (Math.random() < 0.9) G.particles.push(new Particle({
+        x: this.x + rr(-8, 8), y: this.gy - rr(0, 50), vx: rr(-0.7, 0.7), vy: rr(-3.4, -1),
+        life: rr(0.2, 0.5), col: this.col, col2: this.col2, size: rr(1.6, 3.6), grav: -0.02, type: 'fire'
+      }));
+    }
+    if (this.t > this.warn + this.live) this.dead = true;
+  }
+  draw(c2) {
+    if (this.t < this.warn) {
+      const k = this.t / this.warn;
+      c2.save(); c2.globalAlpha = 0.35 + Math.sin(this.t * 28) * 0.25;
+      c2.fillStyle = this.col;
+      c2.fillRect(Math.round(this.x - 9 * k), Math.round(this.gy - 2), Math.round(18 * k), 3);
+      c2.restore();
+      return;
+    }
+    const k = clamp((this.t - this.warn) / this.live, 0, 1);
+    const h = Math.round(54 * Math.sin(Math.min(1, k * 1.7) * Math.PI * 0.5));
+    c2.save(); c2.globalAlpha = 1 - k * 0.4;
+    for (let i = 0; i < h; i++) {
+      const w = Math.round(14 - i * 0.14 + Math.sin(i * 0.5 + this.t * 30) * 2);
+      c2.fillStyle = i < h * 0.4 ? '#ffffff' : (i < h * 0.75 ? this.col : this.col2);
+      c2.fillRect(Math.round(this.x - w / 2), this.gy - i, w, 1);
+    }
     c2.restore();
   }
 }
@@ -2420,6 +2861,7 @@ class MotherSpore extends Enemy {
   kill() { if (this.dying) return; this.dying = true; this.deathT = 0; Snd.bellow(); G.shake(11); }
   update(dt) {
     this.flash = Math.max(0, this.flash - dt);
+    this.bossRegen(dt, 0.005);
     this.animT += dt;
     const p = G.player;
     if (this.dying) {
@@ -2537,6 +2979,7 @@ class Dragon extends Enemy {
   }
   update(dt) {
     this.flash = Math.max(0, this.flash - dt);
+    this.bossRegen(dt, 0.005);
     this.animT += dt;
     const p = G.player;
 

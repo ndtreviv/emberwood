@@ -170,6 +170,14 @@ in the shop — up to three times as hard.
 Swinging in the air with **no** direction held is still a plain swing, as is any swing with
 your feet on the ground. Each cut has a short cooldown, so neither can be chained.
 
+## Inside the Leviathan
+
+The Leviathan can take you down whole. You wake in **the Gullet**: a shaft of rib shelves
+with acid climbing the walls behind you. Jump the shelves, dash or run the gaps, and cut
+your way out at the top. Do it and the fight resumes exactly where it stood, the guardian
+still carrying its wounds. Fail and the belly spits you back out, a fifth of your coins the
+poorer.
+
 ## Getting hit
 
 A struck creature turns white for a moment and is shoved back along the line of the blow.
