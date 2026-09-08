@@ -112,6 +112,7 @@ page in Settings.
 | Sword, part way through a roll | **Roll cut**: a low sweep that keeps the roll going |
 | Walk into a ladder | Climb it. Keep holding to go up, hold down to descend, jump to let go |
 | Space, X, Z or left click | Swing the sword |
+| Hold the sword instead of tapping | **Charge a gale.** Let go on a full charge and a blade of wind goes out, cutting through everything in a line and batting shots back |
 | D | Dash toward the cursor (has a cooldown) |
 | F, in the air, two tiles up | Air pierce: stab straight down. No cooldown, double coins |
 | S (hold), in water | Swim freely in any direction |
@@ -178,6 +179,10 @@ with acid climbing the walls behind you. Jump the shelves, dash or run the gaps,
 your way out at the top. Do it and the fight resumes exactly where it stood, the guardian
 still carrying its wounds. Fail and the belly spits you back out, a fifth of your coins the
 poorer.
+
+**It is meaner every time it takes you.** The acid climbs at 26 pixels a second the first
+time, then 33, then 40, and 46 from the fourth onward. The shelves narrow and split for the
+first three visits, which is as far as they can go and still be climbed.
 
 ## Getting hit
 
@@ -284,6 +289,18 @@ sounds nothing like the walk in.
 | `ember` | all three ash realms | F major, warm and lilting |
 | `bossDeep` | the three guardians of the deep | D minor, driving |
 | `bossAsh` | the three guardians of the ash | C minor, lower and faster than anything before |
+
+Each realm of the deep and the ash runs three stretches before its arena, each longer and
+rougher than the last, with the door at the end of one opening the next.
+
+| Realm | Stretches |
+| --- | --- |
+| Tidewrack | Tidewrack Shore, The Wrack Line, The Sunken Reef |
+| Drowned Hall | The Drowned Hall, The Flooded Nave, The Choir Below |
+| The Trench | The Abyssal Trench, The Cold Shelf, The Black Smokers |
+| Cinder Fields | The Cinder Fields, The Ash Flats, The Slag Pits |
+| Obsidian Steps | The Obsidian Steps, The Glass Terraces, The Shattered Stair |
+| Molten Crown | The Molten Crown, The Lava Channels, The Caldera Rim |
 
 ### What the later realms put in your way
 
@@ -432,9 +449,9 @@ from the coins scattered through each area.
 | --- | --- |
 | Heart Vessel | One more heart |
 | Whetstone | More sword damage and reach |
-| Swift Boots | Move faster |
+| Swift Boots | Move faster, up to half again your base pace |
 | Windstep Charm | Shorter dash cooldown |
-| Lodestone | Coins drift toward you, straight through rock |
+| Lodestone | Coins drift toward you from further off, straight through rock. The draw itself never gets stronger |
 | Ward Charm | A chance to shrug off a blow |
 | Duellist's Sigil | The flip cut, the roll cut and the air pierce all bite harder |
 | Forest Tonic | Refill your hearts now |

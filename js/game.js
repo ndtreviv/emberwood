@@ -18,6 +18,7 @@ const G = {
   flags: {},
   bannerTxt: '', bannerT: 0,
   trans: null, swallowed: null, escaped: null, acid: null, acidBurnT: 0, throne: null,
+  gulletVisits: 0,
   relicShow: null,
   shopOpen: false, shopSel: -1,
   level: 0, unlocked: 1, cleared: [false, false, false], levelState: {},
@@ -114,6 +115,7 @@ function packSave() {
     codes: { found: G.codes.found, used: G.codes.used, tickets: G.codes.tickets,
              admin: G.codes.admin },
     profile: Object.assign({}, G.profile),
+    gulletVisits: G.gulletVisits || 0,
     quests: { claimed: (G.quests && G.quests.claimed) || {},
               daily: (G.quests && G.quests.daily) || null },
     comboBest: G.comboBest || 0,
@@ -153,6 +155,7 @@ function applySave(d) {
   G.codes.tickets = (d.codes && d.codes.tickets) || 0;
   G.codes.admin = !!(d.codes && d.codes.admin);
   G.profile = Object.assign({ hair: 0, hairCol: 0, outfit: 0, tee: 0, cape: 'none' }, d.profile || {});
+  G.gulletVisits = d.gulletVisits || 0;
   G.quests = { claimed: (d.quests && d.quests.claimed) || {},
                daily: (d.quests && d.quests.daily) || null };
   G.comboBest = d.comboBest || 0;
@@ -452,12 +455,18 @@ G.enterRoom = function (id, spawn) {
 G.swallowInto = function (boss) {
   if (G.trans || G.swallowed) return;
   saveLevelState();
+  /* the belly is rebuilt meaner for every time it has had you */
+  G.gulletVisits = (G.gulletVisits || 0) + 1;
+  try {
+    World.rooms.gullet = World.buildGullet(4444 + G.gulletVisits * 91, G.gulletVisits - 1);
+    World.rooms.gullet.level = G.level;
+  } catch (e) { console.error('gullet', e); }
   G.swallowed = {
     roomId: G.roomId, level: G.level,
     bossHp: boss ? boss.hp : null,
     x: G.player.cx, y: G.player.y + G.player.h
   };
-  G.banner('SWALLOWED WHOLE', 2.6);
+  G.banner(G.gulletVisits > 1 ? 'SWALLOWED AGAIN' : 'SWALLOWED WHOLE', 2.6);
   G.trans = { t: 0, phase: 'out', dur: 0.5, id: 'gullet', exit: null, swallow: true };
 };
 /* cut your way out at the top, and the fight picks up where it left off */
@@ -680,6 +689,7 @@ function startGame(slot) {
   G.relicSeen = {}; G.relicShow = null; G.swallowed = null; G.acid = null;
   G.quests = { claimed: {}, daily: null }; G.comboBest = 0; G.questsOpen = false;
   G.profile = { hair: 0, hairCol: 0, outfit: 0, tee: 0, cape: 'none' };
+  G.gulletVisits = 0;
   const d = readSlot(G.slot);
   if (d && d.used) applySave(d);
   G.mapMode = G.tutorialDone ? 'realm' : 'tutorial';
@@ -1093,7 +1103,7 @@ function updateAcid(dt) {
   const room = G.room;
   if (!room || !room.acid) { G.acid = null; return; }
   if (!G.acid) G.acid = { y: room.acid.y };
-  G.acid.y -= room.acid.rate * dt;
+  G.acid.y -= (room.acid.rate || 26) * dt;
   const p = G.player;
   if (!p.dead && p.y + p.h > G.acid.y) {
     /* standing in it burns fast */
@@ -1325,7 +1335,11 @@ function drawTutorialMap() {
 /* BACK sits top left, clear of the chapter banner. The bottom left corner
    already carries the codes icon and the purse. */
 function mapBackRect() { return { x: 5, y: 6, w: 42, h: 14 }; }
-function mapLookRect() { return { x: 58, y: VH - 40, w: 42, h: 13 }; }
+/* under the middle realm of whichever chapter is on the page */
+function mapLookRect() {
+  const n = World.LEVELS[World.CHAPTERS[0].levels[1]].node;
+  return { x: n.x - 24, y: n.y + 46, w: 48, h: 14 };
+}
 function mapGearRect() { return { x: VW - 30, y: VH - 26, w: 24, h: 22 }; }
 /* the footer line shares its strip with the cog, so it stops short of it */
 function mapFootX() { return (mapGearRect().x - 4) / 2; }
@@ -1560,14 +1574,15 @@ function drawMap() {
     }
     if (qhov) drawText(ctx, 'QUESTS', 43, VH - 21, '#ffe98a', 1, 'center', '#3a2c1c');
   }
-  /* and the way back to your own look */
+  /* and the way back to your own look, under the middle realm */
   if (G.tutorialDone) {
     const lr = mapLookRect(), lh = G.overLookIcon;
     ctx.fillStyle = lh ? 'rgba(74,56,34,0.94)' : 'rgba(48,36,22,0.88)';
     ctx.fillRect(lr.x, lr.y, lr.w, lr.h);
     ctx.fillStyle = lh ? '#ffd04a' : '#b8862f';
     ctx.fillRect(lr.x, lr.y, lr.w, 1); ctx.fillRect(lr.x, lr.y + lr.h - 1, lr.w, 1);
-    drawText(ctx, 'LOOK', lr.x + lr.w / 2, lr.y + 3, '#ffeec0', 1, 'center');
+    ctx.fillRect(lr.x, lr.y, 1, lr.h); ctx.fillRect(lr.x + lr.w - 1, lr.y, 1, lr.h);
+    drawText(ctx, 'LOOK', lr.x + lr.w / 2, lr.y + 4, '#ffeec0', 1, 'center');
   }
   if (G.player) {
     ctx.drawImage(Art.item.coin[Math.floor(G.mapT / 0.09) % 8], 6, VH - 28);
@@ -2224,6 +2239,17 @@ function drawHUD() {
 
   /* everything below the dash bar stacks in order, never overlapping */
   let stack = dy + 9;
+  if (p.chargeT > 0.16) {
+    const cf = clamp(p.chargeT / CHARGE_FULL, 0, 1);
+    const full = cf >= 1;
+    ctx.fillStyle = '#12101c'; ctx.fillRect(dx - 1, stack - 1, dw + 2, 5);
+    ctx.fillStyle = '#2b2740'; ctx.fillRect(dx, stack, dw, 3);
+    ctx.fillStyle = full ? (Math.floor(G.t * 8) % 2 ? '#ffffff' : '#8fd0ff') : '#5f7fb0';
+    ctx.fillRect(dx, stack, Math.round(dw * cf), 3);
+    drawText(ctx, full ? 'GALE' : 'CHARGE', dx + dw + 4, stack - 2,
+             full ? '#dff0ff' : '#6d7994', 1, 'left', '#000000');
+    stack += 9;
+  }
   if (G.bossFightOn()) {
     /* the pierce is rationed while a guardian is up */
     const pf = p.pierceCd > 0 ? 1 - p.pierceCd / 1.0 : 1;

@@ -589,7 +589,18 @@ function buildTutorial(seed) {
    before the acid below reaches you. Dash the gaps, jump the ledges,
    roll under the low bones.
    ============================================================ */
-function buildGullet(seed) {
+/* The belly gets meaner every time it takes you. The shelves narrow and
+   split, and the acid climbs faster. Three tiers of shelf are as far as it
+   can go and still be climbed, so past that only the acid rises. */
+const GULLET_TIERS = [
+  { base: 12, min: 11, gap: 4, every: 3 },
+  { base: 12, min: 11, gap: 4, every: 2 },
+  { base: 11, min: 11, gap: 5, every: 2 }
+];
+function gulletTier(visits) { return GULLET_TIERS[clamp(visits | 0, 0, GULLET_TIERS.length - 1)]; }
+function gulletAcidRate(visits) { return Math.min(46, 26 + (visits | 0) * 7); }
+function buildGullet(seed, visits) {
+  const tier = gulletTier(visits || 0);
   const rng = new RNG(seed);
   const W = 28, H = 58;
   const room = new Room({ id: 'gullet', name: 'THE GULLET', mode: 'side',
@@ -620,14 +631,14 @@ function buildGullet(seed) {
   let side = 1;
   for (let y = H - 5, n = 0; y > 5; y -= 3, n++) {
     /* narrow shelves, and narrower the higher you climb */
-    const wide = clamp(12 - Math.floor(n / 4), 11, 12);
+    const wide = clamp(tier.base - Math.floor(n / 4), tier.min, tier.base);
     const x0 = side > 0 ? L + 1 : R - 1 - wide;
     const x1 = x0 + wide;
-    if (n > 0 && n % 3 === 0) {
+    if (n > 0 && n % tier.every === 0) {
       /* a gap through the middle: dash it, or carry a run into the jump */
       const half = Math.floor(wide / 2) - 1;
       put(x0, x0 + half, y);
-      put(x0 + half + 4, x1, y);
+      put(x0 + half + tier.gap, x1, y);
       ledges.push({ x: x0, y: y, w: wide, gap: true });
     } else {
       put(x0, x1, y);
@@ -655,7 +666,7 @@ function buildGullet(seed) {
   });
 
   /* the acid starts under the first shelf and climbs hard after you */
-  room.acid = { y: (H - 2) * TILE, rate: 26 };
+  room.acid = { y: (H - 2) * TILE, rate: gulletAcidRate(visits || 0) };
   return room;
 }
 
@@ -997,6 +1008,31 @@ function buildLair(seed) {
   return room;
 }
 
+/* Every realm of the later chapters is a run of three stretches and then
+   the arena. Each stretch is longer and rougher than the one before it,
+   and the door at the end of one opens the next. */
+function buildRealmChain(d, theme) {
+  const names = d.parts || [d.name, d.name, d.name];
+  const ids = [d.id, d.id + '2', d.id + '3'];
+  for (let k = 0; k < ids.length; k++) {
+    const last = k === ids.length - 1;
+    World.rooms[ids[k]] = buildChapterRoom(Object.assign({}, d, theme, {
+      id: ids[k], name: names[k], seed: d.seed + k * 137,
+      w: d.w + k * 14,
+      hazards: d.hazards + k * 2,
+      ambient: d.ambient, dark: d.dark,
+      to: last ? d.id + 'End' : ids[k + 1],
+      toLabel: last ? d.toLabel : names[k + 1]
+    }));
+  }
+  World.rooms[d.id + 'End'] = buildChapterArena({
+    id: d.id + 'End', name: d.toLabel, seed: d.seed + 500, bg: theme.bg,
+    music: theme.bossMusic,
+    ground: theme.ground, groundTop: theme.groundTop, plat: theme.plat,
+    ambient: d.ambient, dark: d.dark, decor: theme.decor, boss: d.boss
+  });
+}
+
 /* ============================================================
    CHAPTERS TWO AND THREE — one generator per theme, run three
    times each with rising difficulty.
@@ -1233,7 +1269,7 @@ World.build = function () {
   World.rooms.cave = buildCave(5150);
   World.rooms.mine = buildMine(2468);
   World.rooms.tutorial = buildTutorial(1717);
-  World.rooms.gullet = buildGullet(4444);
+  World.rooms.gullet = buildGullet(4444, 0);
   World.rooms.lair = buildLair(666);
 
   World.rooms.cloud1 = buildCloud(7788);
@@ -1245,25 +1281,20 @@ World.build = function () {
   const seaDecor = [{ kind: 'coral', n: 3, p: 0.22 }, { kind: 'kelp', n: 3, p: 0.26 },
                     { kind: 'rock', n: 3, p: 0.06 }, { kind: 'crystal', n: 3, p: 0.05 }];
   const deepRooms = [
-    { id: 'shore', hazards: 5, music: 'tide', name: 'TIDEWRACK SHORE', seed: 4101, w: 150, pools: 0, ambient: 0.4, dark: 0,
+    { id: 'shore', parts: ['TIDEWRACK SHORE', 'THE WRACK LINE', 'THE SUNKEN REEF'], hazards: 5, music: 'tide', name: 'TIDEWRACK SHORE', seed: 4101, w: 150, pools: 0, ambient: 0.4, dark: 0,
       spawns: [{ type: 'crab', n: 14 }, { type: 'jelly', n: 12, air: true }, { type: 'angler', n: 6, air: true }],
       to: 'shoreEnd', toLabel: 'THE WARDEN', boss: 'tideWarden' },
-    { id: 'drowned', hazards: 7, music: 'deep', name: 'THE DROWNED HALL', seed: 4102, w: 158, pools: 0, ambient: 0.3, dark: 0.3,
+    { id: 'drowned', parts: ['THE DROWNED HALL', 'THE FLOODED NAVE', 'THE CHOIR BELOW'], hazards: 7, music: 'deep', name: 'THE DROWNED HALL', seed: 4102, w: 158, pools: 0, ambient: 0.3, dark: 0.3,
       spawns: [{ type: 'crab', n: 12 }, { type: 'jelly', n: 16, air: true }, { type: 'angler', n: 10, air: true }],
       to: 'drownedEnd', toLabel: 'THE KRAKEN MAW', boss: 'kraken' },
-    { id: 'abyss', hazards: 9, music: 'trench', name: 'THE ABYSSAL TRENCH', seed: 4103, w: 166, pools: 0, ambient: 0.2, dark: 0.45,
+    { id: 'abyss', parts: ['THE ABYSSAL TRENCH', 'THE COLD SHELF', 'THE BLACK SMOKERS'], hazards: 9, music: 'trench', name: 'THE ABYSSAL TRENCH', seed: 4103, w: 166, pools: 0, ambient: 0.2, dark: 0.45,
       spawns: [{ type: 'crab', n: 12 }, { type: 'jelly', n: 18, air: true }, { type: 'angler', n: 14, air: true }],
       to: 'abyssEnd', toLabel: 'THE LEVIATHAN', boss: 'leviathan' }
   ];
   for (const d of deepRooms) {
-    World.rooms[d.id] = buildChapterRoom(Object.assign({}, d, {
+    buildRealmChain(d, {
       bg: 'deep', ground: T_DEEPSTONE, groundTop: T_DEEPTOP, plat: T_SAND,
-      decor: seaDecor, doorKind: 'mush'
-    }));
-    World.rooms[d.id + 'End'] = buildChapterArena({
-      id: d.id + 'End', name: d.toLabel, seed: d.seed + 500, bg: 'deep', music: 'bossDeep',
-      ground: T_DEEPSTONE, groundTop: T_DEEPTOP, plat: T_SAND,
-      ambient: d.ambient, dark: d.dark, decor: seaDecor, boss: d.boss
+      decor: seaDecor, doorKind: 'mush', bossMusic: 'bossDeep'
     });
   }
 
@@ -1271,25 +1302,20 @@ World.build = function () {
   const ashDecor = [{ kind: 'pillar', n: 2, p: 0.14 }, { kind: 'rock', n: 3, p: 0.10 },
                     { kind: 'crystal', n: 3, p: 0.06 }, { kind: 'torch', p: 0.05 }];
   const ashRooms = [
-    { id: 'cinder', hazards: 7, name: 'THE CINDER FIELDS', seed: 4201, w: 158, pools: 0, ambient: 0.26, dark: 0.3,
+    { id: 'cinder', parts: ['THE CINDER FIELDS', 'THE ASH FLATS', 'THE SLAG PITS'], hazards: 7, name: 'THE CINDER FIELDS', seed: 4201, w: 158, pools: 0, ambient: 0.26, dark: 0.3,
       spawns: [{ type: 'emberling', n: 16 }, { type: 'cinderwing', n: 10, air: true }, { type: 'golem', n: 4 }],
       to: 'cinderEnd', toLabel: 'THE FORGEFIEND', boss: 'forgefiend' },
-    { id: 'obsidian', hazards: 9, name: 'THE OBSIDIAN STEPS', seed: 4202, w: 166, pools: 0, ambient: 0.22, dark: 0.4,
+    { id: 'obsidian', parts: ['THE OBSIDIAN STEPS', 'THE GLASS TERRACES', 'THE SHATTERED STAIR'], hazards: 9, name: 'THE OBSIDIAN STEPS', seed: 4202, w: 166, pools: 0, ambient: 0.22, dark: 0.4,
       spawns: [{ type: 'emberling', n: 16 }, { type: 'cinderwing', n: 14, air: true }, { type: 'golem', n: 7 }],
       to: 'obsidianEnd', toLabel: 'THE ASHEN TITAN', boss: 'ashTitan' },
-    { id: 'molten', hazards: 11, name: 'THE MOLTEN CROWN', seed: 4203, w: 174, pools: 0, ambient: 0.2, dark: 0.45,
+    { id: 'molten', parts: ['THE MOLTEN CROWN', 'THE LAVA CHANNELS', 'THE CALDERA RIM'], hazards: 11, name: 'THE MOLTEN CROWN', seed: 4203, w: 174, pools: 0, ambient: 0.2, dark: 0.45,
       spawns: [{ type: 'emberling', n: 18 }, { type: 'cinderwing', n: 16, air: true }, { type: 'golem', n: 10 }],
       to: 'moltenEnd', toLabel: 'IFRIT', boss: 'ifrit' }
   ];
   for (const d of ashRooms) {
-    World.rooms[d.id] = buildChapterRoom(Object.assign({}, d, {
-      music: 'ember', bg: 'ash', ground: T_ASH, groundTop: T_ASHTOP, plat: T_OBSID,
-      decor: ashDecor, doorKind: 'cave'
-    }));
-    World.rooms[d.id + 'End'] = buildChapterArena({
-      id: d.id + 'End', name: d.toLabel, seed: d.seed + 500, bg: 'ash', music: 'bossAsh',
-      ground: T_ASH, groundTop: T_ASHTOP, plat: T_OBSID,
-      ambient: d.ambient, dark: d.dark, decor: ashDecor, boss: d.boss
+    buildRealmChain(Object.assign({ music: 'ember' }, d), {
+      bg: 'ash', ground: T_ASH, groundTop: T_ASHTOP, plat: T_OBSID,
+      decor: ashDecor, doorKind: 'cave', bossMusic: 'bossAsh'
     });
   }
 
@@ -1316,6 +1342,9 @@ World.build = function () {
   World.LEVELS.forEach((lv, i) => { for (const id of lv.rooms) if (World.rooms[id]) World.rooms[id].level = i; });
 };
 
+World.buildGullet = buildGullet;
+World.gulletAcidRate = gulletAcidRate;
+
 World.LEVELS = [
   { name: 'EMBERWOOD', taker: 'THE WOOD TAKES', sub: 'THE DRAGON OF BRIARDEEP', theme: 'forest',
     rooms: ['glade', 'deep', 'maze', 'cave', 'mine', 'lair'], start: 'glade', boss: 'lair', coinScale: 1,
@@ -1335,23 +1364,23 @@ World.LEVELS = [
      for the deeper shop stock */
   { name: 'TIDEWRACK', taker: 'THE TIDE TAKES', sub: 'THE TIDE WARDEN', theme: 'shore', enemyHp: 4,
     coinScale: 7, coinBonus: 2, bossHp: 9,
-    rooms: ['shore', 'shoreEnd'], start: 'shore', boss: 'shoreEnd', node: { x: 76, y: 152 } },
+    rooms: ['shore', 'shore2', 'shore3', 'shoreEnd'], start: 'shore', boss: 'shoreEnd', node: { x: 76, y: 152 } },
   { name: 'DROWNED HALL', taker: 'THE DEEP TAKES', sub: 'THE KRAKEN MAW', theme: 'drowned', enemyHp: 5,
     coinScale: 9, coinBonus: 3, bossHp: 11,
-    rooms: ['drowned', 'drownedEnd'], start: 'drowned', boss: 'drownedEnd', node: { x: 194, y: 74 } },
+    rooms: ['drowned', 'drowned2', 'drowned3', 'drownedEnd'], start: 'drowned', boss: 'drownedEnd', node: { x: 194, y: 74 } },
   { name: 'THE TRENCH', taker: 'THE TRENCH TAKES', sub: 'THE LEVIATHAN', theme: 'abyss', enemyHp: 6,
     coinScale: 12, coinBonus: 4, bossHp: 13,
-    rooms: ['abyss', 'abyssEnd'], start: 'abyss', boss: 'abyssEnd', node: { x: 310, y: 148 } },
+    rooms: ['abyss', 'abyss2', 'abyss3', 'abyssEnd'], start: 'abyss', boss: 'abyssEnd', node: { x: 310, y: 148 } },
 
   { name: 'CINDER FIELDS', taker: 'THE ASH TAKES', sub: 'THE FORGEFIEND', theme: 'cinder', enemyHp: 8,
     coinScale: 18, coinBonus: 6, bossHp: 14,
-    rooms: ['cinder', 'cinderEnd'], start: 'cinder', boss: 'cinderEnd', node: { x: 76, y: 152 } },
+    rooms: ['cinder', 'cinder2', 'cinder3', 'cinderEnd'], start: 'cinder', boss: 'cinderEnd', node: { x: 76, y: 152 } },
   { name: 'OBSIDIAN STEPS', taker: 'THE DARK TAKES', sub: 'THE ASHEN TITAN', theme: 'obsidian', enemyHp: 10,
     coinScale: 22, coinBonus: 8, bossHp: 16,
-    rooms: ['obsidian', 'obsidianEnd'], start: 'obsidian', boss: 'obsidianEnd', node: { x: 194, y: 74 } },
+    rooms: ['obsidian', 'obsidian2', 'obsidian3', 'obsidianEnd'], start: 'obsidian', boss: 'obsidianEnd', node: { x: 194, y: 74 } },
   { name: 'MOLTEN CROWN', taker: 'THE MAGMA TAKES', sub: 'IFRIT, THE LAST FLAME', theme: 'molten', enemyHp: 12,
     coinScale: 28, coinBonus: 10, bossHp: 18,
-    rooms: ['molten', 'moltenEnd'], start: 'molten', boss: 'moltenEnd', node: { x: 310, y: 148 } }
+    rooms: ['molten', 'molten2', 'molten3', 'moltenEnd'], start: 'molten', boss: 'moltenEnd', node: { x: 310, y: 148 } }
 ];
 
 /* ============================================================

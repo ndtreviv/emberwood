@@ -30,7 +30,7 @@ window.requestAnimationFrame = function(cb){ return setTimeout(function(){ cb(pe
 <script src="../js/game.js"></script>
 <script>
 var ticks=0, phase=0, phaseTick=0;
-var ROOMS=['glade','deep','maze','cave','mine','lair','cloud1','olympus','mush1','mushboss','shore','shoreEnd','drowned','drownedEnd','abyss','abyssEnd','cinder','cinderEnd','obsidian','obsidianEnd','molten','moltenEnd'];
+var ROOMS=['glade','deep','maze','cave','mine','lair','cloud1','olympus','mush1','mushboss','gullet','shore','shore2','shore3','shoreEnd','drowned','drowned2','drowned3','drownedEnd','abyss','abyss2','abyss3','abyssEnd','cinder','cinder2','cinder3','cinderEnd','obsidian','obsidian2','obsidian3','obsidianEnd','molten','molten2','molten3','moltenEnd'];
 function note(m){ window.__log.push(m); dump(); }
 var iv=setInterval(function(){
   try{
@@ -69,7 +69,7 @@ var iv=setInterval(function(){
       else if(phaseTick>260){ note('phase1 shop+codes ok, tickets='+G.codes.tickets+' admin='+G.codes.admin+' purse='+G.purse()+', up='+JSON.stringify(G.player.up)+' maxHp='+G.player.maxHp+' coins='+G.player.coins); phase=2; phaseTick=0; }
     } else if(phase===100){
       // never reached; placeholder
-    } else if(phase>=2&&phase<=23){                   // 400 ticks inside every room
+    } else if(phase>=2&&phase<2+ROOMS.length){        // a spell inside every room
       var id=ROOMS[phase-2];
       if(phaseTick===1){ G.trans=null; G.player.hasKey=true; G.unlocked=9; G.level=0; for(var L=0;L<World.LEVELS.length;L++) if(World.LEVELS[L].rooms.indexOf(id)>=0) G.level=L; G.enterRoom(id,null); }
       Input.held['ArrowRight']=(phaseTick%3)!==0;
@@ -105,7 +105,7 @@ var iv=setInterval(function(){
       Input.mx=(phaseTick*11)%380; Input.my=(phaseTick*5)%210;
       G.player.hp=G.player.maxHp;
       if(phaseTick>150){ Input.touches=[]; G.mobile=false; note('room '+id+' ok, enemies='+G.enemies.length+' particles='+G.particles.length+' coins='+G.coins.length); phase++; phaseTick=0; }
-    } else if(phase===24){                            // the throne room, then the dragon
+    } else if(phase===2+ROOMS.length){                // the throne room, then the dragon
       if(phaseTick===1){ G.trans=null; G.level=0; G.enterRoom('lair',null); G.exitLock=false; }
       G.player.hp=G.player.maxHp; G.player.invuln=0.3;
       /* the hall holds its silence until the armour is down */
@@ -119,12 +119,12 @@ var iv=setInterval(function(){
       if(phaseTick===170) note('dragon arrived: '+(G.boss?G.boss.constructor.name+' hp '+G.boss.hp:'NONE')
              +'  music now "'+(G.room.music)+'" -> track '+(Snd.trackName||'(none)'));
       if(phaseTick%4===0&&G.boss) G.boss.hurt(4,G.player.cx,G.player.cy);
-      if(G.state==='victory'||phaseTick>1600){ note('boss phase ok, state='+G.state); phase=25; phaseTick=0; }
-    } else if(phase===25){                            // death and respawn
+      if(G.state==='victory'||phaseTick>1600){ note('boss phase ok, state='+G.state); phase=900; phaseTick=0; }
+    } else if(phase===900){                           // death and respawn
       if(phaseTick===1){ G.state='play'; G.enterRoom('glade',null); G.player.dead=false; G.player.hp=1; G.player.hurt(9,0,0); }
       if(phaseTick>140) Input.hitKeys['Space']=true;
-      if(phaseTick>200){ note('death/respawn ok, state='+G.state+' hp='+G.player.hp+' h='+G.player.h); phase=26; phaseTick=0; }
-    } else if(phase===26){                            // settings: tabs, sliders, a rebind
+      if(phaseTick>200){ note('death/respawn ok, state='+G.state+' hp='+G.player.hp+' h='+G.player.h); phase=901; phaseTick=0; }
+    } else if(phase===901){                           // settings: tabs, sliders, a rebind
       if(phaseTick===1){ G.settingsOpen=true; G.setTab=0; }
       else if(phaseTick===4){ var r=setSliderRect(0); Input.mx=r.x+r.w*0.4; Input.my=r.y+4;
         Input.taps=[{id:'mouse',x:Input.mx,y:Input.my}]; Input.mdown=true; }
@@ -142,11 +142,11 @@ var iv=setInterval(function(){
       else if(phaseTick===20){ var b=setBackRect(); Input.mx=b.x+4; Input.my=b.y+4;
         Input.taps=[{id:'mouse',x:Input.mx,y:Input.my}]; }
       else if(phaseTick>24){ note('settings ok, music='+G.opts.music.toFixed(2)+' pad='+G.opts.padAlpha.toFixed(2)
-        +' attack='+KEYS.attack+' open='+G.settingsOpen); phase=27; phaseTick=0; }
-    } else if(phase===27){                            // the three save files
+        +' attack='+KEYS.attack+' open='+G.settingsOpen); phase=902; phaseTick=0; }
+    } else if(phase===902){                           // the three save files
       if(phaseTick===1){ G.saveGame(); openFiles(); }
       else if(phaseTick>6){ note('files ok, pct='+[0,1,2].map(function(i){return slotPercent(readSlot(i));}).join('/')
-        +' state='+G.state); phase=28; phaseTick=0; }
+        +' state='+G.state); phase=903; phaseTick=0; }
     } else {
       clearInterval(iv);
       note('FINAL state='+G.state+' ticks='+ticks

@@ -83,8 +83,12 @@ class FloatText {
    PLAYER
    ============================================================ */
 const PW = 10, PH = 16;
+/* how hard a lodestone draws a coin, whatever level it is */
+const COIN_PULL = 4.2;
 /* how long before a spinning cut comes round again */
 const FLIP_CD = 0.85, ROLLCUT_CD = 0.9;
+/* how long the sword must be held before the gale is ready */
+const CHARGE_FULL = 0.62;
 
 class Player {
   constructor() {
@@ -101,6 +105,7 @@ class Player {
     this.crouching = false; this.rollT = 0; this.rollCd = 0; this.rollDir = 1;
     this.spinT = 0; this.spinKind = null; this.spinDir = 1; this.spinHit = null; this.spinSaid = false;
     this.flipCd = 0; this.rollCutCd = 0; this.chain = 0; this.chainT = 0;
+    this.chargeT = 0; this.chargeCd = 0; this.chargeRang = false;
     this.heldBy = null; this.heldT = 0; this.heldDmg = 0; this.heldPaid = 0;
     this.hurtT = 0;
     this.onLadder = false; this.climbT = 0; this.ladderOffT = 0;
@@ -182,7 +187,12 @@ class Player {
     this.x = x - this.w / 2; this.y = y - this.h;
     this.vx = this.vy = 0; this.trail.length = 0; this.spawnFlash = 0.4;
   }
-  get speedMax() { return (G.room && G.room.mode === 'top' ? 1.55 : 2.15) * (1 + this.up.speed * 0.16); }
+  /* the boots help, but they no longer turn the hero into a bolt: the gain
+     tails off and stops at half again the base pace */
+  get speedMax() {
+    const base = (G.room && G.room.mode === 'top' ? 1.55 : 2.15);
+    return base * (1 + Math.min(0.5, this.up.speed * 0.05));
+  }
   /* a crouch and a roll both shrink the body, so you fit under a low gap */
   get lowH() { return 10; }
   /* shrink from the feet up, so the boots stay planted */
@@ -213,8 +223,59 @@ class Player {
     }));
   }
   get dashCdMax() { return 1.15 * Math.pow(0.76, this.up.dash); }
-  get magnetR() { return 70 + this.up.magnet * 40; }
+  /* the lodestone reaches further with every step, but never pulls harder:
+     the draw itself is the same whatever you have bought */
+  get magnetR() { return 62 + this.up.magnet * 24; }
   get atkDmg() { return 2 + this.up.sword; }
+  /* Hold the sword rather than tapping it and the blade gathers the air.
+     Let go on a full charge and it goes out as a blade of wind. */
+  get charged() { return this.chargeT >= CHARGE_FULL; }
+  updateCharge(dt) {
+    this.chargeCd = Math.max(0, this.chargeCd - dt);
+    const may = !this.dead && !this.heldBy && G.room.mode === 'side' &&
+                this.dashT <= 0 && this.pierceT <= 0 && !this.onLadder && !this.swimming;
+    if (Input.act('attack') && may && this.chargeCd <= 0) {
+      const was = this.charged;
+      this.chargeT += dt;
+      if (this.charged && !was) {
+        this.chargeRang = true;
+        Snd.dashReady(); G.flash(0.12);
+      }
+      if (this.chargeT > 0.16) {
+        /* the air drawing in toward the blade */
+        const n = this.charged ? 3 : 1;
+        for (let i = 0; i < n; i++) {
+          const a = rr(0, TAU), r = this.charged ? rr(16, 26) : rr(10, 20);
+          G.particles.push(new Particle({
+            x: this.cx + Math.cos(a) * r, y: this.cy + Math.sin(a) * r,
+            vx: -Math.cos(a) * rr(1.4, 3.4), vy: -Math.sin(a) * rr(1.4, 3.4),
+            life: rr(0.12, 0.26), col: this.charged ? '#ffffff' : '#dff0ff',
+            col2: '#8fd0ff', size: rr(1, 2.2), grav: 0, drag: 0.9
+          }));
+        }
+      }
+      return;
+    }
+    if (this.chargeT >= CHARGE_FULL && may) this.releaseCharge();
+    this.chargeT = 0; this.chargeRang = false;
+  }
+  releaseCharge() {
+    this.chargeCd = 0.45;
+    this.atkT = 0.001; this.atkHit = new Set(); this.atkCd = 0.3;
+    const dmg = Math.max(2, Math.round(this.atkDmg * 2));
+    G.waves.push(new WindSwipe(this.cx + this.face * 10, this.cy, this.face, dmg));
+    if (this.grounded) this.vx += this.face * 1.4;
+    Snd.swing(); Snd.spinCut(); G.shake(5); G.hitStop(0.05);
+    G.texts.push(new FloatText(this.cx, this.y - 8, 'GALE', '#dff0ff'));
+    for (let i = 0; i < 22; i++) {
+      const a = rr(-0.7, 0.7);
+      G.particles.push(new Particle({
+        x: this.cx + this.face * 10, y: this.cy + rr(-8, 8),
+        vx: this.face * Math.cos(a) * rr(3, 7), vy: Math.sin(a) * rr(2, 5),
+        life: rr(0.2, 0.5), col: '#ffffff', col2: '#8fd0ff', size: rr(1, 2.6), grav: 0, drag: 0.92
+      }));
+    }
+  }
   /* the sigil sharpens the moves that come out of a dive or a spin:
      the air pierce, the flip cut and the roll cut. A quarter a step. */
   get specialMult() { return 1 + (this.up.special || 0) * 0.25; }
@@ -499,6 +560,7 @@ class Player {
 
     this.rollCd = Math.max(0, this.rollCd - dt);
     this.flipCd = Math.max(0, this.flipCd - dt);
+    this.updateCharge(dt);
     this.rollCutCd = Math.max(0, this.rollCutCd - dt);
     this.hurtT = Math.max(0, this.hurtT - dt);
     /* a chain link lapses if you do not follow it up */
@@ -1362,7 +1424,8 @@ class Snake extends Enemy {
 
 class Bear extends Enemy {
   constructor(x, y) {
-    super({ x: x, y: y, w: 26, h: 22, hp: 4, damage: 2, coinDrop: ri(6, 10), blood: '#6d4a2e' });
+    /* ten points against a base blade of two: five blows to bring one down */
+    super({ x: x, y: y, w: 26, h: 22, hp: 10, damage: 2, coinDrop: ri(6, 10), blood: '#6d4a2e' });
     this.speed = 0.42; this.face = rpick([-1, 1]);
   }
   update(dt) {
@@ -2862,6 +2925,65 @@ class Crusher {
   }
 }
 
+/* A blade of wind, thrown from a charged swing. It runs a long way, cuts
+   everything it passes, and bats shots back on its way. */
+class WindSwipe {
+  constructor(x, y, dir, dmg) {
+    this.x = x; this.y = y; this.dir = dir; this.dmg = dmg;
+    this.t = 0; this.life = 1.05; this.dead = false; this.hit = new Set();
+    this.speed = 4.4;
+  }
+  box() {
+    const grow = 1 + this.t * 0.9;
+    return { x: this.x - 14, y: this.y - 22 * grow, w: 28, h: 44 * grow };
+  }
+  update(dt) {
+    this.t += dt; this.life -= dt;
+    this.x += this.dir * this.speed * dt * 60;
+    const box = this.box();
+    for (const en of G.enemies) {
+      if (en.dead || this.hit.has(en)) continue;
+      if (!rectsOverlap(box, en.box())) continue;
+      this.hit.add(en);
+      en.hurt(this.dmg, this.x - this.dir * 20, this.y);
+      G.hitStop(0.04);
+    }
+    for (const pr of G.projectiles) {
+      if (pr.dead || pr.friendly || typeof pr.vx !== 'number') continue;
+      if (this.hit.has(pr)) continue;
+      if (!rectsOverlap(box, { x: pr.x - 8, y: pr.y - 8, w: 16, h: 16 })) continue;
+      this.hit.add(pr);
+      deflectShot(pr, this.dmg);
+      Snd.parry();
+    }
+    for (let i = 0; i < 2; i++) G.particles.push(new Particle({
+      x: this.x + rr(-10, 10), y: this.y + rr(-20, 20),
+      vx: this.dir * rr(1, 3.4), vy: rr(-0.8, 0.8), life: rr(0.12, 0.3),
+      col: '#ffffff', col2: '#8fd0ff', size: rr(1, 2.4), grav: 0, drag: 0.9
+    }));
+    if (G.room.solidPx(this.x + this.dir * 8, this.y) || this.life <= 0) this.dead = true;
+  }
+  draw(c2) {
+    const k = clamp(1 - this.life / 1.05, 0, 1);
+    const grow = 1 + this.t * 0.9;
+    c2.save();
+    c2.globalAlpha = (1 - k) * 0.95;
+    c2.globalCompositeOperation = 'lighter';
+    /* three crescents, one inside the next */
+    for (let ring = 0; ring < 3; ring++) {
+      const r = (13 + ring * 6) * grow;
+      c2.fillStyle = ring === 0 ? '#ffffff' : (ring === 1 ? '#dff0ff' : '#8fd0ff');
+      for (let step = 0; step <= 22; step++) {
+        const ang = -1.25 + (step / 22) * 2.5;
+        const px = this.x + this.dir * Math.cos(ang) * r * 0.55;
+        const py = this.y + Math.sin(ang) * r;
+        c2.fillRect(Math.round(px), Math.round(py), 2, 2);
+      }
+    }
+    c2.restore();
+  }
+}
+
 /* The wide arc of air a special swing throws off. It is the swipe you see,
    and it carries the blow well past the blade itself. */
 class AirSlash {
@@ -3428,9 +3550,12 @@ class Coin {
     const d = Math.hypot(p.cx - this.x, p.cy - this.y);
     this.magnet = d < p.magnetR && this.life > 0.25 && !p.dead;
     if (this.magnet) {
+      /* one fixed draw, gentler far off and firmer close to hand */
       const dx = p.cx - this.x, dy = p.cy - this.y, l = d || 1;
-      this.vx = approach(this.vx, dx / l * 4.6, 0.6 * s);
-      this.vy = approach(this.vy, dy / l * 4.6, 0.6 * s);
+      const near = clamp(1 - d / (p.magnetR || 1), 0, 1);
+      const pull = COIN_PULL * (0.45 + near * 0.55);
+      this.vx = approach(this.vx, dx / l * pull, 0.5 * s);
+      this.vy = approach(this.vy, dy / l * pull, 0.5 * s);
     } else if (room.boxSolid(this.x - 3, this.y - 3, 6, 6)) {
       /* left inside rock after a pull: hold still and wait to be drawn out again */
       this.vx = 0; this.vy = 0;
