@@ -189,6 +189,36 @@ A blow against you knocks you back too, mildly: enough to feel it, and your own 
 muted for a sixth of a second before you get control again. The one exception is a spinning
 cut, which carries straight through a hit.
 
+## Your own look
+
+The first time you finish the tutorial, before the realm map opens, you choose how the hero
+goes into the world. **LOOK** on the chart reopens it whenever you like, and the choice is
+kept per save file.
+
+| Row | Choices |
+| --- | --- |
+| **HAIR** | Short, long, mohawk, pigtails, bun, spikes, or shaved |
+| **COLOUR** | Eight, from chestnut through ash to plum |
+| **CLOTHES** | A tunic, or a t-shirt and shorts — bare arms and shins |
+| **SHIRT** | Six colours, for the t-shirt |
+
+**SURPRISE ME** rolls the lot. The hero turns on the spot beside the rows, so you see every
+change as you make it.
+
+### Mantles
+
+Finish a chapter and you earn its mantle. They hang on the same screen from the start, named
+and greyed, so you can see what is coming before you go in for it.
+
+| Mantle | Earned by | Woven as |
+| --- | --- | --- |
+| **Greenwood** | Chapter One | dark pines over a ridge of grey stone and snow |
+| **Drowned Deep** | Chapter Two | pale crests falling into deep water over sunken stone |
+| **Molten Crown** | Chapter Three | a cone of dark rock with fire running down it |
+
+A mantle is a rope of nine links hung from the shoulders. It **trails behind a run**,
+**streams upward through a jump or a fall**, and settles when you stand still.
+
 ## The tutorial
 
 The first time you open a new save file you land on a map with a single place on it: the

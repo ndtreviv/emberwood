@@ -1245,13 +1245,13 @@ World.build = function () {
   const seaDecor = [{ kind: 'coral', n: 3, p: 0.22 }, { kind: 'kelp', n: 3, p: 0.26 },
                     { kind: 'rock', n: 3, p: 0.06 }, { kind: 'crystal', n: 3, p: 0.05 }];
   const deepRooms = [
-    { id: 'shore', hazards: 5, music: 'tide', name: 'TIDEWRACK SHORE', seed: 4101, w: 150, pools: 4, ambient: 0.4, dark: 0,
+    { id: 'shore', hazards: 5, music: 'tide', name: 'TIDEWRACK SHORE', seed: 4101, w: 150, pools: 0, ambient: 0.4, dark: 0,
       spawns: [{ type: 'crab', n: 14 }, { type: 'jelly', n: 12, air: true }, { type: 'angler', n: 6, air: true }],
       to: 'shoreEnd', toLabel: 'THE WARDEN', boss: 'tideWarden' },
-    { id: 'drowned', hazards: 7, music: 'deep', name: 'THE DROWNED HALL', seed: 4102, w: 158, pools: 7, ambient: 0.3, dark: 0.3,
+    { id: 'drowned', hazards: 7, music: 'deep', name: 'THE DROWNED HALL', seed: 4102, w: 158, pools: 0, ambient: 0.3, dark: 0.3,
       spawns: [{ type: 'crab', n: 12 }, { type: 'jelly', n: 16, air: true }, { type: 'angler', n: 10, air: true }],
       to: 'drownedEnd', toLabel: 'THE KRAKEN MAW', boss: 'kraken' },
-    { id: 'abyss', hazards: 9, music: 'trench', name: 'THE ABYSSAL TRENCH', seed: 4103, w: 166, pools: 9, ambient: 0.2, dark: 0.45,
+    { id: 'abyss', hazards: 9, music: 'trench', name: 'THE ABYSSAL TRENCH', seed: 4103, w: 166, pools: 0, ambient: 0.2, dark: 0.45,
       spawns: [{ type: 'crab', n: 12 }, { type: 'jelly', n: 18, air: true }, { type: 'angler', n: 14, air: true }],
       to: 'abyssEnd', toLabel: 'THE LEVIATHAN', boss: 'leviathan' }
   ];

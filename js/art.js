@@ -9,6 +9,46 @@ const Art = { hero: {}, top: {}, snake: {}, bear: {}, bat: {}, spider: {}, drago
               item: {}, tile: {}, prop: {}, bg: {}, ui: {} };
 
 /* ---------- palettes ---------- */
+/* ============================================================
+   THE HERO'S OWN LOOK — hair, its colour, and what they wear.
+   The frames are rebuilt whenever the player changes any of it.
+   ============================================================ */
+const HAIR_COLS = [
+  { name: 'CHESTNUT', base: '#7b4a26', dark: '#53301a', light: '#a06a38' },
+  { name: 'BLACK',    base: '#3a3040', dark: '#241d2c', light: '#5d5068' },
+  { name: 'STRAW',    base: '#e0c46a', dark: '#a8873a', light: '#f6e6a8' },
+  { name: 'COPPER',   base: '#c95f2a', dark: '#8e3c16', light: '#e88a4a' },
+  { name: 'ASH',      base: '#b9c2d0', dark: '#7f8a9c', light: '#e6edf6' },
+  { name: 'MOSS',     base: '#4f9a3f', dark: '#2f6f37', light: '#8fd06a' },
+  { name: 'PLUM',     base: '#8f5fc0', dark: '#5d3a86', light: '#c39ae8' },
+  { name: 'ROSE',     base: '#e0688a', dark: '#a13c5c', light: '#f7a2bb' }
+];
+const HAIR_STYLES = ['SHORT', 'LONG', 'MOHAWK', 'PIGTAILS', 'BUN', 'SPIKES', 'BALD'];
+const OUTFITS = ['TUNIC', 'TSHIRT'];
+const TEE_COLS = [
+  { name: 'GREEN', base: '#48a24f', dark: '#2e6c38', light: '#71c96e' },
+  { name: 'BLUE',  base: '#3f6fd8', dark: '#2a4a9a', light: '#7fa2f0' },
+  { name: 'RED',   base: '#c9403a', dark: '#8f2820', light: '#e8736a' },
+  { name: 'GOLD',  base: '#e0b040', dark: '#a07a20', light: '#f6d878' },
+  { name: 'PLUM',  base: '#8f5fc0', dark: '#5d3a86', light: '#c39ae8' },
+  { name: 'SLATE', base: '#5d6a80', dark: '#3a4354', light: '#8fa0b8' }
+];
+/* what the hero currently looks like; heroFrame reads this as it draws */
+const LOOK = { hair: 0, hairCol: 0, outfit: 0, tee: 0, cape: 'none' };
+function applyLook(o) {
+  if (!o) return;
+  if (typeof o.hair === 'number') LOOK.hair = clamp(o.hair | 0, 0, HAIR_STYLES.length - 1);
+  if (typeof o.hairCol === 'number') LOOK.hairCol = clamp(o.hairCol | 0, 0, HAIR_COLS.length - 1);
+  if (typeof o.outfit === 'number') LOOK.outfit = clamp(o.outfit | 0, 0, OUTFITS.length - 1);
+  if (typeof o.tee === 'number') LOOK.tee = clamp(o.tee | 0, 0, TEE_COLS.length - 1);
+  if (typeof o.cape === 'string') LOOK.cape = o.cape;
+  const h = HAIR_COLS[LOOK.hairCol];
+  HP.hair = C(h.base); HP.hairD = C(h.dark); HP.hairL = C(h.light);
+  const t = TEE_COLS[LOOK.tee];
+  if (LOOK.outfit === 1) { HP.tunic = C(t.base); HP.tunicD = C(t.dark); HP.tunicL = C(t.light); }
+  else { HP.tunic = C('#48a24f'); HP.tunicD = C('#2e6c38'); HP.tunicL = C('#71c96e'); }
+}
+
 const HP = {
   skin: C('#f2c692'), skinD: C('#cf9a63'), skinL: C('#ffe0b4'),
   hair: C('#7b4a26'), hairD: C('#53301a'), hairL: C('#a06a38'),
@@ -69,17 +109,25 @@ function heroFrame(po) {
   const bend = po.bend || [2, -2];
   const abend = po.abend || [2, -2];
 
+  /* a t-shirt leaves the arms and shins bare; a tunic covers them */
+  const tee = LOOK.outfit === 1;
+  const armB = tee ? HP.skinD : HP.tunicD, armF = tee ? HP.skin : HP.tunic;
+  const legB = tee ? HP.skinD : HP.legsD, legF = tee ? HP.skin : HP.legs;
+
   /* --- back arm --- */
   const shB = [cx - 3, torT + 1];
-  limb(g, shB[0], shB[1], hands[0][0], hands[0][1], abend[0], 2, HP.tunicD);
+  limb(g, shB[0], shB[1], hands[0][0], hands[0][1], abend[0], 2, armB);
+  if (tee) limb(g, shB[0], shB[1], (shB[0] + hands[0][0]) / 2, (shB[1] + hands[0][1]) / 2, abend[0] * 0.5, 2, HP.tunicD);
   g.disc(hands[0][0], hands[0][1], 1, HP.skinD);
 
   /* --- back leg --- */
-  limb(g, cx - 2, hipY, feet[0][0], feet[0][1], bend[0], 3, HP.legsD);
+  limb(g, cx - 2, hipY, feet[0][0], feet[0][1], bend[0], 3, legB);
+  if (tee) limb(g, cx - 2, hipY, (cx - 2 + feet[0][0]) / 2, (hipY + feet[0][1]) / 2, bend[0] * 0.5, 3, HP.tunicD);
   g.rect(feet[0][0] - 2, feet[0][1] - 1, 5, 2, HP.bootD);
 
   /* --- front leg --- */
-  limb(g, cx + 2, hipY, feet[1][0], feet[1][1], bend[1], 3, HP.legs);
+  limb(g, cx + 2, hipY, feet[1][0], feet[1][1], bend[1], 3, legF);
+  if (tee) limb(g, cx + 2, hipY, (cx + 2 + feet[1][0]) / 2, (hipY + feet[1][1]) / 2, bend[1] * 0.5, 3, HP.tunic);
   g.rect(feet[1][0] - 2, feet[1][1] - 1, 5, 2, HP.boot);
   g.rect(feet[1][0] + 1, feet[1][1] - 1, 2, 1, HP.bootD);
 
@@ -87,24 +135,22 @@ function heroFrame(po) {
   g.rect(cx - 4, torT, 8, 2, HP.tunic);
   g.rect(cx - 4, torT + 2, 8, 1, HP.tunic);
   g.rect(cx - 3, torT + 3, 7, 1, HP.tunic);
-  g.rect(cx - 3, torB, 6, 1, HP.belt);
-  g.set(cx + 1, torB, HP.hilt);                       /* buckle */
+  if (LOOK.outfit === 1) {
+    /* the hem of a tee, and a pair of shorts under it */
+    g.rect(cx - 4, torB - 1, 8, 1, HP.tunicD);
+    g.rect(cx - 4, torB, 8, 2, HP.tunicD);
+    g.rect(cx - 4, torB, 8, 1, HP.tunic);
+  } else {
+    g.rect(cx - 3, torB, 6, 1, HP.belt);
+    g.set(cx + 1, torB, HP.hilt);                     /* buckle */
+  }
   g.rect(cx - 4, torT, 3, 1, HP.tunicL);              /* shoulder light */
   g.rect(cx + 1, torT + 2, 3, 2, HP.tunicD);          /* fold shadow */
 
   /* --- head --- */
-  g.rect(cx - 3, headT, 6, 1, HP.hair);
-  g.rect(cx - 4, headT + 1, 8, 2, HP.hair);
   g.rect(cx - 4, headT + 3, 8, 3, HP.skin);
   g.rect(cx - 3, headT + 6, 6, 0, HP.skin);
-  /* hair sides and fringe */
-  g.rect(cx - 4, headT + 3, 1, 2, HP.hairD);
-  g.rect(cx + 3, headT + 3, 1, 1, HP.hair);
-  g.rect(cx - 2, headT + 3, 4, 1, HP.hairD);
-  g.rect(cx - 3, headT, 2, 1, HP.hairL);
-  g.set(cx - 5, headT + 3, HP.hairD);                 /* back tuft */
-  g.set(cx - 5, headT + 4, HP.hair);
-  g.set(cx + 2, headT, HP.hairD);
+  drawHair(g, cx, headT, po);
   /* face */
   if (po.blink) {
     g.set(cx, headT + 4, HP.skinD); g.set(cx + 2, headT + 4, HP.skinD);
@@ -125,7 +171,8 @@ function heroFrame(po) {
 
   /* --- front arm + sword --- */
   const shF = [cx + 3, torT + 1];
-  limb(g, shF[0], shF[1], hands[1][0], hands[1][1], abend[1], 2, HP.tunic);
+  limb(g, shF[0], shF[1], hands[1][0], hands[1][1], abend[1], 2, armF);
+  if (tee) limb(g, shF[0], shF[1], (shF[0] + hands[1][0]) / 2, (shF[1] + hands[1][1]) / 2, abend[1] * 0.5, 2, HP.tunic);
   g.disc(hands[1][0], hands[1][1], 1, HP.skin);
   if (po.sword !== false) {
     drawSword(g, hands[1][0], hands[1][1], po.swordAng === undefined ? -Math.PI / 2.1 : po.swordAng,
@@ -135,6 +182,70 @@ function heroFrame(po) {
   g.shade({ top: 0.14, bot: 0.20, right: 0.09, left: 0.05 });
   g.outline(HP.out, false);
   return g;
+}
+
+/* Seven heads of hair, all built out of the same few rectangles so they
+   sit on the same skull. headT is the top of the head. */
+function drawHair(g, cx, headT, po) {
+  const style = HAIR_STYLES[LOOK.hair];
+  const fl = po.flutter || 0;
+  const cap = () => {                       /* the skull cap every style shares */
+    g.rect(cx - 3, headT, 6, 1, HP.hair);
+    g.rect(cx - 4, headT + 1, 8, 2, HP.hair);
+    g.rect(cx - 4, headT + 3, 1, 2, HP.hairD);
+    g.rect(cx + 3, headT + 3, 1, 1, HP.hair);
+    g.rect(cx - 2, headT + 3, 4, 1, HP.hairD);        /* fringe */
+    g.rect(cx - 3, headT, 2, 1, HP.hairL);
+    g.set(cx + 2, headT, HP.hairD);
+  };
+  if (style === 'BALD') {
+    g.rect(cx - 4, headT + 2, 8, 1, HP.skinD);
+    g.rect(cx - 3, headT + 1, 6, 1, HP.skin);
+    return;
+  }
+  cap();
+  if (style === 'SHORT') {
+    g.set(cx - 5, headT + 3, HP.hairD);
+    g.set(cx - 5, headT + 4, HP.hair);
+  } else if (style === 'LONG') {
+    /* a fall of hair down the back, blown by the same wind as the scarf */
+    for (let k = 0; k < 9; k++) {
+      const x = cx - 5 - Math.round(k * 0.22 + fl * 0.18 * (k / 8));
+      g.rect(x - 1, headT + 2 + k, 3, 1, k % 3 === 0 ? HP.hairD : HP.hair);
+    }
+    g.rect(cx - 7, headT + 9, 3, 1, HP.hairD);
+    g.set(cx + 4, headT + 3, HP.hair);
+  } else if (style === 'MOHAWK') {
+    /* shaved sides, a crest along the crown */
+    g.rect(cx - 4, headT + 1, 8, 2, HP.skinD);
+    g.rect(cx - 3, headT, 6, 1, HP.skinD);
+    g.rect(cx - 2, headT + 3, 4, 1, HP.hairD);
+    for (let k = 0; k < 6; k++) {
+      const h = 4 + Math.round(Math.sin(k * 0.9) * 1.6);
+      g.rect(cx - 3 + k, headT - h + 1, 1, h + 2, k % 2 ? HP.hair : HP.hairL);
+    }
+    g.rect(cx - 3, headT + 1, 6, 1, HP.hair);
+  } else if (style === 'PIGTAILS') {
+    for (const sdir of [-1, 1]) {
+      const bx = cx + sdir * 5;
+      g.disc(bx, headT + 3, 1.8, HP.hair);
+      for (let k = 0; k < 5; k++) {
+        const x = bx + sdir * Math.round(k * 0.5) + Math.round(fl * 0.12 * sdir);
+        g.rect(x - 1, headT + 4 + k, 2, 1, k % 2 ? HP.hairD : HP.hair);
+      }
+      g.set(bx, headT + 2, HP.hairL);
+    }
+  } else if (style === 'BUN') {
+    g.disc(cx - 4, headT - 1, 2.4, HP.hair);
+    g.disc(cx - 4, headT - 2, 1.4, HP.hairL);
+    g.set(cx - 5, headT + 3, HP.hairD);
+  } else if (style === 'SPIKES') {
+    for (let k = 0; k < 7; k++) {
+      const h = 2 + (k % 2 ? 2 : 3);
+      g.rect(cx - 4 + k, headT - h + 1, 1, h, k % 2 ? HP.hairL : HP.hair);
+    }
+    g.set(cx - 5, headT + 3, HP.hairD);
+  }
 }
 
 /* ---------- pose builders ---------- */
@@ -943,6 +1054,23 @@ function coinFrame(i, n) {
     g.ell(7, 7, Math.max(0.4, w - 2.6), 2.4, GOLDL);
     g.set(6, 5, C('#ffffff'));
   }
+  g.shade({ top: 0.20, bot: 0.22 });
+  g.outline(C('#4b2f08'));
+  return g;
+}
+/* A little heap of coins, worth several. A hoard of hundreds of single
+   coins costs far more to move and draw than a handful of heaps. */
+function coinPileFrame(i, n) {
+  const g = new Pix(18, 16);
+  const t = i / n * TAU;
+  const lay = [[5, 12, 0], [12, 12, 1.6], [9, 10, 0.8], [6, 8, 2.4], [12, 7, 1.1], [9, 5, 0.4]];
+  for (const [px, py, ph] of lay) {
+    const w = Math.abs(Math.cos(t + ph)) * 3.2 + 1.1;
+    g.ell(px, py, w, 3.4, GOLDD);
+    g.ell(px, py, Math.max(0.4, w - 0.9), 2.6, GOLD);
+    if (w > 1.9) g.ell(px, py, Math.max(0.4, w - 1.9), 1.5, GOLDL);
+  }
+  g.set(8, 3, C('#ffffff'));
   g.shade({ top: 0.20, bot: 0.22 });
   g.outline(C('#4b2f08'));
   return g;
@@ -2934,6 +3062,92 @@ function mapIconSprite() {
   return g;
 }
 
+/* ============================================================
+   REBUILD — every hero frame, after the player changes their look.
+   ============================================================ */
+Art.rebuildHero = function (look) {
+  applyLook(look);
+  const H = Art.hero, T = Art.top;
+  H.anchor = { x: HERO_AX, y: HERO_AY };
+  H.idle = frames(8, i => heroFrame(poseIdle(i)));
+  H.walk = frames(8, i => heroFrame(poseWalk(i)));
+  H.run = frames(8, i => heroFrame(poseRun(i)));
+  H.jump = [heroFrame(poseJump()).canvas()];
+  H.fall = [heroFrame(poseFall()).canvas()];
+  H.land = [heroFrame(poseLand()).canvas()];
+  H.dash = [heroFrame(poseDash(0)).canvas(), heroFrame(poseDash(1)).canvas()];
+  H.pierce = [heroFrame(posePierce(0)).canvas(), heroFrame(posePierce(1)).canvas()];
+  H.climb = frames(6, i => heroFrame(poseClimb(i)));
+  H.swim = frames(6, i => heroFrame(poseSwim(i)));
+  H.swimIdle = frames(4, i => heroFrame(poseSwimIdle(i)));
+  H.atk = frames(6, i => heroFrame(poseAtk(i)));
+  H.crouch = frames(4, i => heroFrame(poseCrouch(i)));
+  H.roll = frames(4, i => heroFrame(poseRoll(i)));
+  H.flip = frames(4, i => heroFrame(poseFlip(i)));
+  H.rollcut = frames(4, i => heroFrame(poseRollCut(i)));
+  T.walk = []; T.idle = []; T.atk = [];
+  for (let d = 0; d < 4; d++) {
+    T.walk.push(frames(8, i => heroTopFrame(d, i)));
+    T.idle.push([heroTopFrame(d, 0).canvas(), heroTopFrame(d, 4).canvas()]);
+    T.atk.push(ATK_TOP.map(ang => heroTopFrame(d, 0, ang).canvas()));
+  }
+  Art.heroGold = null; Art.topGold = null;   /* the gold copy is now stale */
+};
+
+/* ============================================================
+   THE CAPES — one for each chapter you finish. Each is a strip of
+   colour bands, so the cloth can flow and still read as its realm.
+   ============================================================ */
+const CAPES = {
+  wood: {
+    name: 'GREENWOOD', hint: 'CHAPTER ONE',
+    /* dark pines over a ridge of grey stone and snow */
+    band: ['#e6edf6', '#8a94a6', '#4a5165', '#2f6f37', '#4f9a3f', '#2f6f37', '#245427', '#1a3d1e'],
+    edge: '#f0c93a'
+  },
+  tide: {
+    name: 'DROWNED DEEP', hint: 'CHAPTER TWO',
+    /* pale crests falling into deep water over sunken stone */
+    band: ['#dff0ff', '#9fe8ff', '#5fa3dc', '#3f6fd8', '#2a4a9a', '#1d3a6b', '#2b4a63', '#8a94a6'],
+    edge: '#9fe8ff'
+  },
+  ember: {
+    name: 'MOLTEN CROWN', hint: 'CHAPTER THREE',
+    /* a cone of dark rock with fire running down it */
+    band: ['#fff4d6', '#ffd06a', '#ff8b4a', '#e0522a', '#a83218', '#6d2412', '#3a1a14', '#241014'],
+    edge: '#ffd06a'
+  }
+};
+/* the pattern across the cloth: which band a cell takes */
+function capeCell(design, along, across, n, w) {
+  const d = CAPES[design];
+  if (!d) return null;
+  const t = along / Math.max(1, n - 1);        /* 0 at the shoulders, 1 at the hem */
+  const u = across / Math.max(1, w - 1);       /* 0 to 1 across the cloth */
+  let idx;
+  if (design === 'wood') {
+    /* a ridge line near the top, trees below it */
+    const ridge = 0.30 + Math.sin(u * Math.PI * 3) * 0.10;
+    if (t < ridge - 0.1) idx = 0;
+    else if (t < ridge) idx = 1;
+    else if (t < ridge + 0.08) idx = 2;
+    else {
+      const tree = Math.sin(u * Math.PI * 5.5) > 0.1 ? 1 : 0;
+      idx = 3 + tree + Math.floor((t - ridge) * 5) % 3;
+    }
+  } else if (design === 'tide') {
+    /* waves running across, deepening toward the hem */
+    const wave = Math.sin(u * Math.PI * 4 + t * 6) * 0.5 + 0.5;
+    idx = Math.floor(t * 5.5 + wave * 1.6);
+  } else {
+    /* a cone of rock with fire licking up its flanks */
+    const cone = Math.abs(u - 0.5) * 2;
+    const flame = Math.sin(u * Math.PI * 7 + t * 4) * 0.5 + 0.5;
+    idx = Math.floor(t * 4 + cone * 2.4 + flame * 1.4);
+  }
+  return d.band[clamp(idx, 0, d.band.length - 1)];
+}
+
 Art.buildGold = function () {
   if (Art.heroGold) return;
   const save = {};
@@ -3057,6 +3271,7 @@ Art.steps = function () {
   });
   push('TREASURE', () => {
     Art.item.coin = frames(8, (i, n) => coinFrame(i, n));
+    Art.item.coinPile = frames(8, (i, n) => coinPileFrame(i, n));
     Art.item.coinAnchor = { x: 7, y: 7 };
     Art.item.heart = { full: heartSprite('full').canvas(), half: heartSprite('half').canvas(), empty: heartSprite('empty').canvas() };
     Art.item.key = keySprite().canvas();

@@ -42,7 +42,8 @@ const G = {
   /* which of the three save files is in play, and what the player chose in settings */
   slot: 0, fileSel: -1, eraseArm: -1,
   opts: { mobile: null, music: 0.7, sfx: 0.8, padAlpha: 0.5, shake: 1, keys: null },
-  setTab: 0, setSel: -1, setDrag: null, setStep: -1, bindWait: null
+  setTab: 0, setSel: -1, setDrag: null, setStep: -1, bindWait: null,
+  profSel: -1, profT: 0, profAfter: 'map', profPreview: null
 };
 
 /* ============================================================
@@ -112,6 +113,7 @@ function packSave() {
     maxHp: p ? p.maxHp : 6, hp: p ? p.hp : 6, hasKey: p ? p.hasKey : false,
     codes: { found: G.codes.found, used: G.codes.used, tickets: G.codes.tickets,
              admin: G.codes.admin },
+    profile: Object.assign({}, G.profile),
     quests: { claimed: (G.quests && G.quests.claimed) || {},
               daily: (G.quests && G.quests.daily) || null },
     comboBest: G.comboBest || 0,
@@ -150,11 +152,13 @@ function applySave(d) {
   G.codes.used = d.codes && d.codes.used || {};
   G.codes.tickets = (d.codes && d.codes.tickets) || 0;
   G.codes.admin = !!(d.codes && d.codes.admin);
+  G.profile = Object.assign({ hair: 0, hairCol: 0, outfit: 0, tee: 0, cape: 'none' }, d.profile || {});
   G.quests = { claimed: (d.quests && d.quests.claimed) || {},
                daily: (d.quests && d.quests.daily) || null };
   G.comboBest = d.comboBest || 0;
   G.tut = Object.assign({ move: 0, fight: 0, swim: 0, dash: 0, pierce: 0, climb: 0, parry: 0 }, d.tut || {});
   G.stats = Object.assign({ coins: 0, kills: 0, time: 0, deaths: 0 }, d.stats || {});
+  try { applyProfile(); } catch (e) { console.error('profile', e); }
   if (G.codes.admin) { try { Art.buildGold(); } catch (e) { /* art may not be up yet */ } }
 }
 /* What a file is worth, counted over the whole game: every realm of all
@@ -290,10 +294,29 @@ G.coinScale = function () {
   return (lv && lv.coinScale) || 1;
 };
 G.purse = function () { return G.codes.admin ? INF : String(G.player.coins); };
-G.spawnCoin = function (x, y, vx, vy, still, si) {
-  const c = new Coin(x, y, vx, vy, still);
+G.spawnCoin = function (x, y, vx, vy, still, si, value) {
+  const c = new Coin(x, y, vx, vy, still, value);
   if (si !== undefined) c.si = si;
   G.coins.push(c);
+};
+/* Pay out a sum. Up to nine it is loose coins; beyond that it comes in
+   heaps of five, so the later realms do not bury the room in single coins. */
+const COIN_LOOSE_MAX = 9, COIN_PER_HEAP = 5, COIN_MAX_OBJECTS = 22;
+G.payOut = function (n, x, y) {
+  n = Math.max(1, Math.round(n));
+  if (n <= COIN_LOOSE_MAX) {
+    for (let i = 0; i < n; i++) G.spawnCoin(x + rr(-4, 4), y, rr(-2.2, 2.2), rr(-3.4, -1.4));
+    return;
+  }
+  /* five to a heap, and more than five where a realm pays so well that
+     five would still leave hundreds of things rolling about */
+  let per = COIN_PER_HEAP;
+  if (n / per > COIN_MAX_OBJECTS) per = Math.ceil(n / COIN_MAX_OBJECTS);
+  const heaps = Math.floor(n / per), rest = n - heaps * per;
+  for (let i = 0; i < heaps; i++)
+    G.spawnCoin(x + rr(-7, 7), y, rr(-2.4, 2.4), rr(-3.6, -1.4), false, undefined, per);
+  if (rest > 0)
+    G.spawnCoin(x + rr(-5, 5), y, rr(-2.2, 2.2), rr(-3.4, -1.4), false, undefined, rest);
 };
 
 /* ============================================================
@@ -327,7 +350,32 @@ G.enterRoom = function (id, spawn) {
   const lv = World.LEVELS[room.level];
   const hpScale = (lv && lv.enemyHp) || 1;
   const dmgScale = (lv && lv.enemyDmg) || 1;
+  /* A generator can place a creature where a ledge or a wall was cut in
+     afterwards, and it then starts life buried in the rock. Step it clear
+     before the room begins: up first, since that is nearly always where
+     the open air is, and down only if there is nothing above. */
+  const unstick = (e) => {
+    if (!room || room.mode === 'top' || !e.w || !e.h) return e;
+    const fits = (y) => !room.boxSolid(e.x - e.w / 2, y - e.h, e.w, e.h);
+    if (fits(e.y)) return e;
+    for (let d = 4; d <= 140; d += 4) {
+      if (fits(e.y - d)) { e.y -= d; return e; }
+      if (fits(e.y + d)) { e.y += d; return e; }
+    }
+    /* nowhere clear in that column: try a little to either side */
+    for (let dx = 8; dx <= 48; dx += 8) {
+      for (const sx of [-dx, dx]) {
+        const ox = e.x; e.x += sx;
+        for (let d = 0; d <= 96; d += 4) {
+          if (fits(e.y - d)) { e.y -= d; return e; }
+        }
+        e.x = ox;
+      }
+    }
+    return e;
+  };
   const tough = (e) => {
+    unstick(e);
     if (hpScale !== 1) { e.hp = Math.round(e.hp * hpScale); e.maxHp = e.hp; }
     if (dmgScale !== 1) e.damage = Math.max(1, Math.round((e.damage || 1) * dmgScale));
     G.enemies.push(e);
@@ -441,6 +489,7 @@ function updateTransition(dt) {
   if (!tr) return;
   tr.t += dt;
   if (tr.phase === 'out' && tr.t >= tr.dur) {
+    if (tr.toProfile) { openProfile('map'); G.trans = null; return; }
     if (tr.toMap) { openMap(false); G.trans = null; return; }
     const room = World.rooms[tr.id];
     G.enterRoom(tr.id, resolveSpawn(room, tr.exit));
@@ -558,6 +607,7 @@ function frame(now) {
     if (G.state === 'load') updateLoad(dt);
     else if (G.state === 'title') updateTitle(dt);
     else if (G.state === 'files') updateFiles(dt);
+    else if (G.state === 'profile') updateProfile(dt);
     else if (G.state === 'map') updateMap(dt);
     else updatePlay(dt);
     render();
@@ -629,6 +679,7 @@ function startGame(slot) {
   G.tut = { move: 0, fight: 0, swim: 0, dash: 0, pierce: 0, climb: 0, parry: 0 };
   G.relicSeen = {}; G.relicShow = null; G.swallowed = null; G.acid = null;
   G.quests = { claimed: {}, daily: null }; G.comboBest = 0; G.questsOpen = false;
+  G.profile = { hair: 0, hairCol: 0, outfit: 0, tee: 0, cape: 'none' };
   const d = readSlot(G.slot);
   if (d && d.used) applySave(d);
   G.mapMode = G.tutorialDone ? 'realm' : 'tutorial';
@@ -650,7 +701,8 @@ G.finishTutorial = function () {
   G.saveGame();
   Snd.unlock(); G.flash(1.0);
   G.banner('THE REALM AWAITS', 3);
-  G.trans = { t: 0, phase: 'out', dur: 0.42, toMap: true };
+  /* first time out of the tutorial, you choose how you look */
+  G.trans = { t: 0, phase: 'out', dur: 0.42, toProfile: true };
 };
 function openMap(fresh) {
   G.state = 'map'; G.mapT = 0; G.mapSel = -1;
@@ -1273,6 +1325,7 @@ function drawTutorialMap() {
 /* BACK sits top left, clear of the chapter banner. The bottom left corner
    already carries the codes icon and the purse. */
 function mapBackRect() { return { x: 5, y: 6, w: 42, h: 14 }; }
+function mapLookRect() { return { x: 58, y: VH - 40, w: 42, h: 13 }; }
 function mapGearRect() { return { x: VW - 30, y: VH - 26, w: 24, h: 22 }; }
 /* the footer line shares its strip with the cog, so it stops short of it */
 function mapFootX() { return (mapGearRect().x - 4) / 2; }
@@ -1360,9 +1413,12 @@ function updateMap(dt) {
   }
   const cbtn = { x: 6, y: VH - 46, w: 22, h: 22 };
   const qbtn = { x: 32, y: VH - 46, w: 22, h: 22 };
+  const lbtn = mapLookRect();
   G.overCodeIcon = Input.over(cbtn);
   G.overQuestIcon = Input.over(qbtn);
+  G.overLookIcon = Input.over(lbtn);
   if (G.questsOpen) { updateQuests(dt); return; }
+  if (G.tutorialDone && Input.tap(lbtn)) { Snd.ui(); openProfile('map'); return; }
   if (G.codesOpen) { updateCodes(dt); return; }
   if (Input.tap(qbtn)) { G.questsOpen = true; G.questSel = -1; G.questMsgT = 0; Snd.ui(); return; }
   if (Input.tap(cbtn) || Input.actHit('codes')) {
@@ -1503,6 +1559,15 @@ function drawMap() {
       drawText(ctx, String(Math.min(9, ready)), 50, VH - 43, '#12200e', 1, 'left');
     }
     if (qhov) drawText(ctx, 'QUESTS', 43, VH - 21, '#ffe98a', 1, 'center', '#3a2c1c');
+  }
+  /* and the way back to your own look */
+  if (G.tutorialDone) {
+    const lr = mapLookRect(), lh = G.overLookIcon;
+    ctx.fillStyle = lh ? 'rgba(74,56,34,0.94)' : 'rgba(48,36,22,0.88)';
+    ctx.fillRect(lr.x, lr.y, lr.w, lr.h);
+    ctx.fillStyle = lh ? '#ffd04a' : '#b8862f';
+    ctx.fillRect(lr.x, lr.y, lr.w, 1); ctx.fillRect(lr.x, lr.y + lr.h - 1, lr.w, 1);
+    drawText(ctx, 'LOOK', lr.x + lr.w / 2, lr.y + 3, '#ffeec0', 1, 'center');
   }
   if (G.player) {
     ctx.drawImage(Art.item.coin[Math.floor(G.mapT / 0.09) % 8], 6, VH - 28);
@@ -2990,6 +3055,194 @@ function drawCodes() {
 }
 
 /* ============================================================
+   THE PROFILE — the hero's own hair, clothes and mantle. Opened
+   once the tutorial is done, and from the chart after that.
+   ============================================================ */
+G.profile = { hair: 0, hairCol: 0, outfit: 0, tee: 0, cape: 'none' };
+const CAPE_ORDER = ['wood', 'tide', 'ember'];
+/* a mantle is earned by finishing a chapter */
+function capeUnlocked(key) {
+  const ch = CAPE_ORDER.indexOf(key);
+  if (ch < 0) return true;
+  const levels = World.CHAPTERS[ch].levels;
+  return levels.every(l => G.cleared[l]);
+}
+function applyProfile() {
+  const p = G.profile;
+  if (p.cape !== 'none' && !capeUnlocked(p.cape)) p.cape = 'none';
+  try { Art.rebuildHero(p); } catch (e) { console.error('hero look', e); }
+  if (G.codes.admin) { try { Art.buildGold(); } catch (e) { /* rebuilt lazily */ } }
+  if (G.player) G.player.cape = null;
+}
+/* the rows of the editor */
+const PROF_ROWS = [
+  { key: 'hair', name: 'HAIR', list: () => HAIR_STYLES },
+  { key: 'hairCol', name: 'COLOUR', list: () => HAIR_COLS.map(c => c.name) },
+  { key: 'outfit', name: 'CLOTHES', list: () => OUTFITS },
+  { key: 'tee', name: 'SHIRT', list: () => TEE_COLS.map(c => c.name) }
+];
+/* Two columns: what you wear on the left with the hero beneath it, and the
+   mantles on the right. Nothing overlaps anything. */
+const PROF_BOX = { x: 16, y: 10, w: 352, h: 196 };
+function profRowRect(i) { return { x: PROF_BOX.x + 12, y: PROF_BOX.y + 30 + i * 20, w: 150, h: 17 }; }
+function profArrowRect(i, dir) {
+  const r = profRowRect(i);
+  return dir < 0 ? { x: r.x + 58, y: r.y, w: 16, h: r.h }
+                 : { x: r.x + r.w - 16, y: r.y, w: 16, h: r.h };
+}
+function profCapeRect(i) {
+  return i < 3 ? { x: PROF_BOX.x + 174, y: PROF_BOX.y + 30 + i * 26, w: 166, h: 22 }
+               : { x: PROF_BOX.x + 174, y: PROF_BOX.y + 110, w: 166, h: 15 };
+}
+function profDoneRect() { return { x: PROF_BOX.x + 262, y: PROF_BOX.y + PROF_BOX.h - 24, w: 78, h: 16 }; }
+function profRandomRect() { return { x: PROF_BOX.x + 174, y: PROF_BOX.y + PROF_BOX.h - 24, w: 80, h: 16 }; }
+function profPreviewSpot() { return { cx: PROF_BOX.x + 62, base: PROF_BOX.y + 178 }; }
+
+function openProfile(thenState) {
+  G.state = 'profile';
+  G.profAfter = thenState || 'map';
+  G.profSel = -1; G.profT = 0;
+  G.particles.length = 0;
+  if (!G.profPreview) G.profPreview = new Player();
+  G.profPreview.cape = null;
+  applyProfile();
+  Snd.play('title'); Snd.musicLevel(0.30, 0.8);
+}
+function updateProfile(dt) {
+  G.profT += dt;
+  G.flashAmt = Math.max(0, G.flashAmt - dt * 2.2);
+  if (G.settingsOpen) { updateSettings(); return; }
+  let changed = false;
+  const p = G.profile;
+  for (let i = 0; i < PROF_ROWS.length; i++) {
+    const row = PROF_ROWS[i], n = row.list().length;
+    for (const dir of [-1, 1]) {
+      if (Input.tap(profArrowRect(i, dir))) {
+        p[row.key] = ((p[row.key] + dir) % n + n) % n;
+        changed = true; Snd.ui();
+      }
+    }
+  }
+  CAPE_ORDER.forEach((key, i) => {
+    if (!Input.tap(profCapeRect(i))) return;
+    if (!capeUnlocked(key)) { Snd.uiBad(); return; }
+    p.cape = (p.cape === key) ? 'none' : key;
+    changed = true; Snd.ui();
+  });
+  if (Input.tap(profCapeRect(3))) { p.cape = 'none'; changed = true; Snd.ui(); }
+  if (Input.tap(profRandomRect())) {
+    p.hair = ri(0, HAIR_STYLES.length - 1);
+    p.hairCol = ri(0, HAIR_COLS.length - 1);
+    p.outfit = ri(0, OUTFITS.length - 1);
+    p.tee = ri(0, TEE_COLS.length - 1);
+    changed = true; Snd.buy();
+  }
+  if (changed) { applyProfile(); G.saveGame(); }
+  if (Input.tap(profDoneRect()) || Input.hit('Enter') || Input.hit('Escape')) {
+    Snd.buy(); G.flash(0.4);
+    if (G.profAfter === 'map') openMap(false);
+    else { G.state = G.profAfter; }
+    return;
+  }
+  for (const pa of G.particles) pa.update(dt);
+  G.particles = G.particles.filter(x => !x.dead);
+  if (Math.random() < dt * 6) G.particles.push(new Particle({
+    x: rr(0, VW), y: VH + 4, vx: rr(-0.2, 0.2), vy: rr(-0.5, -0.15),
+    life: rr(3, 6), col: rpick(['#ebdcb6', '#d8c49a', '#fff4d6']), size: 1, grav: 0, type: 'leaf'
+  }));
+}
+function drawProfile() {
+  ctx.drawImage(Art.map.bg, 0, 0);
+  for (const pa of G.particles) pa.draw(ctx);
+  panel(ctx, PROF_BOX.x, PROF_BOX.y, PROF_BOX.w, PROF_BOX.h);
+  drawText(ctx, 'YOUR OWN LOOK', PROF_BOX.x + 12, PROF_BOX.y + 8, '#f2e2b8', 1, 'left', '#000000');
+  drawText(ctx, 'HOW YOU GO INTO THE REALMS',
+           PROF_BOX.x + PROF_BOX.w - 12, PROF_BOX.y + 8, '#a9b3c9', 1, 'right');
+
+  const p = G.profile;
+  PROF_ROWS.forEach((row, i) => {
+    const r = profRowRect(i);
+    const list = row.list();
+    const dim = row.key === 'tee' && p.outfit !== 1;
+    ctx.fillStyle = '#211c32'; ctx.fillRect(r.x, r.y, r.w, r.h);
+    drawText(ctx, row.name, r.x + 4, r.y + 5, dim ? '#5b6480' : '#a9b3c9', 1, 'left');
+    drawText(ctx, list[p[row.key]], r.x + 76, r.y + 5, dim ? '#5b6480' : '#ffeec0', 1, 'left');
+    for (const dir of [-1, 1]) {
+      const ar = profArrowRect(i, dir), hot = Input.over(ar);
+      ctx.fillStyle = hot ? '#3c5a40' : '#2b2740';
+      ctx.fillRect(ar.x, ar.y + 2, ar.w, ar.h - 4);
+      drawText(ctx, dir < 0 ? '<' : '>', ar.x + ar.w / 2, ar.y + 5, '#ffeec0', 1, 'center');
+    }
+    /* a swatch, where the row is about colour, kept clear of the words */
+    if (row.key === 'hairCol' || row.key === 'tee') {
+      const src = row.key === 'hairCol' ? HAIR_COLS[p.hairCol] : TEE_COLS[p.tee];
+      ctx.fillStyle = src.base; ctx.fillRect(r.x + r.w - 33, r.y + 3, 11, 11);
+      ctx.fillStyle = src.dark; ctx.fillRect(r.x + r.w - 33, r.y + 11, 11, 3);
+      ctx.fillStyle = '#12101c'; ctx.fillRect(r.x + r.w - 33, r.y + 3, 11, 1);
+    }
+  });
+
+  /* the mantles, and what each is still waiting on */
+  drawText(ctx, 'MANTLES - ONE PER CHAPTER', PROF_BOX.x + 174, PROF_BOX.y + 20, '#a9b3c9', 1, 'left');
+  CAPE_ORDER.forEach((key, i) => {
+    const r = profCapeRect(i), des = CAPES[key];
+    const got = capeUnlocked(key), on = p.cape === key;
+    ctx.fillStyle = on ? '#2f4a34' : (got ? '#211c32' : '#1a1626');
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    if (on || (got && Input.over(r))) {
+      ctx.fillStyle = on ? '#6fc46a' : '#c68e3f';
+      ctx.fillRect(r.x, r.y, r.w, 1); ctx.fillRect(r.x, r.y + r.h - 1, r.w, 1);
+      ctx.fillRect(r.x, r.y, 1, r.h); ctx.fillRect(r.x + r.w - 1, r.y, 1, r.h);
+    }
+    /* a scrap of the cloth itself, so you can see what it is */
+    for (let j = 0; j < 7; j++) for (let k = 0; k < 5; k++) {
+      const col = got ? capeCell(key, j, k, 7, 5) : '#3a3350';
+      ctx.fillStyle = col;
+      ctx.fillRect(r.x + 4 + k * 3, r.y + 3 + j * 2, 3, 2);
+    }
+    drawText(ctx, got ? des.name : 'NOT YET YOURS', r.x + 22, r.y + 3, got ? '#ffeec0' : '#5b6480', 1, 'left');
+    drawText(ctx, got ? (on ? 'WORN' : 'CLICK TO WEAR') : ('FINISH ' + des.hint),
+             r.x + 22, r.y + 13, got ? (on ? '#6fc46a' : '#a9b3c9') : '#7f8aa3', 1, 'left');
+  });
+  const nr = profCapeRect(3);
+  const noneHot = Input.over(nr);
+  ctx.fillStyle = p.cape === 'none' ? '#2f4a34' : (noneHot ? '#332c4c' : '#211c32');
+  ctx.fillRect(nr.x, nr.y, nr.w, nr.h);
+  drawText(ctx, 'NO MANTLE', nr.x + 6, nr.y + 4, p.cape === 'none' ? '#6fc46a' : '#c9d4e8', 1, 'left');
+
+  /* the hero themselves, turning slowly on the spot */
+  {
+    const spot = profPreviewSpot();
+    const bx = spot.cx, by = spot.base;
+    ctx.fillStyle = 'rgba(10,8,18,0.45)';
+    ctx.fillRect(bx - 46, by - 56, 104, 60);
+    ctx.fillStyle = '#3a3350';
+    ctx.fillRect(bx - 46, by - 56, 104, 1); ctx.fillRect(bx - 46, by + 3, 104, 1);
+    if (G.profPreview) {
+      G.profPreview.x = bx - G.profPreview.w / 2;
+      G.profPreview.y = by - G.profPreview.h;
+      G.profPreview.face = 1;
+      G.profPreview.vx = 1.6;                      /* so the cloth streams */
+      G.profPreview.grounded = true;
+      G.profPreview.updateCape(G.dt);
+      G.profPreview.drawCape(ctx);
+      const img = Art.hero.walk[Math.floor(G.profT / 0.085) % 8];
+      blit(ctx, img, bx, by, Art.hero.anchor.x, Art.hero.anchor.y, false, 1, 1, 0);
+    }
+  }
+
+  const rr2 = profRandomRect();
+  uiButton(rr2, 'SURPRISE ME', Input.over(rr2));
+  const dr = profDoneRect();
+  uiButton(dr, 'READY', Input.over(dr), '#3c5a40');
+  if (G.settingsOpen) drawSettings();
+  if (G.flashAmt > 0) {
+    ctx.save(); ctx.globalAlpha = Math.min(1, G.flashAmt); ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, VW, VH); ctx.restore();
+  }
+}
+
+/* ============================================================
    QUESTS — standing tasks, read from the chart, paid in coins
    and free-upgrade tickets
    ============================================================ */
@@ -3782,6 +4035,7 @@ function render() {
   if (G.state === 'load') { drawLoad(); drawCursor(); return; }
   if (G.state === 'title') { drawTitle(); drawCursor(); return; }
   if (G.state === 'files') { drawFiles(); drawCursor(); return; }
+  if (G.state === 'profile') { drawProfile(); drawCursor(); return; }
   if (G.state === 'map') { drawMap(); drawCursor(); return; }
   drawWorld();
 }

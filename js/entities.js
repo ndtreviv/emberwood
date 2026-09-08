@@ -106,6 +106,7 @@ class Player {
     this.onLadder = false; this.climbT = 0; this.ladderOffT = 0;
     this.invuln = 0; this.landT = 0;
     this.trail = [];
+    this.cape = null;
     this.stepT = 0; this.wasGrounded = false; this.inWater = false;
     this.topDir = 0;
     this.up = { sword: 0, speed: 0, dash: 0, magnet: 0, armour: 0, special: 0, wings: 0, mantle: 0, emberheart: 0 };
@@ -174,6 +175,7 @@ class Player {
   }
   place(x, y) {
     this.h = PH;
+    this.cape = null;
     this.heldBy = null; this.heldT = 0;
     this.crouching = false; this.rollT = 0; this.rollCd = 0; this.hurtT = 0;
     this.spinT = 0; this.spinKind = null; this.spinHit = null;
@@ -554,6 +556,8 @@ class Player {
       if (this.h !== PH) this.setHeight(PH);
       this.updateTop(dt, L, Rk, U, D);
     } else this.updateSide(dt, L, Rk, U, D);
+
+    this.updateCape(dt);
 
     /* trail fade */
     for (const t of this.trail) t.life -= dt;
@@ -1061,6 +1065,7 @@ class Player {
     }
     const flick = this.invuln > 0 && Math.floor(this.invuln * 22) % 2 === 0;
     if (flick) return;
+    this.drawCape(c2);                   /* the cloth hangs behind the body */
     const img = this.currentSprite();
     const flip = isTopAnim ? false : this.face < 0;
     /* the roll spins a full turn, so the tucked body reads as tumbling */
@@ -1078,6 +1083,78 @@ class Player {
     blit(c2, img, sx, sy, anchor.x, anchor.y, flip, 1, 1, 0);
   }
 }
+
+/* ============================================================
+   THE CAPE — a rope of eight links hung from the shoulders. It
+   trails behind a run, streams up through a jump or a fall, and
+   settles when you stand still.
+   ============================================================ */
+const CAPE_N = 9, CAPE_SEG = 3.4;
+Player.prototype.capeAnchor = function () {
+  const top = G.room && G.room.mode === 'top';
+  return { x: this.cx - this.face * 3, y: top ? this.cy : this.y + 5 };
+};
+Player.prototype.updateCape = function (dt) {
+  if (LOOK.cape === 'none' || !CAPES[LOOK.cape]) { this.cape = null; return; }
+  const a = this.capeAnchor();
+  if (!this.cape) {
+    this.cape = [];
+    for (let i = 0; i < CAPE_N; i++) this.cape.push({ x: a.x, y: a.y + i * CAPE_SEG, px: a.x, py: a.y + i * CAPE_SEG });
+  }
+  /* the wind the hero makes for themselves */
+  const speed = Math.abs(this.vx);
+  const back = -this.face * (1.2 + Math.min(7, speed * 2.2));
+  /* off the ground it streams upward, harder the faster you are moving,
+     whether that is up through a jump or down through a fall */
+  const air = !this.grounded && !this.onLadder && !this.swimming;
+  const up = air ? -(5.0 + Math.min(9, Math.abs(this.vy) * 1.2)) : 3.4;
+  const wob = Math.sin(G.t * 9) * 0.6;
+  const s = Math.min(2, dt * 60);
+  for (let i = 0; i < CAPE_N; i++) {
+    const pt = this.cape[i];
+    if (i === 0) { pt.x = a.x; pt.y = a.y; pt.px = a.x; pt.py = a.y; continue; }
+    const t = i / (CAPE_N - 1);
+    let vx = (pt.x - pt.px) * 0.74, vy = (pt.y - pt.py) * 0.74;
+    pt.px = pt.x; pt.py = pt.y;
+    pt.x += vx + (back * (0.35 + t) + wob * t) * 0.34 * s;
+    pt.y += vy + (up * (0.35 + t)) * 0.34 * s;
+    /* hold each link a fixed distance from the one before it */
+    const q = this.cape[i - 1];
+    const dx = pt.x - q.x, dy = pt.y - q.y;
+    const d = Math.hypot(dx, dy) || 1;
+    pt.x = q.x + dx / d * CAPE_SEG;
+    pt.y = q.y + dy / d * CAPE_SEG;
+  }
+};
+Player.prototype.drawCape = function (c2) {
+  if (!this.cape) return;
+  const des = CAPES[LOOK.cape];
+  if (!des) return;
+  const WIDE = 7;                        /* cells across the cloth */
+  for (let i = 0; i < CAPE_N - 1; i++) {
+    const p0 = this.cape[i], p1 = this.cape[i + 1];
+    const dx = p1.x - p0.x, dy = p1.y - p0.y;
+    const l = Math.hypot(dx, dy) || 1;
+    const nx = -dy / l, ny = dx / l;     /* across the cloth */
+    const t = i / (CAPE_N - 1);
+    const halfW = (2.6 + t * 4.4);       /* it flares toward the hem */
+    for (let j = 0; j < WIDE; j++) {
+      const u = (j / (WIDE - 1) - 0.5) * 2;
+      const col = capeCell(LOOK.cape, i, j, CAPE_N - 1, WIDE);
+      if (!col) continue;
+      const x = p0.x + nx * u * halfW + dx * 0.5;
+      const y = p0.y + ny * u * halfW + dy * 0.5;
+      c2.fillStyle = col;
+      c2.fillRect(Math.round(x), Math.round(y), 2, 3);
+    }
+    /* a bright hem along the trailing edge */
+    if (i > CAPE_N - 4) {
+      c2.fillStyle = des.edge;
+      c2.fillRect(Math.round(p1.x + nx * halfW), Math.round(p1.y + ny * halfW), 2, 2);
+      c2.fillRect(Math.round(p1.x - nx * halfW), Math.round(p1.y - ny * halfW), 2, 2);
+    }
+  }
+};
 
 /* ============================================================
    ENEMIES
@@ -1152,7 +1229,7 @@ class Enemy {
       col: this.blood || '#c04a3a', col2: '#3a1210', size: rr(1, 3), grav: 0.24
     }));
     const n = Math.max(1, Math.round((this.coinDrop || 2) * (this.coinMult || 1) * G.coinScale() * G.comboMult())) + G.coinBonus();
-    for (let i = 0; i < n; i++) G.spawnCoin(this.cx + rr(-4, 4), this.cy, rr(-2.2, 2.2), rr(-3.4, -1.4));
+    G.payOut(n, this.cx, this.cy);
   }
   physics(dt) {
     const room = G.room, s = dt * 60;
@@ -2205,7 +2282,7 @@ class Zeus extends Enemy {
           x: this.x, y: this.y - 40, vx: rr(-7, 7), vy: rr(-7, 3), life: rr(0.6, 1.5),
           col: '#ffffff', col2: '#3f6fd8', size: rr(2, 5), grav: 0.08
         }));
-        for (let i = 0; i < 40; i++) G.spawnCoin(this.x + rr(-30, 30), this.y - 20, rr(-4, 4), rr(-6, -1));
+        G.payOut(40, this.x, this.y - 20);
         G.onBossDead();
       }
       return;
@@ -2415,7 +2492,7 @@ class Guardian extends Enemy {
           x: this.x, y: this.y - 34, vx: rr(-7, 7), vy: rr(-7, 3), life: rr(0.6, 1.5),
           col: this.cfg.proj.col, col2: this.cfg.proj.col2, size: rr(2, 5), grav: 0.07
         }));
-        for (let i = 0; i < 46; i++) G.spawnCoin(this.x + rr(-34, 34), this.y - 20, rr(-4, 4), rr(-6, -1));
+        G.payOut(46, this.x, this.y - 20);
         G.onBossDead();
       }
       return;
@@ -3108,7 +3185,7 @@ class MotherSpore extends Enemy {
           x: this.x, y: this.y - 34, vx: rr(-6, 6), vy: rr(-6, 3), life: rr(0.6, 1.5),
           col: '#f6efdc', col2: '#c9403a', size: rr(2, 5), grav: 0.06
         }));
-        for (let i = 0; i < 40; i++) G.spawnCoin(this.x + rr(-30, 30), this.y - 20, rr(-4, 4), rr(-6, -1));
+        G.payOut(40, this.x, this.y - 20);
         G.onBossDead();
       }
       return;
@@ -3239,7 +3316,7 @@ class Dragon extends Enemy {
           x: this.x, y: this.y - 24, vx: rr(-7, 7), vy: rr(-7, 3), life: rr(0.6, 1.6),
           col: '#ffd06a', col2: '#8e2a20', size: rr(2, 5), grav: 0.1, type: 'fire'
         }));
-        for (let i = 0; i < 40; i++) G.spawnCoin(this.x + rr(-30, 30), this.y - 20, rr(-4, 4), rr(-6, -1));
+        G.payOut(40, this.x, this.y - 20);
         G.onBossDead();
       }
       return;
@@ -3337,10 +3414,13 @@ class Dragon extends Enemy {
 
 /* ---------- pickups ---------- */
 class Coin {
-  constructor(x, y, vx, vy, still) {
+  constructor(x, y, vx, vy, still, value) {
     this.x = x; this.y = y; this.vx = vx || 0; this.vy = vy || 0;
     this.t = rr(0, 3); this.dead = false; this.life = 0; this.still = !!still;
     this.grounded = false; this.magnet = false;
+    /* a heap stands in for several coins, so a rich kill does not flood
+       the room with hundreds of separate things to move and draw */
+    this.value = Math.max(1, value || 1);
   }
   update(dt) {
     this.t += dt; this.life += dt;
@@ -3373,16 +3453,23 @@ class Coin {
     }
     if (d < 11 && !p.dead) {
       this.dead = true;
-      p.coins++; G.stats.coins++;
+      p.coins += this.value; G.stats.coins += this.value;
       Snd.coin();
-      G.texts.push(new FloatText(this.x, this.y - 6, '+1', '#ffe98a'));
-      for (let i = 0; i < 7; i++) G.particles.push(new Particle({
+      G.texts.push(new FloatText(this.x, this.y - 6, '+' + this.value, '#ffe98a'));
+      for (let i = 0; i < (this.value > 1 ? 12 : 7); i++) G.particles.push(new Particle({
         x: this.x, y: this.y, vx: rr(-1.6, 1.6), vy: rr(-2, -0.2), life: rr(0.2, 0.45),
         col: '#ffeaa0', col2: '#f5c53a', size: rr(1, 2), grav: 0.1
       }));
     }
   }
   draw(c2) {
+    if (this.value > 1) {
+      const fp = Math.floor(this.t / 0.09) % 8;
+      const img = Art.item.coinPile ? Art.item.coinPile[fp] : Art.item.coin[fp];
+      blit(c2, img, this.x, this.y + 1, img.width / 2, img.height / 2, false,
+           this.magnet ? 1 : 0.96);
+      return;
+    }
     const f = Math.floor(this.t / 0.075) % 8;
     const bobY = this.grounded || this.still ? Math.sin(this.t * 3.4) * 1.6 : 0;
     blit(c2, Art.item.coin[f], this.x, this.y + bobY, 7, 7);
