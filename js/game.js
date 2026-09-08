@@ -3096,7 +3096,7 @@ function profCapeRect(i) {
 }
 function profDoneRect() { return { x: PROF_BOX.x + 262, y: PROF_BOX.y + PROF_BOX.h - 24, w: 78, h: 16 }; }
 function profRandomRect() { return { x: PROF_BOX.x + 174, y: PROF_BOX.y + PROF_BOX.h - 24, w: 80, h: 16 }; }
-function profPreviewSpot() { return { cx: PROF_BOX.x + 62, base: PROF_BOX.y + 178 }; }
+function profPreviewSpot() { return { cx: PROF_BOX.x + 84, base: PROF_BOX.y + 186, scale: 2.4 }; }
 
 function openProfile(thenState) {
   G.state = 'profile';
@@ -3213,11 +3213,13 @@ function drawProfile() {
   /* the hero themselves, turning slowly on the spot */
   {
     const spot = profPreviewSpot();
-    const bx = spot.cx, by = spot.base;
+    const bx = spot.cx, by = spot.base, sc = spot.scale;
     ctx.fillStyle = 'rgba(10,8,18,0.45)';
-    ctx.fillRect(bx - 46, by - 56, 104, 60);
+    ctx.fillRect(bx - 76, by - 76, 144, 80);
     ctx.fillStyle = '#3a3350';
-    ctx.fillRect(bx - 46, by - 56, 104, 1); ctx.fillRect(bx - 46, by + 3, 104, 1);
+    ctx.fillRect(bx - 76, by - 76, 144, 1); ctx.fillRect(bx - 76, by + 3, 144, 1);
+    /* a stone for them to stand on, so the feet are not left in the air */
+    ctx.fillStyle = '#2b2740'; ctx.fillRect(bx - 26, by + 1, 52, 2);
     if (G.profPreview) {
       G.profPreview.x = bx - G.profPreview.w / 2;
       G.profPreview.y = by - G.profPreview.h;
@@ -3225,9 +3227,15 @@ function drawProfile() {
       G.profPreview.vx = 1.6;                      /* so the cloth streams */
       G.profPreview.grounded = true;
       G.profPreview.updateCape(G.dt);
+      /* the whole figure is blown up about the feet, cloth and all */
+      ctx.save();
+      ctx.translate(bx, by);
+      ctx.scale(sc, sc);
+      ctx.translate(-bx, -by);
       G.profPreview.drawCape(ctx);
       const img = Art.hero.walk[Math.floor(G.profT / 0.085) % 8];
       blit(ctx, img, bx, by, Art.hero.anchor.x, Art.hero.anchor.y, false, 1, 1, 0);
+      ctx.restore();
     }
   }
 
