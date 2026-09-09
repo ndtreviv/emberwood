@@ -1580,6 +1580,124 @@ function treeSprite(size, seed) {
   g.outline(C('#1c2c18'));
   return g;
 }
+/* A forest giant: the trunk runs the full height of the sprite and the crown
+   sits at the top, so the top leaves stand above the screen. */
+function giantTreeSprite(seed) {
+  const r = new RNG(seed);
+  const w = 112, h = 252;
+  const g = new Pix(w, h);
+  const cx = w / 2;
+  const crownY = 84;                 /* the trunk stops here and the crown starts */
+  const bendOf = y => Math.sin((h - y) * 0.014 + seed * 0.3) * 6;
+
+  /* buttress roots */
+  for (const sdir of [-1, 1]) {
+    g.poly([[cx + sdir * 6, h - 26], [cx + sdir * 20, h - 1], [cx + sdir * 4, h - 1]], TP.woodD);
+    g.poly([[cx + sdir * 5, h - 22], [cx + sdir * 14, h - 1], [cx + sdir * 3, h - 1]], TP.wood);
+  }
+  /* the trunk */
+  for (let y = h - 1; y > crownY - 10; y--) {
+    const t = (h - y) / (h - crownY);
+    const ww = 17 * (1 - t * 0.42);
+    const bend = bendOf(y);
+    g.rect(cx - ww / 2 + bend, y, ww, 1, TP.wood);
+    g.set(cx - ww / 2 + bend, y, TP.woodD);
+    g.set(cx + ww / 2 + bend - 1, y, TP.woodD);
+    if (r.bool(0.30)) g.set(cx - ww / 2 + bend + r.i(1, Math.max(1, Math.floor(ww) - 2)), y, TP.woodL);
+    if (r.bool(0.07)) g.rect(cx - ww / 2 + bend + r.i(1, Math.max(1, Math.floor(ww) - 3)), y, 2, 1, TP.woodD);
+  }
+  /* moss up the shaded side */
+  for (let y = h - 4; y > crownY + 20; y -= 1) {
+    if (!r.bool(0.34)) continue;
+    const bend = bendOf(y);
+    g.rect(cx - 8 + bend, y, r.i(1, 3), 1, r.bool(0.5) ? TP.moss : TP.mossD);
+  }
+  /* the great limbs */
+  const limbs = [];
+  for (let k = 0; k < 7; k++) {
+    const y = crownY + 14 + k * 19;
+    const dir = k % 2 ? 1 : -1;
+    const len = 20 + r.r(0, 16);
+    const bend = bendOf(y);
+    g.thick(cx + bend, y, cx + bend + dir * len, y - 16 - r.r(0, 8), 3, TP.woodD);
+    g.thick(cx + bend, y + 1, cx + bend + dir * len * 0.6, y - 9, 2, TP.wood);
+    limbs.push({ x: cx + bend + dir * len, y: y - 16 });
+  }
+  /* the crown, built from overlapping leaf masses */
+  for (let k = 0; k < 46; k++) {
+    const a = r.r(0, TAU), rad = Math.sqrt(r.r(0, 1));
+    const x = cx + Math.cos(a) * 50 * rad;
+    const y = crownY * 0.52 + Math.sin(a) * 40 * rad;
+    const rr3 = r.r(11, 20);
+    g.disc(x, y, rr3, TP.grassD);
+    g.disc(x - rr3 * 0.2, y - rr3 * 0.25, rr3 * 0.78, TP.grass);
+    g.disc(x - rr3 * 0.36, y - rr3 * 0.42, rr3 * 0.42, TP.grassL);
+  }
+  /* leaf speckle */
+  for (let k = 0; k < 2200; k++) {
+    const x = r.i(0, w - 1), y = r.i(0, crownY + 4);
+    if (g.alphaAt(x, y) > 200) g.set(x, y, r.bool(0.5) ? TP.grassX : TP.grassL);
+  }
+  /* small leaf tufts hanging off the limbs, so the trunk is not bare */
+  for (const l of limbs) {
+    if (!r.bool(0.7)) continue;
+    const rr3 = r.r(7, 12);
+    g.disc(l.x, l.y, rr3, TP.grassD);
+    g.disc(l.x - 1, l.y - 2, rr3 * 0.7, TP.grass);
+    g.disc(l.x - 2, l.y - 3, rr3 * 0.35, TP.grassL);
+  }
+  g.shade({ top: 0.13, bot: 0.18, right: 0.09 });
+  g.outline(C('#1c2c18'));
+  return g;
+}
+
+/* a twig bowl with eggs, wedged in a fork of the branches */
+function nestSprite(seed) {
+  const g = new Pix(20, 12), r = new RNG(seed);
+  const twig = C('#6b4a2f'), twigD = C('#432d1b'), twigL = C('#8f6a41');
+  const egg = C('#e6ecd6'), eggD = C('#bfc7ac'), spot = C('#7d6a4a');
+  g.ell(10, 8, 9, 4, twigD);
+  g.ell(10, 7, 8, 3.4, twig);
+  g.ell(10, 6, 6.4, 2.4, C('#2e1f12'));
+  for (let k = 0; k < 3; k++) {
+    const x = 7 + k * 3 + r.r(-0.5, 0.5);
+    g.ell(x, 6, 2, 1.7, egg);
+    g.ell(x - 0.5, 5.5, 1.1, 0.9, C('#f6f8ec'));
+    g.set(x + 1, 6, eggD);
+    if (r.bool(0.7)) g.set(x + r.i(-1, 1), 6 + r.i(-1, 0), spot);
+  }
+  /* loose twigs poking out of the rim */
+  for (let k = 0; k < 7; k++) {
+    const x = r.i(1, 18), y = r.i(6, 10);
+    g.rect(x, y, r.i(2, 4), 1, r.bool(0.5) ? twigL : twigD);
+  }
+  g.outline(C('#231708'));
+  return g;
+}
+
+/* a low fern, the floor foliage of a deep wood */
+function fernSprite(seed) {
+  const g = new Pix(26, 18), r = new RNG(seed);
+  const n = r.i(5, 8);
+  for (let k = 0; k < n; k++) {
+    const dir = k % 2 ? 1 : -1;
+    const len = r.r(8, 12);
+    const lift = r.r(6, 13);
+    const col = k % 3 === 0 ? TP.grassL : (k % 3 === 1 ? TP.grass : TP.grassD);
+    for (let i = 0; i <= len; i++) {
+      const t = i / len;
+      const x = 13 + dir * t * 11;
+      const y = 17 - lift * Math.sin(t * 1.5) - t * 2;
+      g.set(x, y, col);
+      /* the leaflets along the frond */
+      const fin = Math.round((1 - t) * 3);
+      for (let f = 1; f <= fin; f++) g.set(x - dir * f * 0.3, y + f, k % 2 ? TP.grassD : TP.grass);
+    }
+  }
+  g.outline(C('#1c2c18'));
+  return g;
+}
+
 function bushSprite(seed) {
   const g = new Pix(30, 22), r = new RNG(seed);
   for (let k = 0; k < 6; k++) {
@@ -2882,6 +3000,184 @@ function mapBackground() {
   g.disc(cx, cy, 1, ink);
   return g;
 }
+/* one link of a heavy iron chain: a flat link and an edge-on link, laid
+   alternately along a line, read as a chain */
+function chainLinkSprite(edge) {
+  const g = new Pix(edge ? 6 : 11, 9);
+  const iron = C('#6b7382'), ironD = C('#39404d'), ironL = C('#a2acbb');
+  if (edge) {
+    g.rect(1, 1, 4, 7, ironD);
+    g.rect(2, 1, 2, 7, iron);
+    g.rect(2, 2, 1, 5, ironL);
+  } else {
+    g.ell(5.5, 4.5, 5, 4, ironD);
+    g.ell(5.5, 4.5, 3.4, 2.4, [0, 0, 0, 0]);
+    for (let x = 0; x < 11; x++) for (let y = 0; y < 9; y++) {
+      if (g.alphaAt(x, y) < 100) continue;
+      if (y <= 2) g.set(x, y, ironL);
+      else if (y >= 7) g.set(x, y, ironD);
+      else if (x <= 2 || x >= 8) g.set(x, y, iron);
+    }
+  }
+  g.outline(C('#1d222b'));
+  return g;
+}
+/* the ring bolted to the edge of the map that a chain is made fast to */
+function chainRingSprite() {
+  const g = new Pix(12, 12);
+  const iron = C('#6b7382'), ironD = C('#39404d'), ironL = C('#a2acbb');
+  g.disc(6, 6, 5.4, ironD);
+  g.disc(6, 6, 3.4, [0, 0, 0, 0]);
+  g.disc(6, 5, 5.0, ironL);
+  g.disc(6, 6, 3.6, [0, 0, 0, 0]);
+  g.disc(6, 6, 4.6, iron);
+  g.disc(6, 6, 3.4, [0, 0, 0, 0]);
+  g.outline(C('#1d222b'));
+  return g;
+}
+/* ============================================================
+   THE ANCIENT WARRIORS — silhouettes for the opening story
+   ============================================================ */
+const WAR = {
+  dark: C('#171223'), mid: C('#2a2138'), lift: C('#3a2f4c'),
+  rim: C('#e0bd80'), rim2: C('#ffe6ae'),
+  cloak: [C('#4a2436'), C('#243a4a'), C('#3d3a20'), C('#3a2448')],
+  steel: C('#7f8798'), steelD: C('#454c5c'), wood: C('#4a3324')
+};
+/* a light from the left picks out the leading edge of the figure */
+function rimLight(g, side) {
+  for (let y = 0; y < g.h; y++) {
+    let first = -1;
+    for (let x = 0; x < g.w; x++) {
+      const xx = side < 0 ? x : g.w - 1 - x;
+      if (g.alphaAt(xx, y) > 160) { first = xx; break; }
+    }
+    if (first < 0) continue;
+    g.set(first, y, (y & 3) === 0 ? WAR.rim2 : WAR.rim);
+  }
+}
+function warriorSprite(kind, pose, i, n) {
+  const g = new Pix(28, 34);
+  const cx = 13, foot = 31;
+  const hip = foot - 13, sho = hip - 9, headY = sho - 4;
+  const ph = n > 1 ? i / n * TAU : 0;
+  let stepA = 0, stepB = 0, bob = 0, lean = 0, arm = 0, swing = 0, crouch = 0;
+  if (pose === 'walk') {
+    stepA = Math.sin(ph) * 5; stepB = -stepA;
+    bob = Math.abs(Math.cos(ph)) * 1.2;
+    lean = 1.4; arm = -Math.sin(ph) * 3.2;
+  } else if (pose === 'fight') {
+    const k = i / Math.max(1, n - 1);
+    swing = -2.2 + k * 3.4;              /* over the shoulder, then down */
+    stepA = 4; stepB = -3; lean = 2.6; crouch = 1.6; arm = 2;
+  } else if (pose === 'stand') {
+    bob = Math.sin(ph) * 0.8; stepA = 2; stepB = -2; arm = 0.4;
+  } else if (pose === 'point') {
+    stepA = 3; stepB = -3; lean = 0.6; arm = 6;
+  }
+  const hy = hip - bob - crouch, sy = sho - bob - crouch, hdy = headY - bob - crouch;
+  const lx = cx + lean;
+
+  /* the cloak, behind everything */
+  const back = 5 + Math.abs(stepA) * 0.5;
+  g.poly([[lx - 1, sy - 2], [lx - back - 4, hy + 6], [lx - back - 1, foot - 1],
+          [lx + 1, foot - 3], [lx + 2, hy]], WAR.cloak[kind % 4]);
+  g.poly([[lx - 1, sy - 1], [lx - back - 2, hy + 7], [lx - 1, foot - 4]], WAR.mid);
+
+  /* legs */
+  g.thick(cx, hy, cx + stepA, foot, 3, WAR.dark);
+  g.thick(cx, hy, cx + stepB, foot, 3, WAR.mid);
+  g.rect(cx + stepA - 2, foot - 1, 5, 2, WAR.dark);
+  g.rect(cx + stepB - 2, foot - 1, 5, 2, WAR.mid);
+
+  /* torso and head */
+  g.poly([[lx - 4, sy], [lx + 4, sy], [lx + 3, hy + 1], [lx - 3, hy + 1]], WAR.dark);
+  g.poly([[lx - 4, sy], [lx - 1, sy], [lx - 2, hy + 1], [lx - 3, hy + 1]], WAR.lift);
+  g.disc(lx + 1, hdy, 3.4, WAR.dark);
+  g.rect(lx - 3, hdy - 3, 8, 2, WAR.mid);        /* the brow of a helm */
+  g.set(lx + 4, hdy - 3, WAR.rim);
+  g.set(lx + 4, hdy - 2, WAR.rim);
+
+  /* the weapon arm */
+  const ax = lx + 3, ay = sy + 2;
+  const hx = ax + 5 + arm, hyy = ay + 3 - arm * 0.5;
+  g.thick(ax, ay, hx, hyy, 3, WAR.dark);
+  if (kind === 0) {
+    /* sword and a round shield */
+    const bx = hx + Math.cos(swing) * 13, by2 = hyy + Math.sin(swing) * 13;
+    g.thick(hx, hyy, bx, by2, 2, WAR.steel);
+    g.thick(hx - 1, hyy - 1, hx + 1, hyy + 1, 3, WAR.steelD);
+    g.disc(lx - 4, sy + 4, 4.6, WAR.mid);
+    g.disc(lx - 4, sy + 4, 3.4, WAR.dark);
+    g.disc(lx - 4, sy + 4, 1.3, WAR.steel);
+  } else if (kind === 1) {
+    /* a long spear, carried level or thrust */
+    const a2 = swing * 0.5 - 0.35;
+    g.thick(hx - Math.cos(a2) * 9, hyy - Math.sin(a2) * 9,
+            hx + Math.cos(a2) * 15, hyy + Math.sin(a2) * 15, 2, WAR.wood);
+    g.poly([[hx + Math.cos(a2) * 15, hyy + Math.sin(a2) * 15],
+            [hx + Math.cos(a2) * 20, hyy + Math.sin(a2) * 20 - 2],
+            [hx + Math.cos(a2) * 20, hyy + Math.sin(a2) * 20 + 2]], WAR.steel);
+  } else if (kind === 2) {
+    /* a great axe */
+    const a2 = swing - 0.2;
+    const tx = hx + Math.cos(a2) * 14, ty = hyy + Math.sin(a2) * 14;
+    g.thick(hx, hyy, tx, ty, 2, WAR.wood);
+    g.ell(tx, ty, 4.6, 3.4, WAR.steel);
+    g.ell(tx + 1.4, ty, 3.0, 2.4, WAR.dark);
+  } else {
+    /* a bow, and a short blade at the hip */
+    g.thick(hx, hyy - 7, hx + 3, hyy, 2, WAR.wood);
+    g.thick(hx + 3, hyy, hx, hyy + 7, 2, WAR.wood);
+    g.line(hx, hyy - 7, hx, hyy + 7, WAR.steelD);
+    g.thick(lx - 3, hy, lx - 6, hy + 6, 2, WAR.steelD);
+  }
+  rimLight(g, -1);
+  g.outline(C('#0b0812'));
+  return g;
+}
+/* flatten a finished sprite into a dark shape, with a hint of its own form */
+function silhouetteOf(cv, tint) {
+  const c = document.createElement('canvas');
+  c.width = cv.width; c.height = cv.height;
+  const x = c.getContext('2d');
+  x.imageSmoothingEnabled = false;
+  x.drawImage(cv, 0, 0);
+  x.globalCompositeOperation = 'source-atop';
+  x.fillStyle = tint;
+  x.fillRect(0, 0, c.width, c.height);
+  x.globalAlpha = 0.24;
+  x.drawImage(cv, 0, 0);
+  return c;
+}
+/* the islands that the warriors see from the outcrop */
+function archipelagoView() {
+  const g = new Pix(VW, 92), r = new RNG(4242);
+  const isles = [[44, 58, 34, 15], [120, 50, 26, 20], [188, 62, 40, 13],
+                 [258, 48, 22, 22], [318, 60, 32, 14], [88, 74, 20, 9], [230, 78, 24, 8]];
+  for (const [ix, iy, iw, ih] of isles) {
+    /* a peak with a green skirt and a pale beach */
+    g.ell(ix, iy + 4, iw * 0.62, 3.4, C('#e0d3a8'));
+    g.poly([[ix, iy - ih], [ix - iw / 2, iy + 3], [ix + iw / 2, iy + 3]], C('#2f4a52'));
+    g.poly([[ix, iy - ih], [ix - iw / 4, iy - ih * 0.3], [ix + iw / 4, iy - ih * 0.3]], C('#5d7a80'));
+    g.poly([[ix - iw / 2 + 2, iy + 3], [ix - iw / 6, iy - ih * 0.4], [ix + iw / 6, iy - ih * 0.4],
+            [ix + iw / 2 - 2, iy + 3]], C('#2b4a30'));
+    for (let k = 0; k < 8; k++) {
+      const x = ix + r.r(-iw / 2 + 3, iw / 2 - 3);
+      g.disc(x, iy + r.r(-2, 2), r.r(1.6, 3), C('#3d6b40'));
+    }
+  }
+  /* the sea between them */
+  for (let y = 0; y < 92; y++) {
+    const t = y / 91;
+    for (let x = 0; x < VW; x++) {
+      if (g.alphaAt(x, y) > 40) continue;
+      const band = Math.sin(x * 0.11 + y * 0.5) > 0.7 && ((x + y) & 3) === 0;
+      g.set(x, y, band ? C('#8fd0ff') : mixc(C('#1d4b80'), C('#3f8fd0'), t));
+    }
+  }
+  return g;
+}
 function mapNodeSprite(theme) {
   const g = new Pix(64, 64), r = new RNG(theme.length * 137 + 7);
   const cx = 32, cy = 30, R = 24;
@@ -2934,6 +3230,32 @@ function mapNodeSprite(theme) {
     /* a couple of fence rails */
     for (const fx of [cx - 16, cx + 16]) g.rect(fx, cy + 2, 2, 10, C('#6a4a2a'));
     g.rect(cx - 16, cy + 4, 34, 2, C('#7a5230'));
+  } else if (theme === 'archipelago') {
+    /* a ring of green islands in a bright sea, seen from far off */
+    g.disc(cx, cy, R, C('#2f6fb0'));
+    for (let k = 0; k < 6; k++) {
+      const y = cy - 16 + k * 7;
+      for (let x = cx - R; x < cx + R; x++)
+        if (Math.hypot(x - cx, y - cy) <= R - 1 && ((x + k * 2) % 6) < 3)
+          g.set(x, y + Math.sin(x * 0.35 + k) * 1.1, C('#5fa3dc'));
+    }
+    const isles = [[cx - 12, cy + 8, 9], [cx + 11, cy + 10, 7], [cx + 2, cy + 1, 11],
+                   [cx - 16, cy - 4, 5], [cx + 15, cy - 3, 6]];
+    for (const [ix, iy, ir] of isles) {
+      g.ell(ix, iy + 1, ir + 1, ir * 0.42, C('#e0d3a8'));
+      g.ell(ix, iy, ir, ir * 0.38, C('#4f9a3f'));
+      g.ell(ix - ir * 0.2, iy - 1, ir * 0.6, ir * 0.24, C('#7ec44f'));
+      /* a palm on the bigger ones */
+      if (ir >= 7) {
+        g.rect(ix - 1, iy - 6, 2, 6, C('#7a5230'));
+        for (const d of [-1, 1]) g.thick(ix, iy - 6, ix + d * 5, iy - 8, 2, C('#367030'));
+        g.thick(ix, iy - 6, ix, iy - 10, 2, C('#4f9a3f'));
+      }
+    }
+    /* the far peak that marks the place */
+    g.poly([[cx + 1, cy - 18], [cx - 9, cy - 3], [cx + 11, cy - 3]], C('#47547d'));
+    g.poly([[cx + 1, cy - 18], [cx - 3, cy - 12], [cx + 5, cy - 12]], C('#e8eef8'));
+    for (let k = 0; k < 8; k++) g.disc(cx + r.r(-R * 0.8, R * 0.8), cy + r.r(-R * 0.8, R * 0.8), r.r(0.7, 1.4), C('#cfeaff'));
   } else if (theme === 'shore' || theme === 'drowned' || theme === 'abyss') {
     const deep = theme === 'abyss' ? 0.55 : (theme === 'drowned' ? 0.3 : 0);
     g.disc(cx, cy, R, mixc(C('#5fa3dc'), C('#0d1c30'), deep));
@@ -3336,6 +3658,17 @@ Art.steps = function () {
       Art.prop.trees.push({ c: p.canvas(), ax: p.w / 2, ay: p.h, w: p.w, h: p.h, size: s });
     }
   });
+  push('THE FOREST GIANTS', () => {
+    Art.prop.giant = [];
+    for (let v = 0; v < 3; v++) {
+      const p = giantTreeSprite(940 + v);
+      Art.prop.giant.push({ c: p.canvas(), ax: p.w / 2, ay: p.h, w: p.w, h: p.h });
+    }
+    Art.prop.nest = [];
+    for (let v = 0; v < 3; v++) { const p = nestSprite(960 + v); Art.prop.nest.push(prop(p, p.w / 2, p.h)); }
+    Art.prop.fern = [];
+    for (let v = 0; v < 3; v++) { const p = fernSprite(980 + v); Art.prop.fern.push(prop(p, p.w / 2, p.h)); }
+  });
   push('THE FOREST', () => {
     Art.prop.bush = [];
     for (let i = 0; i < 3; i++) { const p = bushSprite(1000 + i); Art.prop.bush.push(prop(p, p.w / 2, p.h)); }
@@ -3463,6 +3796,18 @@ Art.steps = function () {
     Art.ashTitan = mk(ashTitanFrame);
     Art.ifrit = mk(ifritFrame);
   });
+  push('THE ANCIENT WARRIORS', () => {
+    Art.intro = { anchor: { x: 13, y: 31 }, walk: [], fight: [], stand: [], point: [] };
+    for (let k = 0; k < 4; k++) {
+      Art.intro.walk.push(frames(6, (i, n) => warriorSprite(k, 'walk', i, n)));
+      Art.intro.fight.push(frames(4, (i, n) => warriorSprite(k, 'fight', i, n)));
+      Art.intro.stand.push(frames(2, (i, n) => warriorSprite(k, 'stand', i, n)));
+      Art.intro.point.push([warriorSprite(k, 'point', 0, 1).canvas()]);
+    }
+    Art.intro.isles = archipelagoView().canvas();
+    Art.intro.bear = Art.bear.walk.map(c => silhouetteOf(c, '#1a1420'));
+    Art.intro.bearRoar = Art.bear.roar.map(c => silhouetteOf(c, '#241826'));
+  });
   push('THE REALM', () => {
     Art.map.bg = mapBackground().canvas();
     Art.map.tutorial = mapNodeSprite('tutorial').canvas();
@@ -3471,6 +3816,9 @@ Art.steps = function () {
     Art.map.node = ['forest', 'cloud', 'mush', 'shore', 'drowned', 'abyss', 'cinder', 'obsidian', 'molten']
       .map(t => mapNodeSprite(t).canvas());
     Art.map.lock = lockSprite().canvas();
+    Art.map.archipelago = mapNodeSprite('archipelago').canvas();
+    Art.map.chain = [chainLinkSprite(false).canvas(), chainLinkSprite(true).canvas()];
+    Art.map.ring = chainRingSprite().canvas();
     Art.ui.map = mapIconSprite().canvas();
   });
   push('THE SKY', () => {

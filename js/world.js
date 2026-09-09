@@ -102,6 +102,34 @@ function decorate(room, rng, opt) {
       layer: rng.bool(0.55) ? 0 : 1, sway: rng.r(1.4, 3.0), phase: rng.r(0, TAU),
       scale: rng.r(0.85, 1.15) });
   }
+  /* forest giants: the crown of one of these stands above the top of the
+     screen, so the wood feels tall */
+  if (opt.giantChance) {
+    let lastX = -99;
+    for (let x = 4; x < W - 4; x++) {
+      const gy = surf[x];
+      if (gy < 0) continue;
+      if (x - lastX < 7) continue;
+      if (!rng.bool(opt.giantChance)) continue;
+      if (room.wet(x, gy) || room.wet(x, gy + 1)) continue;
+      lastX = x;
+      const px = x * TILE + rng.r(-4, 4), py = gy * TILE + rng.r(0, 3);
+      const front = rng.bool(0.22);
+      room.decor.push({ kind: 'giant', idx: rng.i(0, 2), x: px, y: py,
+        layer: front ? 2 : 0, sway: rng.r(0.7, 1.5), phase: rng.r(0, TAU),
+        scale: rng.r(0.9, 1.25), alpha: front ? 0.9 : 1 });
+      /* vines off its limbs */
+      const nv = rng.i(2, 4);
+      for (let v = 0; v < nv; v++)
+        room.decor.push({ kind: 'vine', x: px + rng.r(-40, 40), y: py - rng.i(96, 190),
+          len: rng.i(24, 74), layer: front ? 2 : 1, sway: rng.r(1.4, 3.0), phase: rng.r(0, TAU) });
+      /* and a nest wedged in a fork, sometimes with the bird at home */
+      if (rng.bool(0.55))
+        room.decor.push({ kind: 'nest', idx: rng.i(0, 2), x: px + rng.r(-26, 26),
+          y: py - rng.i(104, 176), layer: front ? 2 : 1,
+          bird: rng.bool(0.5), phase: rng.r(0, TAU) });
+    }
+  }
   /* a few trees in front of the player for depth */
   for (let x = 6; x < W - 6; x += 1) {
     if (!rng.bool(opt.treeChance * 0.16)) continue;
@@ -122,6 +150,7 @@ function decorate(room, rng, opt) {
     if (rng.bool(0.09)) room.decor.push({ kind: 'bush', idx: rng.i(0, 2), x: x * TILE + rng.r(0, 14), y: y + 2, layer: 1, sway: rng.r(0.7, 1.6), phase: rng.r(0, TAU) });
     if (rng.bool(0.05)) room.decor.push({ kind: 'mushroom', idx: rng.i(0, 2), x: x * TILE + rng.r(2, 12), y: y + 1, layer: 1, sway: 0, phase: 0 });
     if (rng.bool(0.05)) room.decor.push({ kind: 'rock', idx: rng.i(0, 2), x: x * TILE + rng.r(2, 12), y: y + 2, layer: 1, sway: 0, phase: 0 });
+    if (rng.bool(opt.fernChance || 0)) room.decor.push({ kind: 'fern', idx: rng.i(0, 2), x: x * TILE + rng.r(0, 14), y: y + 2, layer: rng.bool(0.7) ? 1 : 2, sway: rng.r(0.9, 1.9), phase: rng.r(0, TAU) });
     /* reeds at the water's edge */
     if (room.get(x + 1, gy) === T_WATER || room.get(x - 1, gy) === T_WATER)
       if (rng.bool(0.6)) room.decor.push({ kind: 'reed', idx: rng.i(0, 2), x: x * TILE + rng.r(0, 14), y: y + 2, layer: 1, sway: rng.r(1.2, 2.4), phase: rng.r(0, TAU) });
@@ -214,7 +243,10 @@ function buildForest(id, name, seed, opt) {
   }
 
   room.surface = surf;
-  decorate(room, rng, { surface: surf, treeChance: opt.treeChance || 0.5, vineChance: opt.vineChance || 0.02 });
+  decorate(room, rng, { surface: surf, treeChance: opt.treeChance || 0.5,
+                        vineChance: opt.vineChance || 0.02,
+                        giantChance: opt.giantChance || 0,
+                        fernChance: opt.fernChance || 0 });
   return room;
 }
 
@@ -1191,7 +1223,8 @@ function dryFlatTile(room, want) {
 World.build = function () {
   /* --- the glade you start in --- */
   const glade = buildForest('glade', 'EMBERWOOD GLADE', 4711, {
-    w: 132, h: 22, base: 14, treeChance: 0.42, vineChance: 0.02,
+    w: 132, h: 22, base: 14, treeChance: 0.42, vineChance: 0.10,
+    giantChance: 0.16, fernChance: 0.22,
     steps: [{ x: 58, d: -2 }, { x: 96, d: -2 }],
     streams: [{ x: 30, w: 14, depth: 3, log: true }, { x: 82, w: 11, depth: 2, log: false }],
     platforms: [
@@ -1204,7 +1237,8 @@ World.build = function () {
                      to: 'deep', edge: 'right', label: 'TANGLEWOOD DEEP' });
   {
     const rng = new RNG(99);
-    for (let k = 0; k < 9; k++) {
+    /* the glade crawls: a snake roughly every four tiles of open ground */
+    for (let k = 0; k < 30; k++) {
       const tx = rng.i(12, glade.w - 6);
       glade.spawns.push({ type: 'snake', x: tx * TILE, y: glade.surface[tx] * TILE - 10 });
     }
@@ -1221,7 +1255,8 @@ World.build = function () {
 
   /* --- the deep wood, where the two doors are --- */
   const deep = buildForest('deep', 'TANGLEWOOD DEEP', 8123, {
-    w: 168, h: 26, base: 17, treeChance: 0.72, vineChance: 0.05,
+    w: 168, h: 26, base: 17, treeChance: 0.72, vineChance: 0.18,
+    giantChance: 0.22, fernChance: 0.34,
     steps: [{ x: 40, d: -2 }, { x: 88, d: 2 }, { x: 130, d: -2 }],
     streams: [{ x: 20, w: 12, depth: 3, log: true }, { x: 60, w: 16, depth: 4, log: true },
               { x: 112, w: 13, depth: 3, log: false }],
@@ -1250,7 +1285,8 @@ World.build = function () {
   deep.start = { x: 3 * TILE, y: 4 * TILE };
   {
     const rng = new RNG(1234);
-    for (let k = 0; k < 16; k++) {
+    /* the deep wood crawls harder still */
+    for (let k = 0; k < 52; k++) {
       const tx = rng.i(6, deep.w - 6);
       deep.spawns.push({ type: 'snake', x: tx * TILE, y: deep.surface[tx] * TILE - 10 });
     }
@@ -1421,6 +1457,12 @@ World.CHAPTERS = [
   { name: 'CHAPTER TWO', sub: 'THE SUNKEN DEPTHS', levels: [3, 4, 5] },
   { name: 'CHAPTER THREE', sub: 'THE ASHEN REACH', levels: [6, 7, 8] }
 ];
+/* The last page of the map holds one realm and no levels yet.  Chains hold
+   it shut.  It sits after every chapter. */
+World.FINAL = { name: 'THE ARCHIPELAGO', sub: 'BOUND IN CHAINS',
+                node: { x: VW / 2, y: 80 } };
+World.mapPages = function () { return World.CHAPTERS.length + 1; };
+World.finalPage = function () { return World.CHAPTERS.length; };
 World.chapterOf = function (level) {
   for (let i = 0; i < World.CHAPTERS.length; i++) if (World.CHAPTERS[i].levels.indexOf(level) >= 0) return i;
   return 0;

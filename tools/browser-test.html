@@ -37,6 +37,7 @@ var iv=setInterval(function(){
     if(typeof G==='undefined') return;
     ticks++; phaseTick++;
     if(G.state==='title'){ Input.hitKeys['Enter']=true; return; }
+    if(G.state==='intro'){ if(!window.__sawIntro){window.__sawIntro=1;note('the opening story runs, and SKIP ends it');} Input.hitKeys['Escape']=true; return; }
     if(G.state==='files'){ var fr=fileRect(0); Input.mx=fr.x+fr.w/2; Input.my=fr.y+fr.h/2;
       Input.taps=[{id:'mouse',x:Input.mx,y:Input.my}]; Input.mhit=true; return; }
     if(G.state==='map'){ G.tutorialDone=true; G.mapMode='realm'; G.unlocked=9; var n=World.LEVELS[0].node; Input.mx=n.x; Input.my=n.y; Input.mhit=true; return; }

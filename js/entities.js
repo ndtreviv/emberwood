@@ -266,6 +266,11 @@ class Player {
     this.atkT = 0.001; this.atkHit = new Set(); this.atkCd = 0.3;
     const dmg = Math.max(2, Math.round(this.atkDmg * 2));
     G.waves.push(new WindSwipe(this.cx + this.face * 10, this.cy, this.face, dmg));
+    /* the gale carries the emberheart fire half again as far */
+    if (this.up.emberheart > 0 && G.room.mode === 'side') {
+      G.waves.push(new Wave(this.cx + this.face * 12, this.cy, this.face, this.atkDmg, GALE_RANGE));
+      Snd.fire();
+    }
     if (this.grounded) this.vx += this.face * 1.4;
     Snd.swing(); Snd.spinCut(); G.shake(5); G.hitStop(0.05);
     G.texts.push(new FloatText(this.cx, this.y - 8, 'GALE', '#dff0ff'));
@@ -393,12 +398,14 @@ class Player {
   spinBox() {
     if (this.spinT <= 0) return null;
     if (this.spinKind === 'flip') {
-      /* the blade goes right round, so every side of the body bites. It reaches
-         about as far as a standing swing, and well below the boots. */
-      const rx = 20 + this.up.sword * 2.5, ry = 18 + this.up.sword * 1.5;
+      /* The blade goes right round, so every side of the body bites. It keeps a
+         close reach, and a cap holds that reach at the last whetstone step. */
+      const rx = Math.min(24, 15 + this.up.sword * 1.2);
+      const ry = Math.min(20, 13 + this.up.sword * 1.0);
       return { x: this.cx - rx, y: this.cy - ry, w: rx * 2, h: ry * 2 };
     }
-    const reach = 22 + this.up.sword * 3;
+    /* the roll cut keeps the same close reach, capped in the same way */
+    const reach = Math.min(30, 17 + this.up.sword * 1.6);
     return { x: this.spinDir > 0 ? this.x - 2 : this.x + this.w + 2 - reach,
              y: this.y - 3, w: reach, h: this.h + 5 };
   }
@@ -2977,6 +2984,7 @@ class WindSwipe {
     this.x = x; this.y = y; this.dir = dir; this.dmg = dmg;
     this.t = 0; this.life = 1.05; this.dead = false; this.hit = new Set();
     this.speed = 4.4;
+    this.range = GALE_RANGE; this.gone = 0;
   }
   box() {
     const grow = 1 + this.t * 0.9;
@@ -2984,7 +2992,10 @@ class WindSwipe {
   }
   update(dt) {
     this.t += dt; this.life -= dt;
-    this.x += this.dir * this.speed * dt * 60;
+    let step = this.speed * dt * 60;
+    if (this.gone + step >= this.range) { step = this.range - this.gone; this.dead = true; }
+    this.x += this.dir * step;
+    this.gone += step;
     const box = this.box();
     for (const en of G.enemies) {
       if (en.dead || this.hit.has(en)) continue;
@@ -3246,14 +3257,24 @@ class FirePillar {
 }
 
 /* the Emberheart's wave: a swing that carries */
+/* The emberheart wave burns out after five tiles. The gale carries it to
+   seven and a half. Both hold, whatever the whetstone step. */
+const EMBER_RANGE = TILE * 5;
+const GALE_RANGE = TILE * 7.5;
 class Wave {
-  constructor(x, y, dir, dmg) {
+  constructor(x, y, dir, dmg, range) {
     this.x = x; this.y = y; this.dir = dir; this.dmg = dmg;
+    this.range = range || EMBER_RANGE;
+    this.gone = 0;
     this.life = 1.1; this.dead = false; this.t = 0; this.hit = new Set();
   }
   update(dt) {
     this.t += dt; this.life -= dt;
-    this.x += this.dir * 4.2 * dt * 60;
+    /* the last step is cut short, so the reach is exact */
+    let step = 4.2 * dt * 60;
+    if (this.gone + step >= this.range) { step = this.range - this.gone; this.dead = true; }
+    this.x += this.dir * step;
+    this.gone += step;
     for (const en of G.enemies) {
       if (en.dead || this.hit.has(en)) continue;
       if (!rectsOverlap({ x: this.x - 8, y: this.y - 13, w: 16, h: 26 }, en.box())) continue;
