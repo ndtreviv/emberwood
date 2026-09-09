@@ -177,6 +177,13 @@ move both survive it.
 | **Flip cut** | Swing in the air with a direction held | A front flip. The blade goes right round, so every side of you bites, and it reaches below your boots. You hang a little longer than a plain fall |
 | **Roll cut** | Swing part way through a roll | The roll runs on under it, the body stays low, and the blade sweeps out ahead |
 
+### The flurry
+
+Tap the sword **twice, fast** — inside a quarter of a second — and the hero throws a flurry:
+two crossing cuts, one high and one low, with half again the reach of a plain swing. Each
+cut hits for four fifths of a sword blow, so the pair beats one swing. The flurry has its
+own cooldown of under a second.
+
 Both cuts keep a **close reach**. The whetstone adds a little to it, but a cap holds the
 reach at the last upgrade step: the flip bites 24 pixels each side of you, and the roll cut
 reaches 30 pixels ahead.
@@ -186,6 +193,18 @@ in the shop — up to three times as hard.
 
 Swinging in the air with **no** direction held is still a plain swing, as is any swing with
 your feet on the ground. Each cut has a short cooldown, so neither can be chained.
+
+## The wall
+
+Jump at a wall, hold the way into it, and the hero **clings** to the rock. The slide slows
+to a crawl, and the wings recharge. Press jump and you kick off it — away and up, the
+diagonal jump of a climber. Two walls facing each other can be climbed all the way up.
+
+## Fire
+
+Some attacks set you alight. Fire costs **half a heart a second** until it burns out, the
+hearts carry flames while it lasts, and a bar under them counts the fire down. Water puts
+it out at once, and so does the next room.
 
 ## Inside the Leviathan
 
@@ -293,9 +312,21 @@ padlock hangs over the medallion. Click it and the chart says **COMING SOON**.
 | Aether City | Zeus | storm wisps, storm birds |
 | Sporewood | The Mother Spore | sporelings, spiders |
 
+A **glass bubble** covers the hero's head all through Chapter Two, because the whole
+chapter is under the sea.
+
+**Bears and snakes swim.** They walk straight off the bank into a stream, float with their
+heads at the surface, and cross to the other side. A creature that cannot swim still turns
+back at the water's edge.
+
 Emberwood stands under **forest giants**. Their trunks run past the top of the screen,
 vines hang off their limbs, bird nests sit in the forks and ferns cover the floor. The
 ground crawls with snakes — thirty in the glade and fifty-two in the deep wood.
+
+**Briardeep Cavern is dark.** Torches light pools of it and you carry a light of your own.
+A **hidden chamber** opens off the third gallery. No torch, crystal or way-marker stands
+within 150 pixels of its mouth, so only the dark marks the way in. A low crawl leads to a
+room of coins.
 
 Six areas make up Emberwood: forest, deep wood, a top-down maze holding the cave key, a
 cavern, an old mineshaft, and the dragon's lair. Aether City is marble ruins on the cloud
@@ -349,9 +380,14 @@ Tidewrack has five, and the Molten Crown eleven.
 | Drowned Hall | The Kraken Maw |
 | The Trench | The Leviathan |
 
-Drowned stone, coral and kelp, lit by drifting motes and shafts from far above. Its own
-creatures: **crabs** whose shells turn a blow struck from the front, drifting **jellies**
-that pulse toward you, and **anglers** that hang in the dark behind their lure and lunge.
+Drowned stone, coral and kelp, lit by drifting motes, caustics and shafts from far above,
+with a ruined city standing in the murk beyond. Its own creatures: **crabs** whose shells
+turn a blow struck from the front, drifting **jellies** that pulse toward you, and
+**anglers** that hang in the dark behind their lure and lunge.
+
+The **Leviathan** costs three hearts a hit, from its body, its spit and its jaws alike. Its
+jaws open where you stand, hang there a moment, and snap. Step out of them in time and they
+close on nothing.
 
 ### Chapter Three — The Ashen Reach
 
@@ -361,9 +397,14 @@ that pulse toward you, and **anglers** that hang in the dark behind their lure a
 | Obsidian Steps | The Ashen Titan |
 | Molten Crown | Ifrit, the Last Flame |
 
-Cracked rock over fire, under a sky of rising embers. **Emberlings** hop and leave cinders,
-**golems** wind up a slam whose shockwave catches you on the ground, and **cinderwings**
-dive trailing flame.
+Cracked rock over fire, under a sky of rising embers, with a mountain still burning on the
+horizon. **Emberlings** hop and leave cinders, **golems** wind up a slam whose shockwave
+catches you on the ground, and **cinderwings** dive trailing flame.
+
+**Ifrit** holds three times the health it once did. It lashes out with a whip of fire that
+sets you alight, and it reaches for you with a burning hand. The hand takes you off the
+floor and throws you the length of the hall: five hearts, all at once, against the wall.
+Keep clear of the hand and it grasps nothing.
 
 Enemies get sturdier and drop far more with each chapter, so the deeper shop stock stays
 within reach. Aether City pays a coin more per kill than anywhere else.
@@ -481,7 +522,7 @@ from the coins scattered through each area.
 | Heart Vessel | One more heart |
 | Whetstone | More sword damage and reach |
 | Swift Boots | Move faster, up to half again your base pace |
-| Windstep Charm | Shorter dash cooldown |
+| Windstep Charm | A longer dash. The wait between dashes never changes |
 | Lodestone | Coins drift toward you from further off, straight through rock. The draw itself never gets stronger |
 | Ward Charm | A chance to shrug off a blow |
 | Duellist's Sigil | The flip cut, the roll cut and the air pierce all bite harder |

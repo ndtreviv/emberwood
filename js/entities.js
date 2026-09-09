@@ -106,7 +106,11 @@ class Player {
     this.spinT = 0; this.spinKind = null; this.spinDir = 1; this.spinHit = null; this.spinSaid = false;
     this.flipCd = 0; this.rollCutCd = 0; this.chain = 0; this.chainT = 0;
     this.chargeT = 0; this.chargeCd = 0; this.chargeRang = false;
+    this.wallDir = 0; this.wallT = 0; this.wallCd = 0;
+    this.tapT = 0; this.flurryT = 0; this.flurryCd = 0; this.flurryHit = null;
     this.heldBy = null; this.heldT = 0; this.heldDmg = 0; this.heldPaid = 0;
+    this.heldMode = 'squeeze'; this.slamDir = 0; this.slamHit = false;
+    this.burnT = 0; this.burnAcc = 0;
     this.hurtT = 0;
     this.onLadder = false; this.climbT = 0; this.ladderOffT = 0;
     this.invuln = 0; this.landT = 0;
@@ -122,18 +126,58 @@ class Player {
   get cx() { return this.x + this.w / 2; }
   get cy() { return this.y + this.h / 2; }
   /* Taken up in a Kraken's arm. You are held, squeezed, then thrown clear. */
-  seize(by, dur, dmg) {
+  seize(by, dur, dmg, mode) {
     if (this.dead || this.heldBy) return;
     this.heldBy = by; this.heldT = dur; this.heldMax = dur;
     this.heldDmg = dmg; this.heldPaid = 0; this.heldStruggle = 0;
     this.spinT = 0; this.rollT = 0; this.pierceT = 0; this.dashT = 0;
     this.vx = 0; this.vy = 0;
+    this.heldMode = mode || 'squeeze';
+    this.slamDir = 0; this.slamHit = false;
     G.breakCombo();
-    G.texts.push(new FloatText(this.cx, this.y - 8, 'SEIZED', '#c9a8ff'));
+    G.texts.push(new FloatText(this.cx, this.y - 8,
+      this.heldMode === 'slam' ? 'IN THE HAND' : 'SEIZED', '#c9a8ff'));
+  }
+  /* Fire sticks.  It costs half a heart a second until it burns out, and
+     water puts it out at once. */
+  ignite(sec) {
+    if (this.dead || this.inWater) return;
+    const fresh = this.burnT <= 0;
+    this.burnT = Math.max(this.burnT, sec);
+    if (fresh) {
+      Snd.fire();
+      G.texts.push(new FloatText(this.cx, this.y - 8, 'ALIGHT', '#ff9a4a'));
+    }
+  }
+  updateBurn(dt) {
+    if (this.burnT <= 0) return;
+    if (this.inWater) {
+      this.burnT = 0; this.burnAcc = 0;
+      for (let i = 0; i < 10; i++) G.particles.push(new Particle({
+        x: this.cx + rr(-6, 6), y: this.cy + rr(-8, 8), vx: rr(-1, 1), vy: rr(-1.6, -0.2),
+        life: rr(0.2, 0.5), col: '#dfe8f4', col2: '#8fd0ff', size: rr(1, 2.4), grav: -0.02
+      }));
+      return;
+    }
+    this.burnT = Math.max(0, this.burnT - dt);
+    this.burnAcc += dt;
+    /* half a heart a second, and the tuck does not turn it aside */
+    while (this.burnAcc >= 1) {
+      this.burnAcc -= 1;
+      this.hp -= 1;
+      Snd.hurt(); G.shake(2);
+      if (this.hp <= 0) { this.hp = 0; this.die(); return; }
+    }
+    if (Math.random() < dt * 34) G.particles.push(new Particle({
+      x: this.cx + rr(-5, 5), y: this.y + rr(2, this.h), vx: rr(-0.4, 0.4), vy: rr(-2, -0.6),
+      life: rr(0.2, 0.5), col: rpick(['#ffd06a', '#ff7a2a', '#fff0b0']), col2: '#8a2410',
+      size: rr(1, 2.4), grav: -0.02, type: 'fire'
+    }));
   }
   updateHeld(dt) {
     const by = this.heldBy;
     if (!by || by.dead || by.dying) { this.release(true); return; }
+    if (this.heldMode === 'slam') { this.updateSlam(dt, by); return; }
     this.heldT -= dt;
     /* held out in front of the maw, shaken about */
     const dir = by.face || 1;
@@ -167,6 +211,57 @@ class Player {
       if (this.hp <= 0) { this.hp = 0; this.release(false); this.die(); return; }
     }
     if (this.heldT <= 0) this.release(true);
+  }
+  /* Ifrit lifts you overhead, then throws you the length of the hall.  The
+     wall pays the whole blow at once. */
+  updateSlam(dt, by) {
+    this.heldT -= dt;
+    const room = G.room;
+    const lift = this.heldMax * 0.45;
+    if (this.heldT > lift) {
+      const tx = by.x, ty = by.y - 78 * (by.scale || 1);
+      this.x = lerp(this.x, tx - this.w / 2, 0.3) + rr(-1.6, 1.6);
+      this.y = lerp(this.y, ty - this.h / 2, 0.3) + rr(-1.6, 1.6);
+      this.vx = 0; this.vy = 0; this.grounded = false;
+      if (Math.random() < 0.6) G.particles.push(new Particle({
+        x: this.cx + rr(-10, 10), y: this.cy + rr(-10, 10), vx: rr(-1.6, 1.6), vy: rr(-2, 0),
+        life: rr(0.16, 0.4), col: '#ffd06a', col2: '#8a2410', size: rr(1, 2.4), grav: -0.01, type: 'fire'
+      }));
+      return;
+    }
+    if (!this.slamDir) {
+      /* thrown at the nearer of the two walls */
+      this.slamDir = (this.cx < room.pxW() / 2) ? -1 : 1;
+      Snd.slam(); G.shake(8);
+    }
+    const step = 13 * dt * 60;
+    const nx = this.x + this.slamDir * step;
+    const wall = room.boxSolid(nx, this.y, this.w, this.h) ||
+                 nx < 2 || nx + this.w > room.pxW() - 2;
+    if (wall || this.heldT <= 0) {
+      if (!this.slamHit) {
+        this.slamHit = true;
+        this.heldBy = null; this.heldT = 0; this.heldMode = 'squeeze';
+        this.invuln = 0;
+        this.hurt(this.heldDmg, this.cx - this.slamDir * 20, this.cy);
+        this.vx = -this.slamDir * 3.4; this.vy = -3.2; this.hurtT = 0.4;
+        this.invuln = Math.max(this.invuln, 1.0);
+        Snd.slam(); G.shake(14); G.flash(0.3); G.hitStop(0.1);
+        for (let i = 0; i < 34; i++) G.particles.push(new Particle({
+          x: this.cx, y: this.cy, vx: -this.slamDir * rr(1, 6) + rr(-2, 2), vy: rr(-5, 2),
+          life: rr(0.3, 0.8), col: rpick(['#c9c2b4', '#8a8478', '#ffd06a']), col2: '#3a3630',
+          size: rr(1.4, 3.4), grav: 0.24
+        }));
+      }
+      return;
+    }
+    this.x = nx;
+    this.vx = 0; this.vy = 0; this.grounded = false;
+    for (let i = 0; i < 2; i++) G.particles.push(new Particle({
+      x: this.cx - this.slamDir * rr(2, 12), y: this.cy + rr(-8, 8),
+      vx: -this.slamDir * rr(1, 3), vy: rr(-1, 1), life: rr(0.12, 0.3),
+      col: '#ffd06a', col2: '#8a2410', size: rr(1, 2.6), grav: 0, type: 'fire'
+    }));
   }
   release(thrown) {
     const by = this.heldBy;
@@ -222,7 +317,10 @@ class Player {
       life: rr(0.2, 0.45), col: '#e0d6b6', col2: '#95886a', size: rr(1, 2.2), grav: 0.12
     }));
   }
-  get dashCdMax() { return 1.15 * Math.pow(0.76, this.up.dash); }
+  /* The windstep charm carries the dash further.  It does not bring the dash
+     back any sooner: the wait is the same at every step. */
+  get dashCdMax() { return 1.15; }
+  get dashSpan() { return Math.min(0.34, 0.16 * (1 + this.up.dash * 0.16)); }
   /* the lodestone reaches further with every step, but never pulls harder:
      the draw itself is the same whatever you have bought */
   get magnetR() { return 62 + this.up.magnet * 24; }
@@ -395,6 +493,55 @@ class Player {
     G.waves.push(new AirSlash(this.cx + this.rollDir * 14, this.cy + 2, this.rollDir, this.specialDmg, 'rollcut'));
     return true;
   }
+  /* which side a wall stands on: +1 to the right, -1 to the left, 0 for neither */
+  wallAt() {
+    const room = G.room;
+    if (room.mode !== 'side') return 0;
+    const y = this.y + 3, h = this.h - 7;
+    if (room.boxSolid(this.x + this.w, y, 2, h)) return 1;
+    if (room.boxSolid(this.x - 2, y, 2, h)) return -1;
+    return 0;
+  }
+  /* Two taps of the sword, one straight after the other, throw a flurry:
+     a pair of crossing cuts with a longer reach than a plain swing. */
+  startFlurry() {
+    if (this.dead || this.flurryT > 0 || this.flurryCd > 0) return false;
+    if (G.room.mode !== 'side') return false;
+    this.flurryT = 0.001; this.flurryHit = new Set();
+    this.flurryCd = 0.85;
+    this.atkT = 0; this.atkCd = 0.2;
+    this.chargeT = 0;
+    if (this.grounded) this.vx += this.face * 2.4;
+    Snd.swing(); Snd.spinCut(); G.shake(3);
+    G.texts.push(new FloatText(this.cx, this.y - 6, 'FLURRY', '#dff0ff'));
+    return true;
+  }
+  flurryBox() {
+    if (this.flurryT <= 0) return null;
+    const reach = 30 + this.up.sword * 1.4;
+    return { x: this.face > 0 ? this.x + 2 : this.x + this.w - 2 - reach,
+             y: this.y - 4, w: reach, h: this.h + 8 };
+  }
+  doFlurryHit() {
+    const box = this.flurryBox();
+    if (!box) return;
+    for (const e of G.enemies) {
+      if (e.dead || this.flurryHit.has(e)) continue;
+      if (!rectsOverlap(box, e.box())) continue;
+      this.flurryHit.add(e);
+      e.hurt(Math.max(1, Math.round(this.atkDmg * 0.8)), this.cx, this.cy);
+      G.hitStop(0.03); G.tutMark('fight');
+    }
+    for (const pr of G.projectiles) {
+      if (pr.dead || pr.friendly || typeof pr.vx !== 'number') continue;
+      if (this.flurryHit.has(pr)) continue;
+      if (!rectsOverlap(box, { x: pr.x - 8, y: pr.y - 8, w: 16, h: 16 })) continue;
+      this.flurryHit.add(pr);
+      deflectShot(pr, this.atkDmg * 2);
+      G.addCombo(); G.tutMark('parry');
+      Snd.parry(); G.shake(4);
+    }
+  }
   spinBox() {
     if (this.spinT <= 0) return null;
     if (this.spinKind === 'flip') {
@@ -542,7 +689,7 @@ class Player {
     const dx = a.x, dy = a.y;
     const sp = 6.4;
     this.dashVX = dx * sp; this.dashVY = dy * sp;
-    this.dashT = 0.16; this.dashCd = this.dashCdMax; this.dashWasReady = false;
+    this.dashT = this.dashSpan; this.dashCd = this.dashCdMax; this.dashWasReady = false;
     this.dashHit = this.up.mantle > 0 ? new Set() : null;
     if (Math.abs(dx) > 0.25) this.face = dx > 0 ? 1 : -1;
     Snd.dash(); G.shake(2.5); G.tutMark('dash');
@@ -558,6 +705,8 @@ class Player {
     if (this.heldBy) { this.updateHeld(dt); this.updateAnim(dt); return; }
     this.spawnFlash = Math.max(0, this.spawnFlash - dt);
     this.invuln = Math.max(0, this.invuln - dt);
+    this.updateBurn(dt);
+    if (this.dead) return;
     this.landT = Math.max(0, this.landT - dt);
     this.atkCd = Math.max(0, this.atkCd - dt);
     this.pierceWarnT = Math.max(0, this.pierceWarnT - dt);
@@ -581,17 +730,28 @@ class Player {
     const U = Input.act('up'), D = Input.act('down');
     if (Input.actHit('dash')) this.startDash();
     if (Input.actHit('pierce')) this.startPierce();
+    this.tapT = Math.max(0, this.tapT - dt);
+    this.flurryCd = Math.max(0, this.flurryCd - dt);
     if (Input.actHit('attack') || G.clickAttack) {
       const dir = (Rk ? 1 : 0) - (L ? 1 : 0);
+      /* two taps inside a quarter of a second throw a flurry */
+      const quick = this.tapT > 0;
+      this.tapT = 0.26;
       /* mid roll it becomes a roll cut; in the air with a way held, a flip */
       if (this.spinT > 0) { /* one cut at a time */ }
       else if (this.rollT > 0) this.startRollCut();
+      else if (quick && this.flurryT <= 0 && this.startFlurry()) { this.tapT = 0; }
       else if (dir && !this.grounded && room.mode === 'side' && !this.inWater &&
                this.dashT <= 0 && this.pierceT <= 0 && !this.onLadder) this.startFlip(dir);
       else this.startAttack();
     }
 
     /* --- attack timing --- */
+    if (this.flurryT > 0) {
+      this.flurryT += dt;
+      if (this.flurryT > 0.32) { this.flurryT = 0; this.flurryHit = null; }
+      else this.doFlurryHit();
+    }
     if (this.atkT > 0) {
       this.atkT += dt;
       if (this.atkT > 0.34) { this.atkT = 0; this.atkHit = null; }
@@ -794,9 +954,28 @@ class Player {
       } else if (this.rollT <= 0) {
         this.vx = approach(this.vx, 0, (1 - fric) * 1.6 * s);
       }
-      /* gravity */
+      /* --- the wall cling --- */
+      this.wallCd = Math.max(0, this.wallCd - dt);
+      this.wallDir = this.wallAt();
+      const clinging = this.wallDir !== 0 && !this.grounded && !this.inWater &&
+                       !this.onLadder && this.dashT <= 0 && this.pierceT <= 0 &&
+                       this.rollT <= 0 && this.wallCd <= 0 && this.vy > -1.2 &&
+                       dir === this.wallDir;
+      this.wallT = clinging ? this.wallT + dt : 0;
+      if (clinging) {
+        this.face = this.wallDir;
+        this.airJumps = 0;                 /* the wall gives the wings back */
+        if (Math.random() < 0.5) G.particles.push(new Particle({
+          x: this.cx + this.wallDir * (this.w / 2 + 1), y: this.y + rr(4, this.h - 2),
+          vx: -this.wallDir * rr(0.2, 0.9), vy: rr(-0.3, 0.9), life: rr(0.2, 0.45),
+          col: '#cdc4a8', col2: '#7c7460', size: rr(1, 2), grav: 0.08
+        }));
+      }
+
+      /* gravity: a cling slows the slide down the rock */
       const g = this.inWater ? 0.13 : ((this.spinT > 0 && this.spinKind === 'flip') ? 0.25 : 0.36);
       this.vy = Math.min(this.vy + g * s, this.inWater ? 1.6 : 7);
+      if (clinging) this.vy = Math.min(this.vy, 1.3);
 
       /* jump */
       this.coyote = this.grounded ? 0.11 : Math.max(0, this.coyote - dt);
@@ -805,7 +984,23 @@ class Player {
       if (this.grounded) this.airJumps = 0;
       const canDouble = this.up.wings > 0 && this.airJumps < this.up.wings &&
                         !this.grounded && this.coyote <= 0 && !this.inWater;
-      if (this.jumpBuf > 0 && this.canStand() && (this.coyote > 0 || this.inWater || canDouble)) {
+      /* the kick off the wall: away and up, the diagonal jump of a climber */
+      if (this.jumpBuf > 0 && clinging && this.canStand()) {
+        const away = -this.wallDir;
+        this.vx = away * 4.6;
+        this.vy = -6.5;
+        this.face = away;
+        this.wallCd = 0.20;               /* long enough not to stick straight back */
+        this.wallT = 0; this.jumpBuf = 0; this.coyote = 0; this.grounded = false;
+        this.rollT = 0; this.crouching = false;
+        Snd.jump(); G.shake(2);
+        for (let k = 0; k < 14; k++) G.particles.push(new Particle({
+          x: this.cx - away * (this.w / 2), y: this.y + rr(4, this.h),
+          vx: -away * rr(0.6, 2.6), vy: rr(-1.6, 1.2), life: rr(0.2, 0.5),
+          col: '#e0d6b6', col2: '#8f8464', size: rr(1, 2.6), grav: 0.12
+        }));
+        G.tutMark('climb');
+      } else if (this.jumpBuf > 0 && this.canStand() && (this.coyote > 0 || this.inWater || canDouble)) {
         const doubling = canDouble && this.coyote <= 0 && !this.inWater;
         /* jumping while a direction is held throws you along it, not straight up */
         if (dir) {
@@ -1065,6 +1260,7 @@ class Player {
     const room = G.room;
     let a, spd = 1;
     if (this.pierceT > 0) a = 'pierce';
+    else if (this.flurryT > 0) a = 'flurry';
     else if (this.spinT > 0) a = this.spinKind === 'flip' ? 'flip' : 'rollcut';
     else if (this.rollT > 0) a = 'roll';
     else if (this.atkT > 0) a = (room.mode === 'top') ? 'tatk' : 'atk';
@@ -1073,6 +1269,7 @@ class Player {
     else if (this.onLadder) a = 'climb';
     else if (this.swimming) a = (Math.abs(this.vx) + Math.abs(this.vy) > 0.3) ? 'swim' : 'swimIdle';
     else if (this.inWater && !this.grounded) a = 'swimIdle';
+    else if (this.wallT > 0) a = 'wall';
     else if (!this.grounded) a = this.vy < -0.4 ? 'jump' : 'fall';
     else if (this.crouching) a = 'crouch';
     else if (this.landT > 0) a = 'land';
@@ -1085,9 +1282,9 @@ class Player {
     const rate = { idle: 0.14, walk: 0.085, run: 0.062, twalk: 0.085, tidle: 0.42,
                    jump: 1, fall: 1, land: 1, dash: 0.08, atk: 0.056, tatk: 0.066, pierce: 0.07,
                    swim: 0.085, swimIdle: 0.19, climb: 0.12, crouch: 0.20, roll: 0.055,
-                   flip: 0.05, rollcut: 0.05 }[a] || 0.1;
+                   flip: 0.05, rollcut: 0.05, wall: 0.14, flurry: 0.04 }[a] || 0.1;
     this.frame = Math.floor(this.animT / rate);
-    const len = { idle: 8, walk: 8, run: 8, twalk: 8, tidle: 2, jump: 1, fall: 1, land: 1, dash: 2, atk: 6, tatk: 5, pierce: 2, swim: 6, swimIdle: 4, climb: 6, crouch: 4, roll: 4, flip: 4, rollcut: 4 }[a] || 1;
+    const len = { idle: 8, walk: 8, run: 8, twalk: 8, tidle: 2, jump: 1, fall: 1, land: 1, dash: 2, atk: 6, tatk: 5, pierce: 2, swim: 6, swimIdle: 4, climb: 6, crouch: 4, roll: 4, flip: 4, rollcut: 4, wall: 4, flurry: 4 }[a] || 1;
     if (a === 'atk') this.frame = Math.min(5, this.frame);
     else if (a === 'tatk') this.frame = Math.min(4, this.frame);
     else this.frame %= len;
@@ -1110,6 +1307,8 @@ class Player {
       case 'roll': return (H.roll || H.dash)[this.frame % (H.roll ? 4 : 2)];
       case 'flip': return (H.flip || H.atk)[this.frame % (H.flip ? 4 : 6)];
       case 'rollcut': return (H.rollcut || H.atk)[this.frame % (H.rollcut ? 4 : 6)];
+      case 'wall': return (H.wall || H.fall)[this.frame % (H.wall ? 4 : 1)];
+      case 'flurry': return (H.flurry || H.atk)[this.frame % (H.flurry ? 4 : 6)];
       case 'swim': return H.swim[this.frame % 6];
       case 'swimIdle': return H.swimIdle[this.frame % 4];
       case 'atk': return H.atk[this.frame];
@@ -1153,6 +1352,44 @@ class Player {
       return;
     }
     blit(c2, img, sx, sy, anchor.x, anchor.y, flip, 1, 1, 0);
+    this.drawBubble(c2);
+  }
+  /* Under the Sunken Depths you breathe out of a glass bubble.  It sits over
+     the head, it catches the light, and it lets go of a small bubble now and
+     then. */
+  drawBubble(c2) {
+    if (!G.needsBubble || !G.needsBubble()) return;
+    const top = G.room.mode === 'top';
+    const hx = this.cx + (top ? 0 : this.face * 1);
+    const hy = top ? this.cy : this.y + 7;
+    const wob = Math.sin(G.t * 2.4) * 0.5;
+    const r = 11 + wob;
+    c2.save();
+    /* the glass */
+    c2.globalAlpha = 0.22;
+    c2.fillStyle = '#cfeaff';
+    c2.beginPath(); c2.arc(Math.round(hx), Math.round(hy), r, 0, TAU); c2.fill();
+    /* the rim */
+    c2.globalAlpha = 0.75;
+    c2.strokeStyle = '#8fd0ff';
+    c2.lineWidth = 1;
+    c2.beginPath(); c2.arc(Math.round(hx), Math.round(hy), r, 0, TAU); c2.stroke();
+    /* the highlight that says it is glass */
+    c2.globalAlpha = 0.9;
+    c2.fillStyle = '#f2fbff';
+    c2.fillRect(Math.round(hx - r * 0.55), Math.round(hy - r * 0.6), 3, 2);
+    c2.fillRect(Math.round(hx - r * 0.62), Math.round(hy - r * 0.36), 2, 3);
+    c2.globalAlpha = 0.5;
+    c2.fillRect(Math.round(hx + r * 0.35), Math.round(hy + r * 0.35), 2, 2);
+    /* the collar the bubble sits in */
+    c2.globalAlpha = 0.85;
+    c2.fillStyle = '#5d8390';
+    c2.fillRect(Math.round(hx - 5), Math.round(hy + r - 3), 10, 2);
+    c2.restore();
+    if (Math.random() < 0.05) G.particles.push(new Particle({
+      x: hx + rr(-4, 4), y: hy - r, vx: rr(-0.2, 0.2), vy: rr(-1, -0.4),
+      life: rr(0.6, 1.4), col: '#cfeaff', col2: '#8fd0ff', size: rr(1, 2), grav: -0.01
+    }));
   }
 }
 
@@ -1350,7 +1587,24 @@ class Enemy {
       this.x += this.vx * s; this.y += this.vy * s;
       return;
     }
-    this.vy = Math.min(this.vy + 0.34 * s, 7);
+    /* A creature that swims floats instead of sinking.  It rises until its
+       head breaks the surface, and it moves slower in the water. */
+    this.inWater = !!this.swims &&
+      room.boxWet(this.x - this.w / 2, this.y - this.h * 0.6, this.w, this.h * 0.6);
+    if (this.inWater) {
+      const headWet = room.wet(Math.floor(this.x / TILE),
+                              Math.floor((this.y - this.h + 3) / TILE));
+      this.vy = approach(this.vy, headWet ? -1.15 : 0.22, 0.24 * s);
+      this.vx *= 0.62;
+      this.swimT = (this.swimT || 0) + dt;
+      if (Math.random() < 0.16) G.particles.push(new Particle({
+        x: this.x + rr(-this.w / 2, this.w / 2), y: this.y - this.h * 0.45,
+        vx: rr(-0.5, 0.5), vy: rr(-0.4, -0.05), life: rr(0.2, 0.5),
+        col: '#cfeaff', col2: '#5fa3dc', size: rr(1, 2.2), grav: 0
+      }));
+    } else {
+      this.vy = Math.min(this.vy + 0.34 * s, 7);
+    }
     /* x */
     let nx = this.x + this.vx * s;
     if (room.boxSolid(nx - this.w / 2, this.y - this.h, this.w, this.h)) { this.vx = 0; this.turn(); }
@@ -1369,7 +1623,25 @@ class Enemy {
     const room = G.room;
     const px = this.x + this.face * (this.w / 2 + 3);
     if (room.boxSolid(px - 2, this.y - this.h, 4, this.h)) return true;
+    /* a swimmer walks straight into the water rather than turning at the bank */
+    if (this.swims && room.wet(Math.floor(px / TILE), Math.floor((this.y + 3) / TILE))) return false;
     return !room.solidPx(px, this.y + 3) && !room.oneway(Math.floor(px / TILE), Math.floor((this.y + 3) / TILE));
+  }
+  /* the foam ring a swimming creature pushes ahead of it */
+  drawWake(c2) {
+    if (!this.inWater) return;
+    const room = G.room;
+    let ty = Math.floor((this.y - this.h * 0.6) / TILE);
+    while (ty > 0 && room.wet(Math.floor(this.x / TILE), ty - 1)) ty--;
+    const surf = ty * TILE;
+    c2.save();
+    c2.globalAlpha = 0.62;
+    c2.fillStyle = '#cfeaff';
+    const w = this.w * (0.8 + Math.sin((this.swimT || 0) * 7) * 0.12);
+    c2.beginPath();
+    c2.ellipse(Math.round(this.x), Math.round(surf), Math.round(w / 2), 2.4, 0, 0, TAU);
+    c2.fill();
+    c2.restore();
   }
   touchPlayer(dmg) {
     const p = G.player;
@@ -1410,6 +1682,7 @@ class Snake extends Enemy {
   constructor(x, y, top) {
     super({ x: x, y: y, w: 20, h: 10, hp: 2, damage: 1, coinDrop: ri(2, 4), blood: '#4e8c3c' });
     this.top = top; this.speed = 0.55; this.face = rpick([-1, 1]);
+    this.swims = true;
     this.dir = { x: this.face, y: 0 };
   }
   update(dt) {
@@ -1466,6 +1739,7 @@ class Snake extends Enemy {
     const img = Art.snake.move[this.state === 'rear' ? 0 : this.frame];
     const a = Art.snake.anchor;
     const rear = this.state === 'rear' ? -0.35 : 0;
+    this.drawWake(c2);
     c2.save();
     if (rear) { c2.translate(Math.round(this.x), Math.round(this.y)); c2.rotate(rear * this.face); c2.translate(-Math.round(this.x), -Math.round(this.y)); }
     this.drawFlash(c2, img, this.x, this.y, a.x, a.y, this.face < 0);
@@ -1479,6 +1753,7 @@ class Bear extends Enemy {
        blade of two: five blows to bring one down. */
     super({ x: x, y: y, w: 26, h: 22, hp: 5, damage: 2, coinDrop: ri(6, 10), blood: '#6d4a2e' });
     this.speed = 0.42; this.face = rpick([-1, 1]);
+    this.swims = true;
   }
   update(dt) {
     this.flash = Math.max(0, this.flash - dt);
@@ -1501,8 +1776,8 @@ class Bear extends Enemy {
       this.frame = Math.floor(this.animT / 0.14) % 2;
       if (this.stateT <= 0) { this.state = 'charge'; this.stateT = 1.8; }
     } else if (this.state === 'charge') {
-      this.vx = approach(this.vx, this.face * 2.6, 0.14 * dt * 60);
-      if (this.grounded && this.edgeAhead()) { this.turn(); this.state = 'tired'; this.stateT = 0.9; }
+      this.vx = approach(this.vx, this.face * (this.inWater ? 1.5 : 2.6), 0.14 * dt * 60);
+      if (this.grounded && !this.inWater && this.edgeAhead()) { this.turn(); this.state = 'tired'; this.stateT = 0.9; }
       if (this.stateT <= 0) { this.state = 'tired'; this.stateT = 0.9; }
       if (this.grounded && Math.random() < 0.4) G.particles.push(new Particle({
         x: this.cx - this.face * 8, y: this.y, vx: -this.face * rr(0.6, 2), vy: rr(-1.2, -0.2),
@@ -1521,6 +1796,7 @@ class Bear extends Enemy {
     else if (this.state === 'charge') img = Art.bear.charge[this.frame % 6];
     else img = Art.bear.walk[this.frame % 8];
     const a = Art.bear.anchor;
+    this.drawWake(c2);
     this.drawFlash(c2, img, this.x, this.y, a.x, a.y, this.face < 0);
   }
 }
@@ -2535,9 +2811,11 @@ const GUARDIANS = {
   kraken: { art: 'kraken', title: 'THE KRAKEN MAW', hp: 88, scale: 2.1,
     attacks: ['volley', 'sweep', 'summon', 'grab'], shots: 9, spread: 2.4, minion: 'Jelly', brood: 3,
     proj: { col: '#c9a8ff', col2: '#4a1f6b', dmg: 3, grav: 0.01, snd: 'gulp' } },
+  /* three hearts a hit, from the jaws, the body and the spit alike */
   leviathan: { art: 'leviathan', title: 'THE LEVIATHAN', hp: 104, scale: 2.4,
-    attacks: ['charge', 'aimed', 'swallow', 'strike'], shots: 3, spread: 0.5, strikeCol: '#8fd0c0',
-    proj: { col: '#8fd0c0', col2: '#1d5a5a', dmg: 3, grav: 0, home: 1.6, snd: 'gulp' } },
+    attacks: ['charge', 'aimed', 'swallow', 'strike', 'bite'], shots: 3, spread: 0.5,
+    strikeCol: '#8fd0c0', touch: 6,
+    proj: { col: '#8fd0c0', col2: '#1d5a5a', dmg: 6, grav: 0, home: 1.6, snd: 'gulp' } },
   forgefiend: { art: 'forgefiend', title: 'THE FORGEFIEND', hp: 120, scale: 1.5,
     attacks: ['slam', 'forge', 'aimed'], shots: 3, spread: 0.34,
     proj: { col: '#ffd06a', col2: '#c0341a', dmg: 4, grav: 0.05, fiery: true, snd: 'fireball' } },
@@ -2545,8 +2823,11 @@ const GUARDIANS = {
     attacks: ['strike', 'quake', 'summon', 'slam'], minion: 'Emberling', brood: 3, strikeCol: '#ff7a2a',
     shots: 5, spread: 1.2,
     proj: { col: '#ff7a2a', col2: '#4a3a44', dmg: 4, grav: 0.04, fiery: true, snd: 'fireball' } },
-  ifrit: { art: 'ifrit', title: 'IFRIT, THE MOLTEN CROWN', hp: 168, scale: 1.9,
-    attacks: ['volley', 'nova', 'charge', 'strike'], shots: 11, spread: 2.8, strikeCol: '#ffd06a',
+  /* the last guardian: three times the health, fire that sticks, and a hand
+     that takes you off the floor */
+  ifrit: { art: 'ifrit', title: 'IFRIT, THE MOLTEN CROWN', hp: 504, scale: 1.9,
+    attacks: ['volley', 'nova', 'charge', 'strike', 'brand', 'grasp'],
+    shots: 11, spread: 2.8, strikeCol: '#ffd06a', touch: 4,
     proj: { col: '#ffd06a', col2: '#8a2410', dmg: 4, grav: 0, home: 1.2, fiery: true, snd: 'fireball' } }
 };
 
@@ -2735,6 +3016,47 @@ class Guardian extends Enemy {
         if (this.stateT <= 0) this.gulped = false;
         break;
       }
+      /* the Leviathan's jaws close where you stand */
+      case 'bite': {
+        this.mode = 'attack';
+        if (!this.bit && this.stateT < 1.3) {
+          this.bit = true;
+          const n = this.phase >= 3 ? 2 : 1;
+          for (let k = 0; k < n; k++) {
+            const bx = clamp(p.cx + (k ? rr(-70, 70) : 0), 30, G.room.pxW() - 30);
+            const by = p.cy + (k ? rr(-16, 16) : 0);
+            G.waves.push(new Maw(bx, by, cfg.touch || 6));
+          }
+          Snd.gulp(); G.shake(4);
+        }
+        if (this.stateT <= 0) this.bit = false;
+        break;
+      }
+      /* Ifrit sets you alight with a lash of fire */
+      case 'brand': {
+        this.mode = 'attack';
+        if (!this.branded && this.stateT < 1.25) {
+          this.branded = true;
+          const dir = p.cx > this.x ? 1 : -1;
+          /* the lash runs at the height you stand at, so it can be jumped */
+          const ly = clamp(p.cy, this.y - 80 * this.scale, this.y - 6);
+          G.waves.push(new FireLash(this.x + dir * 16, ly, dir, 3, 190, 4 + this.phase));
+          Snd.fire(); G.shake(5);
+        }
+        if (this.stateT <= 0) this.branded = false;
+        break;
+      }
+      /* and reaches out for you with a burning hand */
+      case 'grasp': {
+        this.mode = 'attack';
+        if (!this.grasped && this.stateT < 1.4) {
+          this.grasped = true;
+          G.waves.push(new GrabHand(this, p.cx, p.cy, 10));
+          Snd.charge(); G.shake(4);
+        }
+        if (this.stateT <= 0) this.grasped = false;
+        break;
+      }
       /* the Forgefiend beats the floor, and fire walks out of it */
       case 'forge': {
         this.mode = 'attack';
@@ -2801,7 +3123,7 @@ class Guardian extends Enemy {
           x: this.x - this.face * 20, y: this.y - rr(4, 40), vx: -this.face * rr(0.6, 2), vy: rr(-1, 0.4),
           life: rr(0.2, 0.5), col: cfg.proj.col, col2: cfg.proj.col2, size: rr(1, 2.6), grav: 0.02
         }));
-        this.touchPlayer(2);
+        this.touchPlayer(cfg.touch || 2);
         break;
       }
       case 'slam': {
@@ -2832,7 +3154,7 @@ class Guardian extends Enemy {
       if (this.state === 'rest' || this.state === 'sleep') { this.slammed = false; this.nextAttack(); }
       else { this.state = 'rest'; this.mode = 'idle'; this.stateT = 1.0 / sp; this.slammed = false; }
     }
-    this.touchPlayer(2);
+    this.touchPlayer(cfg.touch || 2);
   }
   draw(c2) {
     const set = Art[this.cfg.art];
@@ -3207,6 +3529,201 @@ class Tentacle {
     }
     c2.fillStyle = '#c9a8ff';
     c2.fillRect(Math.round(px - 3), Math.round(py - 3), 6, 6);
+    c2.restore();
+  }
+}
+
+/* The Leviathan's jaws.  They open where you stand, hold a moment, then
+   snap shut.  Step out of them and they close on nothing. */
+class Maw {
+  constructor(x, y, dmg) {
+    this.x = x; this.y = y; this.dmg = dmg || 6;
+    this.t = 0; this.life = 1.05; this.dead = false; this.hit = false;
+    this.open = 0.52;                 /* the jaws hang open this long */
+    this.rw = 34; this.rh = 40;
+  }
+  update(dt) {
+    this.t += dt; this.life -= dt;
+    if (!this.hit && this.t >= this.open && this.t < this.open + 0.2) {
+      this.hit = true;
+      const p = G.player;
+      if (!p.dead && rectsOverlap({ x: this.x - this.rw, y: this.y - this.rh, w: this.rw * 2, h: this.rh * 2 },
+                                  { x: p.x, y: p.y, w: p.w, h: p.h })) {
+        if (p.hurt(this.dmg, this.x, this.y)) {
+          p.vx = Math.sign(p.cx - this.x || 1) * 6.4; p.vy = -4.0; p.hurtT = 0.34;
+          G.shake(10); G.hitStop(0.08);
+        }
+      }
+      Snd.gulp(); G.shake(6);
+      for (let i = 0; i < 20; i++) G.particles.push(new Particle({
+        x: this.x + rr(-this.rw, this.rw), y: this.y + rr(-8, 8), vx: rr(-3, 3), vy: rr(-3, 1),
+        life: rr(0.2, 0.5), col: '#8fd0c0', col2: '#1d5a5a', size: rr(1, 2.8), grav: 0.14
+      }));
+    }
+    if (this.life <= 0) this.dead = true;
+  }
+  /* how wide the jaws stand at this moment */
+  gape() {
+    if (this.t < this.open) return 1 - Math.pow(this.t / this.open, 2) * 0.15;
+    const k = clamp((this.t - this.open) / 0.16, 0, 1);
+    return 1 - k;
+  }
+  draw(c2) {
+    const g = this.gape();
+    const fade = clamp(this.life / 1.05, 0, 1);
+    c2.save();
+    c2.globalAlpha = Math.min(1, fade * 1.6);
+    /* the dark of the throat between the jaws */
+    c2.fillStyle = '#0d2226';
+    c2.beginPath();
+    c2.ellipse(Math.round(this.x), Math.round(this.y), this.rw * 0.8, this.rh * g * 0.8, 0, 0, TAU);
+    c2.fill();
+    /* two rows of teeth, closing on each other */
+    for (const side of [-1, 1]) {
+      const jy = this.y + side * this.rh * g;
+      c2.fillStyle = '#1d5a5a';
+      c2.fillRect(Math.round(this.x - this.rw), Math.round(jy - 4), this.rw * 2, 8);
+      c2.fillStyle = '#f2f6ea';
+      for (let k = 0; k < 9; k++) {
+        const tx = this.x - this.rw + 4 + k * (this.rw * 2 - 8) / 8;
+        const th = 5 + (k % 2) * 3;
+        c2.beginPath();
+        c2.moveTo(Math.round(tx - 3), Math.round(jy));
+        c2.lineTo(Math.round(tx + 3), Math.round(jy));
+        c2.lineTo(Math.round(tx), Math.round(jy - side * th));
+        c2.closePath(); c2.fill();
+      }
+    }
+    /* the warning ring while the jaws still hang open */
+    if (this.t < this.open) {
+      c2.globalAlpha = 0.5 + Math.sin(this.t * 26) * 0.3;
+      c2.strokeStyle = '#8fd0c0';
+      c2.lineWidth = 1;
+      c2.strokeRect(Math.round(this.x - this.rw), Math.round(this.y - this.rh),
+                    this.rw * 2, this.rh * 2);
+    }
+    c2.restore();
+  }
+}
+
+/* A lash of fire.  It does not knock you far, but it sets you alight, and
+   the fire costs half a heart a second until it burns out. */
+class FireLash {
+  constructor(x, y, dir, dmg, reach, burn) {
+    this.x = x; this.y = y; this.dir = dir; this.dmg = dmg || 3;
+    this.reach = reach || 180; this.burn = burn || 4;
+    this.t = 0; this.life = 0.7; this.dead = false; this.hit = false;
+  }
+  tipAt(k) {
+    return { x: this.x + this.dir * this.reach * k,
+             y: this.y + Math.sin(k * Math.PI * 1.4 + this.t * 6) * 11 };
+  }
+  update(dt) {
+    this.t += dt; this.life -= dt;
+    const k = clamp(this.t / 0.3, 0, 1);
+    const tip = this.tipAt(k);
+    const p = G.player;
+    if (!this.hit && !p.dead && this.t > 0.05 &&
+        rectsOverlap({ x: tip.x - 15, y: tip.y - 15, w: 30, h: 30 },
+                     { x: p.x, y: p.y, w: p.w, h: p.h })) {
+      this.hit = true;
+      if (p.hurt(this.dmg, this.x, this.y)) { p.hurtT = 0.26; G.shake(6); }
+      p.ignite(this.burn);
+    }
+    for (let i = 0; i < 2; i++) {
+      const q = Math.random() * k, pt = this.tipAt(q);
+      G.particles.push(new Particle({
+        x: pt.x + rr(-4, 4), y: pt.y + rr(-4, 4), vx: rr(-0.6, 0.6), vy: rr(-1.6, -0.2),
+        life: rr(0.16, 0.44), col: rpick(['#ffd06a', '#ff7a2a', '#fff0b0']), col2: '#8a2410',
+        size: rr(1, 2.8), grav: -0.02, type: 'fire'
+      }));
+    }
+    if (this.life <= 0) this.dead = true;
+  }
+  draw(c2) {
+    const k = clamp(this.t / 0.3, 0, 1);
+    const fade = clamp(this.life / 0.7, 0, 1);
+    c2.save();
+    c2.globalAlpha = 0.55 + fade * 0.45;
+    const steps = 18;
+    for (let i = 1; i <= steps; i++) {
+      const q = k * i / steps, pt = this.tipAt(q);
+      const w = Math.max(2, Math.round(8 * (1 - i / steps * 0.5)));
+      c2.fillStyle = i % 3 === 0 ? '#8a2410' : (i % 3 === 1 ? '#ff7a2a' : '#ffd06a');
+      c2.fillRect(Math.round(pt.x - w / 2), Math.round(pt.y - w / 2), w, w);
+    }
+    c2.restore();
+  }
+}
+
+/* Ifrit's burning hand.  It reaches out for you and closes on whatever it
+   touches.  Stay out of its way and it grasps nothing. */
+class GrabHand {
+  constructor(owner, tx, ty, dmg) {
+    this.owner = owner;
+    this.x = owner.x + owner.face * 22 * (owner.scale || 1);
+    this.y = owner.y - 44 * (owner.scale || 1);
+    this.hx = this.x; this.hy = this.y;
+    const dx = tx - this.x, dy = ty - this.y, l = Math.hypot(dx, dy) || 1;
+    this.dx = dx / l; this.dy = dy / l;
+    this.reach = Math.min(190, l + 24);
+    this.dmg = dmg || 10;
+    this.t = 0; this.life = 1.5; this.dead = false; this.took = false;
+  }
+  update(dt) {
+    this.t += dt; this.life -= dt;
+    /* out fast, then back */
+    const outT = 0.42;
+    const k = this.t < outT ? this.t / outT : Math.max(0, 1 - (this.t - outT) / 0.6);
+    const ease = 1 - Math.pow(1 - k, 2);
+    this.hx = this.x + this.dx * this.reach * ease;
+    this.hy = this.y + this.dy * this.reach * ease;
+    const p = G.player;
+    if (!this.took && !p.dead && !p.heldBy && this.t > 0.05 &&
+        rectsOverlap({ x: this.hx - 15, y: this.hy - 15, w: 30, h: 30 },
+                     { x: p.x, y: p.y, w: p.w, h: p.h })) {
+      this.took = true;
+      p.seize(this.owner, 1.5, this.dmg, 'slam');
+      Snd.slam(); G.shake(8);
+    }
+    if (Math.random() < 0.8) G.particles.push(new Particle({
+      x: this.hx + rr(-7, 7), y: this.hy + rr(-7, 7), vx: rr(-1, 1), vy: rr(-1.4, 0.2),
+      life: rr(0.16, 0.42), col: rpick(['#ffd06a', '#ff7a2a']), col2: '#8a2410',
+      size: rr(1, 2.8), grav: -0.01, type: 'fire'
+    }));
+    if (this.life <= 0 || (this.t > outT && k <= 0)) this.dead = true;
+  }
+  draw(c2) {
+    c2.save();
+    /* the arm of fire */
+    const steps = 12;
+    for (let i = 1; i <= steps; i++) {
+      const q = i / steps;
+      const px = lerp(this.x, this.hx, q), py = lerp(this.y, this.hy, q);
+      const w = Math.max(3, Math.round(9 * q + 2));
+      c2.fillStyle = i % 3 === 0 ? '#8a2410' : (i % 3 === 1 ? '#ff7a2a' : '#c0341a');
+      c2.fillRect(Math.round(px - w / 2), Math.round(py - w / 2), w, w);
+    }
+    /* the hand itself: a palm and four grasping fingers */
+    const hx = Math.round(this.hx), hy = Math.round(this.hy);
+    c2.fillStyle = '#c0341a';
+    c2.fillRect(hx - 7, hy - 8, 14, 15);
+    c2.fillStyle = '#ff7a2a';
+    c2.fillRect(hx - 5, hy - 6, 10, 11);
+    c2.fillStyle = '#ffd06a';
+    c2.fillRect(hx - 3, hy - 4, 5, 6);
+    const grip = Math.sin(this.t * 12) * 2;
+    c2.fillStyle = '#c0341a';
+    for (let f = 0; f < 4; f++) {
+      const fy = hy - 9 + f * 5;
+      c2.fillRect(hx + 5, fy, 6 - grip, 3);
+      c2.fillRect(hx - 11 + grip, fy, 6 - grip, 3);
+    }
+    /* the glow that says how far it reaches */
+    c2.globalCompositeOperation = 'lighter';
+    c2.globalAlpha = 0.24;
+    c2.fillStyle = '#ff9a4a';
+    c2.beginPath(); c2.arc(hx, hy, 18, 0, TAU); c2.fill();
     c2.restore();
   }
 }

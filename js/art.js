@@ -440,6 +440,33 @@ function poseRollCut(i) {
     flutter: 5
   };
 }
+/* the wall cling: the body hangs off one arm, the boots braced on the rock,
+   the free hand holding the blade clear */
+function poseWall(i) {
+  const slip = [0, 1, 2, 1][i % 4];
+  return {
+    bob: 1 + slip * 0.4, lean: -2,
+    feet: [[HERO_AX - 5, H_FEET - 3 - slip], [HERO_AX - 3, H_FEET + 1]],
+    hands: [[HERO_AX - 7, H_TORT - 4], [HERO_AX + 4, H_TORT + 6]],
+    bend: [3.5, -1.5], abend: [-1.2, 2.6],
+    swordAng: 1.1, swordLen: 9,
+    flutter: 2 + slip
+  };
+}
+/* the flurry: two crossing cuts thrown out fast, one high, one low */
+const FLURRY_ANG = [-2.2, -0.5, -1.4, 0.55];
+function poseFlurry(i) {
+  const a = FLURRY_ANG[i % 4];
+  const lo = i % 2 === 1;
+  return {
+    bob: lo ? 2 : 0, lean: 3,
+    feet: [[HERO_AX - 6, H_FEET], [HERO_AX + 5, H_FEET - 1]],
+    hands: [[HERO_AX - 4, H_TORT + (lo ? 6 : 1)], [HERO_AX + 7, H_TORT + (lo ? 5 : 0)]],
+    bend: [3.6, -3.2], abend: [2.4, -2.8],
+    swordAng: a, swordLen: 12,
+    flutter: 8
+  };
+}
 /* the roll: knees and elbows tucked into a ball, spun by the draw code */
 function poseRoll(i) {
   const t = i / 4 * TAU;
@@ -3422,6 +3449,8 @@ Art.rebuildHero = function (look) {
   H.roll = frames(4, i => heroFrame(poseRoll(i)));
   H.flip = frames(4, i => heroFrame(poseFlip(i)));
   H.rollcut = frames(4, i => heroFrame(poseRollCut(i)));
+  H.wall = frames(4, i => heroFrame(poseWall(i)));
+  H.flurry = frames(4, i => heroFrame(poseFlurry(i)));
   T.walk = []; T.idle = []; T.atk = [];
   for (let d = 0; d < 4; d++) {
     T.walk.push(frames(8, i => heroTopFrame(d, i)));
@@ -3519,7 +3548,9 @@ Art.buildGold = function () {
     crouch: frames(4, i => heroFrame(poseCrouch(i))),
     roll: frames(4, i => heroFrame(poseRoll(i))),
     flip: frames(4, i => heroFrame(poseFlip(i))),
-    rollcut: frames(4, i => heroFrame(poseRollCut(i)))
+    rollcut: frames(4, i => heroFrame(poseRollCut(i))),
+    wall: frames(4, i => heroFrame(poseWall(i))),
+    flurry: frames(4, i => heroFrame(poseFlurry(i)))
   };
   const T = { anchor: Art.top.anchor, walk: [], idle: [], atk: [] };
   for (let d = 0; d < 4; d++) {
@@ -3565,6 +3596,8 @@ Art.steps = function () {
     Art.hero.roll = frames(4, i => heroFrame(poseRoll(i)));
     Art.hero.flip = frames(4, i => heroFrame(poseFlip(i)));
     Art.hero.rollcut = frames(4, i => heroFrame(poseRollCut(i)));
+    Art.hero.wall = frames(4, i => heroFrame(poseWall(i)));
+    Art.hero.flurry = frames(4, i => heroFrame(poseFlurry(i)));
   });
   push('HERO', () => {
     Art.top.anchor = { x: 13, y: 13 };

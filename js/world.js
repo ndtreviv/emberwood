@@ -243,6 +243,7 @@ function buildForest(id, name, seed, opt) {
   }
 
   room.surface = surf;
+  room.canopy = !!opt.giantChance;      /* the giants throw a deep shade */
   decorate(room, rng, { surface: surf, treeChance: opt.treeChance || 0.5,
                         vineChance: opt.vineChance || 0.02,
                         giantChance: opt.giantChance || 0,
@@ -377,7 +378,7 @@ function buildCave(seed) {
   const rng = new RNG(seed);
   const W = 128, H = 46;
   const room = new Room({ id: 'cave', name: 'BRIARDEEP CAVERN', mode: 'side',
-                          w: W, h: H, music: 'cave', bg: 'cave', ambient: 0.12, dark: 0.45 });
+                          w: W, h: H, music: 'cave', bg: 'cave', ambient: 0.12, dark: 0.82 });
   room.fillRect(0, 0, W, H, T_ROCK);
 
   const carve = (x, y, r) => {
@@ -463,13 +464,47 @@ function buildCave(seed) {
   room.exits.push({ x: 3 * TILE, y: 4 * TILE, w: 3 * TILE, h: 7 * TILE, to: 'deep',
                     useSaved: 'caveEntry', label: 'BACK TO THE WOOD', kind: 'cave' });
 
+  /* A chamber hidden off the third lane.  A low crawl leads to it, and no
+     torch burns near the mouth, so only the dark marks the way in. */
+  {
+    const run = runs[2];
+    const a = Math.min(run.x0, run.x1), b = Math.max(run.x0, run.x1);
+    const mouth = Math.round(lerp(a, b, 0.62));
+    const cy = run.y;
+    /* the crawl: two tiles tall, straight back from the corridor wall */
+    const deepX = mouth + 7;
+    for (let x = mouth; x <= deepX; x++) {
+      room.set(x, cy + 2, T_EMPTY);
+      room.set(x, cy + 3, T_EMPTY);
+      room.set(x, cy + 4, T_ROCK);
+    }
+    /* the chamber at the end of it */
+    const chX = deepX + 1, chY = cy + 3, chW = 11, chH = 7;
+    for (let j = 0; j < chH; j++) for (let i = 0; i < chW; i++)
+      room.set(chX + i, chY - chH + 2 + j, T_EMPTY);
+    for (let i = -1; i <= chW; i++) room.set(chX + i, chY + 2, T_ROCK);
+    /* a ledge and a crystal seam inside, so it pays to have found it */
+    for (let i = 2; i < 7; i++) room.set(chX + i, chY - 2, T_WOOD);
+    room.secret = { x: (chX + chW / 2) * TILE, y: chY * TILE,
+                    mouth: { x: mouth * TILE, y: (cy + 3) * TILE } };
+    for (let k = 0; k < 26; k++)
+      room.spawns.push({ type: 'coin', x: (chX + 1 + (k % 9)) * TILE + 8,
+                         y: (chY - (k < 9 ? 0 : (k < 18 ? 3 : 5))) * TILE - 6 });
+    for (let k = 0; k < 5; k++)
+      room.decor.push({ kind: 'crystal', idx: rng.i(0, 2), x: (chX + 1 + k * 2) * TILE + 8,
+                        y: (chY + 1) * TILE + 2, layer: 1, glow: true });
+  }
+
   /* way-markers daubed on the rock, pointing along the route out */
   for (const run of runs) {
     const a = Math.min(run.x0, run.x1), b = Math.max(run.x0, run.x1);
     for (let x = a + 8; x < b - 8; x += 15) {
       const gy = room.groundBelow(x * TILE + 8, (run.y - 3) * TILE);
-      room.decor.push({ kind: 'arrow', dir: run.dir > 0 ? 'right' : 'left',
-                        x: x * TILE + 8, y: gy - 30, layer: 1 });
+      const dark = room.secret &&
+        Math.abs(x * TILE - room.secret.mouth.x) < 160 &&
+        Math.abs(gy - room.secret.mouth.y) < 100;
+      if (!dark) room.decor.push({ kind: 'arrow', dir: run.dir > 0 ? 'right' : 'left',
+                                   x: x * TILE + 8, y: gy - 30, layer: 1 });
     }
     /* and a downward marker at the head of each shaft */
     if (run !== runs[runs.length - 1]) {
@@ -484,10 +519,19 @@ function buildCave(seed) {
     if (room.get(tx, ty) === T_EMPTY) continue;
     if (room.get(tx, ty + 1) === T_EMPTY && rng.bool(0.07))
       room.decor.push({ kind: 'stal', idx: rng.i(0, 3), x: tx * TILE + 8, y: (ty + 1) * TILE - 2, layer: rng.bool(0.4) ? 2 : 1 });
-    if (room.get(tx, ty - 1) === T_EMPTY && rng.bool(0.05))
-      room.decor.push({ kind: 'crystal', idx: rng.i(0, 2), x: tx * TILE + 8, y: ty * TILE + 2, layer: 1, glow: true });
-    if (room.get(tx, ty - 1) === T_EMPTY && rng.bool(0.035))
-      room.decor.push({ kind: 'torch', x: tx * TILE + 8, y: ty * TILE - 4, layer: 1 });
+    if (room.get(tx, ty - 1) === T_EMPTY && rng.bool(0.05)) {
+      const near = room.secret &&
+        Math.abs(tx * TILE - room.secret.mouth.x) < 150 &&
+        Math.abs(ty * TILE - room.secret.mouth.y) < 90;
+      if (!near) room.decor.push({ kind: 'crystal', idx: rng.i(0, 2), x: tx * TILE + 8, y: ty * TILE + 2, layer: 1, glow: true });
+    }
+    if (room.get(tx, ty - 1) === T_EMPTY && rng.bool(0.10)) {
+      /* the mouth of the hidden way keeps its dark: no torch stands near it */
+      const near = room.secret &&
+        Math.abs(tx * TILE - room.secret.mouth.x) < 150 &&
+        Math.abs(ty * TILE - room.secret.mouth.y) < 90;
+      if (!near) room.decor.push({ kind: 'torch', x: tx * TILE + 8, y: ty * TILE - 4, layer: 1 });
+    }
     if (room.get(tx, ty + 1) === T_EMPTY && rng.bool(0.05))
       room.decor.push({ kind: 'vine', x: tx * TILE + rng.r(2, 13), y: (ty + 1) * TILE,
         len: rng.i(16, 52), layer: rng.bool(0.5) ? 1 : 2, sway: rng.r(0.8, 2.0), phase: rng.r(0, TAU) });

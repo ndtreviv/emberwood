@@ -355,6 +355,12 @@ function resolveSpawn(room, exit) {
   return room.start;
 }
 
+/* Chapter two is under the sea, so the hero wears a glass bubble there. */
+G.needsBubble = function () {
+  if (!G.room || G.state !== 'play') return false;
+  if (G.roomId === 'gullet') return true;
+  return World.chapterOf(G.level) === 1;
+};
 G.enterRoom = function (id, spawn) {
   const room = World.rooms[id];
   G.room = room; G.roomId = id;
@@ -362,6 +368,8 @@ G.enterRoom = function (id, spawn) {
   G.particles.length = 0; G.texts.length = 0; G.items.length = 0;
   G.lifts.length = 0; G.hazards.length = 0;
   G.boss = null; G.bossFight = false;
+  /* a new room puts out any fire you carried out of the last one */
+  if (G.player) { G.player.burnT = 0; G.player.burnAcc = 0; G.player.heldBy = null; }
   if (!G.roomFlags[id]) G.roomFlags[id] = { coins: new Set() };
   const flags = G.roomFlags[id];
 
@@ -1044,6 +1052,11 @@ function updateThrone(dt) {
   }
 }
 /* each window keeps to a few colours, so it reads as glass and not confetti */
+/* '#rrggbb' at a given alpha, for a gradient stop */
+function hexA(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
+}
 const WINDOW_PALETTES = [
   ['#f0c93a', '#e08a2a', '#c9403a', '#7a2430'],
   ['#9fe8ff', '#3f6fd8', '#2f4a9a', '#8f5fc0'],
@@ -1089,28 +1102,73 @@ function drawWindows(camX, camY) {
     /* the mullion down the middle */
     ctx.fillStyle = '#2a2438';
     ctx.fillRect(x - 1, y + Math.round(w.h * 0.26), 2, Math.round(w.h * 0.74));
-    /* the shaft of light, falling to the floor and pooling there */
+    /* --- the light --- */
     const gy = (G.room.surface ? G.room.surface[Math.floor(w.x / TILE)] : 22) * TILE;
-    const shaft = ctx.createLinearGradient(0, y + w.h, 0, gy);
-    shaft.addColorStop(0, 'rgba(255,255,255,0.20)');
-    shaft.addColorStop(1, 'rgba(255,255,255,0.02)');
+    const fall = gy - (y + w.h);
+    /* the sun creeps round, so the whole pattern slides along the stone */
+    const drift = Math.sin(G.t * 0.055 + w.seed * 0.9) * 13;
+    const skew = 0.42;
+    const paneCol = (px, py) => {
+      const t = py / w.h, dx = px + 3 - half;
+      if (t < 0.26 && Math.abs(dx) > half * (0.3 + t * 2.7)) return null;
+      const d = Math.hypot(dx - rcx, (py + 3 - rcy) * 0.85);
+      return pal[Math.floor(d / 9) % pal.length];
+    };
     ctx.globalCompositeOperation = 'lighter';
-    ctx.fillStyle = shaft;
-    const spread = 10;
+
+    /* a bloom behind the glass, so the window itself reads as the source */
+    ctx.globalAlpha = 0.10 + Math.sin(G.t * 0.8 + w.seed) * 0.02;
+    ctx.fillStyle = pal[0];
     ctx.beginPath();
-    ctx.moveTo(x - w.w / 2, y + w.h);
-    ctx.lineTo(x + w.w / 2, y + w.h);
-    ctx.lineTo(x + w.w / 2 + spread, gy);
-    ctx.lineTo(x - w.w / 2 - spread, gy);
-    ctx.closePath(); ctx.fill();
-    /* and the colours it lays across the stone */
-    for (let k = 0; k < pal.length; k++) {
-      ctx.globalAlpha = 0.30 + Math.sin(G.t * 0.7 + k + w.seed) * 0.06;
-      ctx.fillStyle = pal[k];
-      const bw = (w.w + spread * 2) / pal.length;
-      ctx.fillRect(Math.round(x - w.w / 2 - spread + k * bw), Math.round(gy - 5), Math.ceil(bw) + 1, 6);
-      ctx.globalAlpha = 0.14 + Math.sin(G.t * 0.7 + k + w.seed) * 0.04;
-      ctx.fillRect(Math.round(x - w.w / 2 - spread * 0.5 + k * bw * 0.86), Math.round(gy - 24), Math.ceil(bw), 19);
+    ctx.ellipse(x, y + w.h * 0.45, w.w * 0.9, w.h * 0.7, 0, 0, TAU);
+    ctx.fill();
+
+    /* one shaft for each column of panes, each carrying that column's colour */
+    for (let px = 0; px < w.w; px += 7) {
+      let col = null;
+      for (let py = w.h - 7; py >= 0 && !col; py -= 7) col = paneCol(px, py);
+      if (!col) continue;
+      const x0 = x - half + px, x1 = x0 + 6;
+      const fx0 = x0 + (x0 - x) * skew + drift, fx1 = x1 + (x1 - x) * skew + drift;
+      const g4 = ctx.createLinearGradient(0, y + w.h, 0, gy);
+      g4.addColorStop(0, 'rgba(255,255,255,0.16)');
+      g4.addColorStop(0.35, hexA(col, 0.13));
+      g4.addColorStop(1, hexA(col, 0.03));
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = g4;
+      ctx.beginPath();
+      ctx.moveTo(x0, y + w.h); ctx.lineTo(x1, y + w.h);
+      ctx.lineTo(fx1, gy); ctx.lineTo(fx0, gy);
+      ctx.closePath(); ctx.fill();
+    }
+
+    /* the window's own pattern, laid out across the stone */
+    for (let py = 0; py < w.h; py += 14) {
+      for (let px = 0; px < w.w; px += 14) {
+        const col = paneCol(px, py);
+        if (!col) continue;
+        const x0 = x - half + px;
+        const fx = x0 + (x0 - x) * skew + drift;
+        /* the pattern is stretched along the floor, the way a low sun casts it */
+        const fy = gy - 3 + (py / w.h) * 3;
+        const fw = 14 * (1 + skew);
+        ctx.globalAlpha = 0.24 + Math.sin(G.t * 0.7 + px * 0.1 + w.seed) * 0.05;
+        ctx.fillStyle = col;
+        ctx.fillRect(Math.round(fx), Math.round(fy - (w.h - py) * 0.17), Math.ceil(fw), 8);
+      }
+    }
+    /* the bright core of the pool, right under the rose */
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(Math.round(x - half * 0.5 + drift), Math.round(gy - 4), Math.round(w.w * 0.5), 4);
+
+    /* dust turning over in the beam */
+    if (Math.random() < 0.5 && fall > 0) {
+      const px = x + rr(-half, half) * (1 + skew) + drift * 0.5;
+      G.particles.push(new Particle({
+        x: px, y: y + w.h + rr(0, fall), vx: rr(-0.12, 0.12), vy: rr(-0.16, 0.16),
+        life: rr(1.6, 3.4), col: rpick([pal[0], '#fff4d6', pal[1]]), size: 1, grav: 0, drag: 1
+      }));
     }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
@@ -1218,7 +1276,7 @@ function respawn() {
     const sw = G.swallowed; G.swallowed = null; G.acid = null;
     const lost = Math.floor(p.coins * 0.2);
     p.coins = Math.max(0, p.coins - lost);
-    p.dead = false; p.hp = p.maxHp; p.invuln = 1.6;
+    p.dead = false; p.hp = p.maxHp; p.invuln = 1.6; p.burnT = 0; p.burnAcc = 0;
     G.state = 'play';
     Snd.musicLevel(0.34, 0.6);
     G.enterRoom(sw.roomId, { spawnAt: { x: sw.x, y: sw.y } });
@@ -1228,7 +1286,7 @@ function respawn() {
   }
   const lost = Math.floor(p.coins * 0.2);
   p.coins = Math.max(0, p.coins - lost);
-  p.dead = false; p.hp = p.maxHp; p.invuln = 1.4;
+  p.dead = false; p.hp = p.maxHp; p.invuln = 1.4; p.burnT = 0; p.burnAcc = 0;
   G.state = 'play';
   Snd.musicLevel(0.34, 0.6);
   G.enterRoom(G.roomId, null);
@@ -1782,6 +1840,53 @@ function drawBackground(camX, camY) {
     tileX(ctx, Art.bg.hillMid, -camX * 0.32, VH - 96 - camY * 0.16, VW);
     tileX(ctx, Art.bg.treeMid, -camX * 0.44, VH - 92 - camY * 0.22, VW);
     tileX(ctx, Art.bg.hillNear, -camX * 0.56, VH - 74 - camY * 0.3, VW);
+    /* shafts of sun coming down between the trunks */
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 7; i++) {
+      const bx = ((i * 71 + 30 - camX * 0.30) % (VW + 200)) - 100;
+      const sway = Math.sin(G.t * 0.22 + i * 1.4) * 5;
+      const g5 = ctx.createLinearGradient(0, 20, 0, VH - 20);
+      g5.addColorStop(0, 'rgba(255,244,214,0.14)');
+      g5.addColorStop(0.7, 'rgba(255,236,192,0.05)');
+      g5.addColorStop(1, 'rgba(255,236,192,0)');
+      ctx.fillStyle = g5;
+      ctx.beginPath();
+      ctx.moveTo(bx - 7 + sway, 18);
+      ctx.lineTo(bx + 7 + sway, 18);
+      ctx.lineTo(bx + 30 - sway, VH);
+      ctx.lineTo(bx + 6 - sway, VH);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+    /* mist lying in the folds of the hills */
+    ctx.save();
+    for (let i = 0; i < 4; i++) {
+      const my = VH - 96 - i * 13 - camY * (0.18 + i * 0.04);
+      const mx = ((G.t * (3 + i) + i * 121 - camX * 0.22) % (VW + 200)) - 100;
+      ctx.globalAlpha = 0.10 + i * 0.025;
+      ctx.fillStyle = '#e4f0f2';
+      for (let k = 0; k < 3; k++) {
+        const w2 = 120 + k * 40;
+        ctx.beginPath();
+        ctx.ellipse(mx + k * 150, my + Math.sin(G.t * 0.3 + k + i) * 2, w2, 5 + i, 0, 0, TAU);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+    /* birds crossing the far sky */
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = '#3c4f74';
+    for (let i = 0; i < 5; i++) {
+      const bx = ((G.t * (7 + i * 2) + i * 97) % (VW + 60)) - 30 - camX * 0.02;
+      const by = 24 + (i % 3) * 11 + Math.sin(G.t * 0.9 + i) * 2 - camY * 0.02;
+      const flap = Math.sin(G.t * 7 + i * 2) > 0 ? 1 : 2;
+      ctx.fillRect(Math.round(bx), Math.round(by), 1, 1);
+      ctx.fillRect(Math.round(bx - 2), Math.round(by - flap), 2, 1);
+      ctx.fillRect(Math.round(bx + 1), Math.round(by - flap), 2, 1);
+    }
+    ctx.restore();
     /* haze between the layers */
     ctx.save(); ctx.globalAlpha = 0.16; ctx.fillStyle = '#cfe4ea';
     ctx.fillRect(0, 0, VW, VH); ctx.restore();
@@ -1838,13 +1943,45 @@ function drawBackground(camX, camY) {
       ctx.fillRect(Math.round(bx), Math.round(by), 1, 2);
     }
     ctx.restore();
+    /* the ruin standing far off in the murk */
+    ctx.save();
+    ctx.globalAlpha = 0.30;
+    ctx.fillStyle = '#0b2438';
+    for (let i = 0; i < 5; i++) {
+      const rx = ((i * 121 - camX * 0.07) % (VW + 240)) - 120;
+      const rh = 60 + (i % 3) * 26;
+      ctx.fillRect(Math.round(rx), VH - rh - camY * 0.05, 16, rh);
+      ctx.fillRect(Math.round(rx - 4), VH - rh - 5 - camY * 0.05, 24, 5);
+      if (i % 2 === 0) {
+        ctx.fillRect(Math.round(rx + 26), VH - rh * 0.6 - camY * 0.05, 12, rh * 0.6);
+        ctx.fillRect(Math.round(rx + 22), VH - rh * 0.6 - 4 - camY * 0.05, 20, 4);
+      }
+    }
+    ctx.restore();
     /* shafts of light from far above */
     ctx.save(); ctx.globalCompositeOperation = 'lighter';
-    for (let i = 0; i < 4; i++) {
-      ctx.globalAlpha = 0.05 + Math.sin(G.t * 0.4 + i) * 0.015;
-      ctx.fillStyle = '#cfeaff';
-      const x = ((i * 137 - camX * 0.1) % (VW + 120)) - 60;
-      for (let k = 0; k < 12; k++) ctx.fillRect(Math.round(x + k * 1.2), k * 18, 18 - k, 18);
+    for (let i = 0; i < 5; i++) {
+      const sway = Math.sin(G.t * 0.3 + i * 1.7) * 6;
+      const x = ((i * 111 - camX * 0.1) % (VW + 140)) - 70;
+      const g6 = ctx.createLinearGradient(0, 0, 0, VH);
+      g6.addColorStop(0, 'rgba(207,234,255,0.14)');
+      g6.addColorStop(0.6, 'rgba(143,208,255,0.05)');
+      g6.addColorStop(1, 'rgba(143,208,255,0)');
+      ctx.fillStyle = g6;
+      ctx.beginPath();
+      ctx.moveTo(x - 9 + sway, 0); ctx.lineTo(x + 9 + sway, 0);
+      ctx.lineTo(x + 34 - sway, VH); ctx.lineTo(x + 4 - sway, VH);
+      ctx.closePath(); ctx.fill();
+    }
+    /* caustics: the net of light the surface throws on everything below */
+    ctx.globalAlpha = 0.055;
+    ctx.fillStyle = '#cfeaff';
+    for (let y = 0; y < VH; y += 6) {
+      const w2 = 5 + Math.sin(y * 0.14 + G.t * 1.1) * 4;
+      for (let x = -20; x < VW + 20; x += 22) {
+        const ox = Math.sin((x + y) * 0.05 + G.t * 0.8) * 9 - camX * 0.05;
+        ctx.fillRect(Math.round(x + ox), y, Math.max(1, Math.round(w2)), 2);
+      }
     }
     ctx.restore();
   } else if (room.bg === 'ash') {
@@ -1854,6 +1991,47 @@ function drawBackground(camX, camY) {
     for (let x = 0; x < VW; x++) {
       const h = 40 + Math.sin((x + camX * 0.06) * 0.017) * 16 + Math.sin((x + camX * 0.06) * 0.05) * 7;
       ctx.fillRect(x, VH - h - camY * 0.05, 1, h + camY * 0.05);
+    }
+    ctx.restore();
+    /* the mountain that is still burning, far off */
+    ctx.save();
+    const vx = 280 - camX * 0.045, vb = VH - 34 - camY * 0.05;
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = '#1b0b10';
+    ctx.beginPath();
+    ctx.moveTo(vx, vb - 74); ctx.lineTo(vx - 62, vb); ctx.lineTo(vx + 62, vb);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#5a1608';
+    ctx.beginPath();
+    ctx.moveTo(vx, vb - 74); ctx.lineTo(vx - 13, vb - 44); ctx.lineTo(vx + 13, vb - 44);
+    ctx.closePath(); ctx.fill();
+    /* the plume standing over it */
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = '#3a2028';
+    for (let k = 0; k < 7; k++) {
+      const py = vb - 80 - k * 12;
+      const px = vx + Math.sin(G.t * 0.18 + k * 0.8) * (4 + k * 2.4);
+      ctx.beginPath();
+      ctx.ellipse(px, py, 12 + k * 5, 7 + k * 2.6, 0, 0, TAU);
+      ctx.fill();
+    }
+    /* the lava running down its side */
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = '#ff7a2a';
+    for (let k = 0; k < 3; k++) {
+      const t2 = (G.t * 0.15 + k * 0.33) % 1;
+      const lx = vx + (k - 1) * 9 + Math.sin(t2 * 6 + k) * 4;
+      ctx.fillRect(Math.round(lx), Math.round(vb - 70 + t2 * 66), 1, 8);
+    }
+    ctx.restore();
+    /* heat shivering over the ground */
+    ctx.save();
+    ctx.globalAlpha = 0.06;
+    ctx.fillStyle = '#ff9a4a';
+    for (let y = VH - 60; y < VH; y += 4) {
+      const ox = Math.sin(y * 0.4 + G.t * 3.2) * 3;
+      ctx.fillRect(Math.round(ox), y, VW, 2);
     }
     ctx.restore();
     /* embers rising */
@@ -2174,34 +2352,106 @@ function drawDoors(camX) {
     ctx.restore();
   }
 }
+/* One crescent of a sword swing: a bright leading edge, a body that tapers,
+   and a soft ghost behind it. */
+function slashArc(c2, cx, cy, baseAng, face, from, to, k, R, cols, width) {
+  const lead = lerp(from, to, k);
+  const span = 1.55;
+  for (let i = 0; i < 18; i++) {
+    const t = i / 17;
+    const a = lead - t * span;
+    const r = R * (1 - t * 0.22);
+    let ax = Math.cos(a) * r, ay = Math.sin(a) * r;
+    if (baseAng) {
+      const ca = Math.cos(baseAng), sa = Math.sin(baseAng);
+      const rx = ax * ca - ay * sa, ry = ax * sa + ay * ca;
+      ax = rx; ay = ry;
+    } else ax *= face;
+    const w = Math.max(1, Math.round(width * (1 - t) * (1 - t * 0.3)));
+    c2.globalAlpha = (1 - k) * (1 - t * 0.75) * 0.98;
+    c2.fillStyle = t < 0.12 ? cols[0] : (t < 0.4 ? cols[1] : cols[2]);
+    c2.fillRect(Math.round(cx + ax - w / 2), Math.round(cy + ay - w / 2), w, w);
+  }
+  /* the spark that runs ahead of the edge */
+  let tx = Math.cos(lead) * (R + 2), ty = Math.sin(lead) * (R + 2);
+  if (baseAng) {
+    const ca = Math.cos(baseAng), sa = Math.sin(baseAng);
+    const rx = tx * ca - ty * sa, ry = tx * sa + ty * ca;
+    tx = rx; ty = ry;
+  } else tx *= face;
+  c2.globalAlpha = (1 - k) * 0.9;
+  c2.fillStyle = '#ffffff';
+  c2.fillRect(Math.round(cx + tx) - 1, Math.round(cy + ty) - 1, 3, 3);
+}
 function drawSlash(c2, p) {
-  if (p.atkT <= 0) return;
-  const k = clamp((p.atkT - 0.05) / 0.20, 0, 1);
-  if (k <= 0 || k >= 1) return;
   const top = G.room.mode === 'top';
   const baseAng = top ? [Math.PI / 2, Math.PI, -Math.PI / 2, 0][p.topDir] : 0;
   const cx = p.cx, cy = top ? p.cy : p.y + 5;
   const R = 19 + p.up.sword * 2;
-  c2.save();
-  c2.globalAlpha = (1 - k) * 0.95;
-  for (let i = 0; i < 12; i++) {
-    const a = lerp(-1.9, 0.8, k) - i * 0.075;
-    const r = R - i * 0.5;
-    let ax = Math.cos(a) * r, ay = Math.sin(a) * r;
-    if (top) {
-      const ca = Math.cos(baseAng), sa = Math.sin(baseAng);
-      const rx = ax * ca - ay * sa, ry = ax * sa + ay * ca;
-      ax = rx; ay = ry;
-    } else ax *= p.face;
-    c2.fillStyle = i < 3 ? '#ffffff' : (i < 7 ? '#dcefff' : '#9dc4f0');
-    c2.fillRect(Math.round(cx + ax), Math.round(cy + ay), 2, 2);
+  if (p.flurryT > 0) {
+    /* two cuts crossing, the second a beat behind the first */
+    c2.save();
+    const k1 = clamp(p.flurryT / 0.20, 0, 1);
+    const k2 = clamp((p.flurryT - 0.09) / 0.20, 0, 1);
+    if (k1 < 1) slashArc(c2, cx, cy - 3, baseAng, p.face, -2.1, 0.9, k1, R + 6,
+                         ['#ffffff', '#dff0ff', '#8fd0ff'], 4);
+    if (k2 > 0 && k2 < 1) slashArc(c2, cx, cy + 4, baseAng, p.face, 1.0, -1.9, k2, R + 4,
+                                   ['#ffffff', '#ffeec0', '#c68e3f'], 4);
+    c2.restore();
+    return;
   }
+  if (p.atkT <= 0) return;
+  const k = clamp((p.atkT - 0.05) / 0.20, 0, 1);
+  if (k <= 0 || k >= 1) return;
+  c2.save();
+  slashArc(c2, cx, cy, baseAng, p.face, -1.9, 0.8, k, R,
+           ['#ffffff', '#dcefff', '#9dc4f0'], 3);
   c2.restore();
 }
 
 /* ---------- lighting ---------- */
 let lightCv = null, lightCtx = null;
 const LW = VW >> 1, LH = VH >> 1;
+/* The forest giants throw a deep shade.  A separate layer darkens the ground
+   under each crown and lets a few flecks of sun through the leaves. */
+let shadeCv = null, shadeCtx = null;
+function drawCanopyShade(camX, camY) {
+  const room = G.room;
+  if (!room.canopy) return;
+  if (!shadeCv) { shadeCv = mkc(LW, LH); shadeCtx = shadeCv.getContext('2d'); }
+  const sc = shadeCtx;
+  sc.globalCompositeOperation = 'source-over';
+  sc.clearRect(0, 0, LW, LH);
+  let any = false;
+  for (const d of room.decor) {
+    if (d.kind !== 'giant') continue;
+    const x = (d.x - camX) / 2, y = (d.y - 34 * (d.scale || 1) - camY) / 2;
+    const r = 78 * (d.scale || 1);
+    if (x < -r || x > LW + r || y < -r * 2 || y > LH + r * 2) continue;
+    any = true;
+    const g2 = sc.createRadialGradient(x, y, 0, x, y, r);
+    g2.addColorStop(0, 'rgba(8,20,13,0.66)');
+    g2.addColorStop(0.55, 'rgba(8,20,13,0.46)');
+    g2.addColorStop(1, 'rgba(8,20,13,0)');
+    sc.fillStyle = g2;
+    sc.beginPath(); sc.arc(x, y, r, 0, TAU); sc.fill();
+  }
+  if (!any) return;
+  /* sun flecks through the leaves, drifting with the wind */
+  sc.globalCompositeOperation = 'destination-out';
+  for (let k = 0; k < 26; k++) {
+    const fx = ((k * 61.7 + Math.sin(G.t * 0.4 + k) * 9 - camX * 0.5) % (LW + 40)) - 20;
+    const fy = ((k * 37.3 + Math.cos(G.t * 0.33 + k * 1.7) * 7 - camY * 0.5) % (LH + 40)) - 20;
+    const rr2 = 5 + (k % 4);
+    const g3 = sc.createRadialGradient(fx, fy, 0, fx, fy, rr2);
+    g3.addColorStop(0, 'rgba(0,0,0,0.85)');
+    g3.addColorStop(1, 'rgba(0,0,0,0)');
+    sc.fillStyle = g3;
+    sc.beginPath(); sc.arc(fx, fy, rr2, 0, TAU); sc.fill();
+  }
+  sc.globalCompositeOperation = 'source-over';
+  ctx.drawImage(shadeCv, 0, 0, VW, VH);
+}
 function drawLighting(camX, camY) {
   const dark = G.room.dark;
   if (!dark) return;
@@ -2266,6 +2516,7 @@ function drawWorld() {
   drawDecor(2, camX, camY);
   ctx.restore();
   drawAcid(camX, camY);
+  drawCanopyShade(camX, camY);
   drawLighting(camX, camY);
   drawHUD();
   drawTransition(ctx);
@@ -2343,6 +2594,31 @@ function drawHUD() {
     const v = p.hp - i * 2;
     const img = v >= 2 ? Art.item.heart.full : (v === 1 ? Art.item.heart.half : Art.item.heart.empty);
     ctx.drawImage(img, 32 + i * 12, 5);
+  }
+  /* fire climbs off the hearts while you burn */
+  if (p.burnT > 0) {
+    const lit = Math.max(1, Math.ceil(p.hp / 2));
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < lit; i++) {
+      const hx = 32 + i * 12 + 6;
+      for (let k = 0; k < 3; k++) {
+        const ph = G.t * 9 + i * 1.7 + k * 2.1;
+        const rise = (ph % 1);
+        const fy = 12 - rise * 11;
+        const fx = hx + Math.sin(ph * 2.6) * 3;
+        ctx.globalAlpha = (1 - rise) * 0.85;
+        ctx.fillStyle = rise < 0.35 ? '#fff0b0' : (rise < 0.7 ? '#ffd06a' : '#ff7a2a');
+        const sz = Math.max(1, Math.round(3 - rise * 2));
+        ctx.fillRect(Math.round(fx), Math.round(fy), sz, sz);
+      }
+    }
+    ctx.restore();
+    /* and a strip that says how long the fire has left */
+    const bw = hearts * 12 - 2;
+    ctx.fillStyle = '#12101c'; ctx.fillRect(31, 14, bw + 2, 3);
+    ctx.fillStyle = '#ff7a2a';
+    ctx.fillRect(32, 15, Math.round(bw * clamp(p.burnT / 6, 0, 1)), 1);
   }
   /* coins */
   ctx.drawImage(Art.item.coin[Math.floor(G.t / 0.09) % 8], 32, 17);
@@ -3693,7 +3969,7 @@ const SHOP_ITEMS = [
   { key: 'heart', name: 'HEART VESSEL', desc: 'ONE MORE HEART ON YOUR LIFE BAR', base: 20, mul: 1.52, max: 3, icon: () => Art.item.heart.full },
   { key: 'sword', name: 'WHETSTONE', desc: 'THE BLADE BITES DEEPER AND REACHES FURTHER', base: 17, mul: 1.48, max: 4, icon: () => Art.item.sword },
   { key: 'speed', name: 'SWIFT BOOTS', desc: 'RUN FASTER THROUGH WOOD AND MAZE', base: 22, mul: 1.48, max: 3, icon: () => Art.item.boot },
-  { key: 'dash', name: 'WINDSTEP CHARM', desc: 'THE DASH RETURNS TO YOU SOONER', base: 26, mul: 1.5, max: 3, icon: () => Art.item.ring },
+  { key: 'dash', name: 'WINDSTEP CHARM', desc: 'THE DASH CARRIES YOU FURTHER', base: 26, mul: 1.5, max: 3, icon: () => Art.item.ring },
   { key: 'magnet', name: 'LODESTONE', desc: 'COINS COME FROM FURTHER OFF, STRAIGHT THROUGH ROCK', base: 15, mul: 1.5, max: 3, icon: () => Art.item.magnet },
   { key: 'armour', name: 'WARD CHARM', desc: 'A CHANCE TO SHRUG OFF ANY BLOW', base: 28, mul: 1.5, max: 3, icon: () => Art.item.ward },
   /* eight steps of a quarter each: 1.25x at the first, 3x at the last.
