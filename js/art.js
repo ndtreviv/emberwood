@@ -23,6 +23,21 @@ const HAIR_COLS = [
   { name: 'PLUM',     base: '#8f5fc0', dark: '#5d3a86', light: '#c39ae8' },
   { name: 'ROSE',     base: '#e0688a', dark: '#a13c5c', light: '#f7a2bb' }
 ];
+/* colours that are found rather than given. A code adds one to the list. */
+const EXTRA_HAIR = {
+  GINGER: { name: 'GINGER', base: '#e2600f', dark: '#9c3a06', light: '#ff9a3c' }
+};
+Art.unlockHairColour = function (key) {
+  const c = EXTRA_HAIR[key];
+  if (!c) return false;
+  if (HAIR_COLS.some(h => h.name === c.name)) return false;
+  HAIR_COLS.push(c);
+  return true;
+};
+Art.lockExtraHair = function () {
+  for (let i = HAIR_COLS.length - 1; i >= 0; i--)
+    if (EXTRA_HAIR[HAIR_COLS[i].name]) HAIR_COLS.splice(i, 1);
+};
 const HAIR_STYLES = ['SHORT', 'LONG', 'MOHAWK', 'PIGTAILS', 'BUN', 'SPIKES', 'BALD'];
 const OUTFITS = ['TUNIC', 'TSHIRT'];
 const TEE_COLS = [

@@ -115,6 +115,7 @@ function packSave() {
     codes: { found: G.codes.found, used: G.codes.used, tickets: G.codes.tickets,
              admin: G.codes.admin },
     profile: Object.assign({}, G.profile),
+    unlockedHair: Object.assign({}, G.unlockedHair || {}),
     gulletVisits: G.gulletVisits || 0,
     quests: { claimed: (G.quests && G.quests.claimed) || {},
               daily: (G.quests && G.quests.daily) || null },
@@ -156,6 +157,9 @@ function applySave(d) {
   G.codes.admin = !!(d.codes && d.codes.admin);
   G.profile = Object.assign({ hair: 0, hairCol: 0, outfit: 0, tee: 0, cape: 'none' }, d.profile || {});
   G.gulletVisits = d.gulletVisits || 0;
+  G.unlockedHair = Object.assign({}, d.unlockedHair || {});
+  Art.lockExtraHair();
+  for (const k in G.unlockedHair) if (G.unlockedHair[k]) Art.unlockHairColour(k);
   G.quests = { claimed: (d.quests && d.quests.claimed) || {},
                daily: (d.quests && d.quests.daily) || null };
   G.comboBest = d.comboBest || 0;
@@ -232,6 +236,18 @@ G.goldAdmin = function () {
 G.redeem = function (raw) {
   const name = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   if (!name) return;
+  if (name === 'DYLAN') {
+    G.unlockedHair = G.unlockedHair || {};
+    if (G.unlockedHair.GINGER) {
+      Snd.uiBad(); G.codeMsg = 'ALREADY YOURS'; G.codeMsgOk = false; G.codeMsgT = 2.6; return;
+    }
+    G.unlockedHair.GINGER = true;
+    Art.unlockHairColour('GINGER');
+    G.codeMsg = 'GINGER HAIR UNLOCKED'; G.codeMsgOk = true; G.codeMsgT = 4;
+    Snd.unlock(); G.flash(0.4);
+    G.saveGame();
+    return;
+  }
   if (name === 'ADMIN') {
     G.goldAdmin();
     G.codeMsg = 'ADMIN - ALL YOURS'; G.codeMsgOk = true; G.codeMsgT = 4;
@@ -351,7 +367,8 @@ G.enterRoom = function (id, spawn) {
 
   /* some realms breed hardier creatures; bosses set their own health */
   const lv = World.LEVELS[room.level];
-  const hpScale = (lv && lv.enemyHp) || 1;
+  /* every creature stands twice what it did, on top of its realm's own scale */
+  const hpScale = ((lv && lv.enemyHp) || 1) * 2;
   const dmgScale = (lv && lv.enemyDmg) || 1;
   /* A generator can place a creature where a ledge or a wall was cut in
      afterwards, and it then starts life buried in the rock. Step it clear
@@ -690,6 +707,7 @@ function startGame(slot) {
   G.quests = { claimed: {}, daily: null }; G.comboBest = 0; G.questsOpen = false;
   G.profile = { hair: 0, hairCol: 0, outfit: 0, tee: 0, cape: 'none' };
   G.gulletVisits = 0;
+  G.unlockedHair = {}; Art.lockExtraHair();
   const d = readSlot(G.slot);
   if (d && d.used) applySave(d);
   G.mapMode = G.tutorialDone ? 'realm' : 'tutorial';
@@ -3589,10 +3607,11 @@ const SHOP_ITEMS = [
 function shopLevel(it) { const p = G.player; return it.key === 'tonic' ? 0 : (p.up[it.key] || 0); }
 /* every realm you open lets the pedlar carry a deeper stock, except for the
    rows whose steps are fixed: the tonic, the relics and the sigil */
+/* The pedlar's stock no longer deepens as realms open. Every row has one
+   fixed ceiling, and anything past it is found rather than bought. */
 function shopStepped(it) { return it.key !== 'tonic' && !it.relic && !it.fixed; }
-function shopMax(it) { return shopStepped(it) ? it.max + (G.unlocked - 1) * 2 : it.max; }
-/* the same ceiling, with every realm open — what a finished file holds */
-function shopFullMax(it) { return shopStepped(it) ? it.max + (World.LEVELS.length - 1) * 2 : it.max; }
+function shopMax(it) { return shopStepped(it) ? it.max + 4 : it.max; }
+function shopFullMax(it) { return shopMax(it); }
 /* relics only appear once you have reached the realm that forges them */
 function shopVisible(it) { return it.unlockAt === undefined || G.unlocked > it.unlockAt; }
 function shopRows() { return SHOP_ITEMS.filter(shopVisible); }

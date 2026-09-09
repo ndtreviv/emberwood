@@ -191,7 +191,7 @@ class Player {
      tails off and stops at half again the base pace */
   get speedMax() {
     const base = (G.room && G.room.mode === 'top' ? 1.55 : 2.15);
-    return base * (1 + Math.min(0.5, this.up.speed * 0.05));
+    return base * (1 + Math.min(0.25, this.up.speed * 0.025));
   }
   /* a crouch and a roll both shrink the body, so you fit under a low gap */
   get lowH() { return 10; }
@@ -226,7 +226,9 @@ class Player {
   /* the lodestone reaches further with every step, but never pulls harder:
      the draw itself is the same whatever you have bought */
   get magnetR() { return 62 + this.up.magnet * 24; }
-  get atkDmg() { return 2 + this.up.sword; }
+  /* the whetstone bites half as deep as it used to: a step is worth half a
+     point, not a whole one */
+  get atkDmg() { return 2 + Math.floor(this.up.sword * 0.5); }
   /* Hold the sword rather than tapping it and the blade gathers the air.
      Let go on a full charge and it goes out as a blade of wind. */
   get charged() { return this.chargeT >= CHARGE_FULL; }
@@ -1128,6 +1130,7 @@ class Player {
     const flick = this.invuln > 0 && Math.floor(this.invuln * 22) % 2 === 0;
     if (flick) return;
     this.drawCape(c2);                   /* the cloth hangs behind the body */
+    void 0;
     const img = this.currentSprite();
     const flip = isTopAnim ? false : this.face < 0;
     /* the roll spins a full turn, so the tucked body reads as tumbling */
@@ -1154,7 +1157,13 @@ class Player {
 const CAPE_N = 9, CAPE_SEG = 3.4;
 Player.prototype.capeAnchor = function () {
   const top = G.room && G.room.mode === 'top';
-  return { x: this.cx - this.face * 3, y: top ? this.cy : this.y + 5 };
+  if (top) {
+    /* seen from above, the cloth hangs off the shoulders behind the head */
+    const d = this.topDir;
+    const bx = [0, 1, 0, -1][d] || 0, by = [-1, 0, 1, 0][d] || 0;
+    return { x: this.cx + bx * 3, y: this.cy + by * 3 + 1 };
+  }
+  return { x: this.cx - this.face * 3, y: this.y + 5 };
 };
 Player.prototype.updateCape = function (dt) {
   if (LOOK.cape === 'none' || !CAPES[LOOK.cape]) { this.cape = null; return; }
@@ -1164,12 +1173,25 @@ Player.prototype.updateCape = function (dt) {
     for (let i = 0; i < CAPE_N; i++) this.cape.push({ x: a.x, y: a.y + i * CAPE_SEG, px: a.x, py: a.y + i * CAPE_SEG });
   }
   /* the wind the hero makes for themselves */
-  const speed = Math.abs(this.vx);
-  const back = -this.face * (1.2 + Math.min(7, speed * 2.2));
-  /* off the ground it streams upward, harder the faster you are moving,
-     whether that is up through a jump or down through a fall */
-  const air = !this.grounded && !this.onLadder && !this.swimming;
-  const up = air ? -(5.0 + Math.min(9, Math.abs(this.vy) * 1.2)) : 3.4;
+  const top = G.room && G.room.mode === 'top';
+  let back, up;
+  if (top) {
+    /* from above there is no up or down, only the way you came */
+    const sp = Math.hypot(this.vx, this.vy);
+    const l = sp || 1;
+    const drag = 1.4 + Math.min(7, sp * 2.4);
+    const d = this.topDir;
+    const bx = [0, 1, 0, -1][d] || 0, by = [-1, 0, 1, 0][d] || 0;
+    back = (sp > 0.15 ? -this.vx / l : bx) * drag;
+    up = (sp > 0.15 ? -this.vy / l : by) * drag;
+  } else {
+    const speed = Math.abs(this.vx);
+    back = -this.face * (1.2 + Math.min(7, speed * 2.2));
+    /* off the ground it streams upward, harder the faster you are moving,
+       whether that is up through a jump or down through a fall */
+    const air = !this.grounded && !this.onLadder && !this.swimming;
+    up = air ? -(5.0 + Math.min(9, Math.abs(this.vy) * 1.2)) : 3.4;
+  }
   const wob = Math.sin(G.t * 9) * 0.6;
   const s = Math.min(2, dt * 60);
   for (let i = 0; i < CAPE_N; i++) {
@@ -1192,30 +1214,52 @@ Player.prototype.drawCape = function (c2) {
   if (!this.cape) return;
   const des = CAPES[LOOK.cape];
   if (!des) return;
-  const WIDE = 7;                        /* cells across the cloth */
-  for (let i = 0; i < CAPE_N - 1; i++) {
-    const p0 = this.cape[i], p1 = this.cape[i + 1];
-    const dx = p1.x - p0.x, dy = p1.y - p0.y;
+  const WIDE = 7;                        /* strips across the cloth */
+  const N = CAPE_N - 1;
+  /* Work out the two edges of every rung first, then fill the cloth as
+     solid quads between them. Drawing loose blocks left gaps, so the
+     mantle read as a string of scraps rather than one piece. */
+  const rung = [];
+  for (let i = 0; i <= N; i++) {
+    const a = this.cape[Math.max(0, i - 1)], b = this.cape[Math.min(N, i + 1)];
+    let dx = b.x - a.x, dy = b.y - a.y;
     const l = Math.hypot(dx, dy) || 1;
-    const nx = -dy / l, ny = dx / l;     /* across the cloth */
-    const t = i / (CAPE_N - 1);
-    const halfW = (2.6 + t * 4.4);       /* it flares toward the hem */
+    const t = i / N;
+    const halfW = 2.8 + t * 5.2;         /* it flares toward the hem */
+    rung.push({ x: this.cape[i].x, y: this.cape[i].y, nx: -dy / l, ny: dx / l, hw: halfW });
+  }
+  const at = (r, u) => ({ x: r.x + r.nx * u * r.hw, y: r.y + r.ny * u * r.hw });
+  for (let i = 0; i < N; i++) {
+    const r0 = rung[i], r1 = rung[i + 1];
     for (let j = 0; j < WIDE; j++) {
-      const u = (j / (WIDE - 1) - 0.5) * 2;
-      const col = capeCell(LOOK.cape, i, j, CAPE_N - 1, WIDE);
+      const col = capeCell(LOOK.cape, i, j, N, WIDE);
       if (!col) continue;
-      const x = p0.x + nx * u * halfW + dx * 0.5;
-      const y = p0.y + ny * u * halfW + dy * 0.5;
+      /* a strip runs the full width of its share, so neighbours meet */
+      const u0 = (j / WIDE - 0.5) * 2, u1 = ((j + 1) / WIDE - 0.5) * 2;
+      const a0 = at(r0, u0), a1 = at(r0, u1), b1 = at(r1, u1), b0 = at(r1, u0);
       c2.fillStyle = col;
-      c2.fillRect(Math.round(x), Math.round(y), 2, 3);
-    }
-    /* a bright hem along the trailing edge */
-    if (i > CAPE_N - 4) {
-      c2.fillStyle = des.edge;
-      c2.fillRect(Math.round(p1.x + nx * halfW), Math.round(p1.y + ny * halfW), 2, 2);
-      c2.fillRect(Math.round(p1.x - nx * halfW), Math.round(p1.y - ny * halfW), 2, 2);
+      c2.beginPath();
+      c2.moveTo(a0.x, a0.y); c2.lineTo(a1.x, a1.y);
+      c2.lineTo(b1.x, b1.y); c2.lineTo(b0.x, b0.y);
+      c2.closePath(); c2.fill();
     }
   }
+  /* a bright hem down both edges and across the bottom */
+  c2.fillStyle = des.edge;
+  c2.beginPath();
+  for (const side of [-1, 1]) {
+    let first = true;
+    for (let i = 0; i <= N; i++) {
+      const q = at(rung[i], side);
+      if (first) { c2.moveTo(q.x, q.y); first = false; } else c2.lineTo(q.x, q.y);
+    }
+    for (let i = N; i >= 0; i--) {
+      const q = at(rung[i], side * 0.86);
+      c2.lineTo(q.x, q.y);
+    }
+    c2.closePath();
+  }
+  c2.fill();
 };
 
 /* ============================================================
@@ -1424,8 +1468,9 @@ class Snake extends Enemy {
 
 class Bear extends Enemy {
   constructor(x, y) {
-    /* ten points against a base blade of two: five blows to bring one down */
-    super({ x: x, y: y, w: 26, h: 22, hp: 10, damage: 2, coinDrop: ri(6, 10), blood: '#6d4a2e' });
+    /* Five points here, doubled to ten as the realm arms it, against a base
+       blade of two: five blows to bring one down. */
+    super({ x: x, y: y, w: 26, h: 22, hp: 5, damage: 2, coinDrop: ri(6, 10), blood: '#6d4a2e' });
     this.speed = 0.42; this.face = rpick([-1, 1]);
   }
   update(dt) {
