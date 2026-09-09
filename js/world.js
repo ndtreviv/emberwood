@@ -7,13 +7,22 @@ const T_EMPTY = 0, T_GRASS = 1, T_DIRT = 2, T_ROCK = 3, T_ROCKTOP = 4,
       T_WOOD = 5, T_WATER = 6, T_WATERD = 7, T_CAVEBG = 8, T_PATH = 9,
       T_BOUNCE = 10, T_CLOUD = 11, T_MARBLE = 12, T_CLOUDP = 13, T_MYC = 14,
       T_DEEPSTONE = 15, T_DEEPTOP = 16, T_SAND = 17, T_ASH = 18, T_ASHTOP = 19, T_OBSID = 20,
-      T_LADDER = 21;
+      T_LADDER = 21,
+      /* the white silence and the golden waste */
+      T_SNOW = 22, T_SNOWTOP = 23, T_ICE = 24, T_POWDER = 25,
+      T_SANDTOP = 26, T_QUICK = 27, T_TOMB = 28, T_TOMBTOP = 29;
 
-const SOLID_TILE = { 1: 1, 2: 1, 3: 1, 4: 1, 10: 1, 11: 1, 12: 1, 14: 1, 15: 1, 16: 1, 17: 1, 18: 1, 19: 1, 20: 1 };
+const SOLID_TILE = { 1: 1, 2: 1, 3: 1, 4: 1, 10: 1, 11: 1, 12: 1, 14: 1, 15: 1, 16: 1, 17: 1, 18: 1, 19: 1, 20: 1,
+                     22: 1, 23: 1, 24: 1, 26: 1, 28: 1, 29: 1 };
 const ONEWAY_TILE = { 5: 1, 13: 1 };
 const WET_TILE = { 6: 1, 7: 1 };
 const BOUNCE_TILE = { 10: 1 };
 const LADDER_TILE = { 21: 1 };
+/* A phase tile looks like ground and is not.  It swallows anyone who steps on
+   it, unless the Pharaoh's Ring lets them fall straight through. */
+const PHASE_TILE = { 25: 1, 27: 1 };
+/* ice holds no grip */
+const SLIP_TILE = { 24: 1 };
 
 class Room {
   constructor(o) {
@@ -56,6 +65,15 @@ class Room {
     return 0;
   }
   wet(tx, ty) { return !!WET_TILE[this.get(tx, ty)]; }
+  phase(tx, ty) { return !!PHASE_TILE[this.get(tx, ty)]; }
+  slippy(tx, ty) { return !!SLIP_TILE[this.get(tx, ty)]; }
+  boxPhase(x, y, w, h) {
+    const x0 = Math.floor(x / TILE), x1 = Math.floor((x + w - 1) / TILE);
+    const y0 = Math.floor(y / TILE), y1 = Math.floor((y + h - 1) / TILE);
+    for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++)
+      if (this.phase(tx, ty)) return true;
+    return false;
+  }
   solidPx(x, y) { return this.solid(Math.floor(x / TILE), Math.floor(y / TILE)); }
   /* does an axis aligned box overlap solid tiles? */
   boxSolid(x, y, w, h) {
@@ -1089,7 +1107,7 @@ function buildLair(seed) {
    and the door at the end of one opens the next. */
 function buildRealmChain(d, theme) {
   const names = d.parts || [d.name, d.name, d.name];
-  const ids = [d.id, d.id + '2', d.id + '3'];
+  const ids = names.map((_, k) => k === 0 ? d.id : d.id + (k + 1));
   for (let k = 0; k < ids.length; k++) {
     const last = k === ids.length - 1;
     World.rooms[ids[k]] = buildChapterRoom(Object.assign({}, d, theme, {
@@ -1097,6 +1115,7 @@ function buildRealmChain(d, theme) {
       w: d.w + k * 14,
       hazards: d.hazards + k * 2,
       ambient: d.ambient, dark: d.dark,
+      riddle: d.riddleAt === k,
       to: last ? d.id + 'End' : ids[k + 1],
       toLabel: last ? d.toLabel : names[k + 1]
     }));
@@ -1150,6 +1169,34 @@ function buildChapterRoom(o) {
       surf[x] = top;
     }
   }
+  /* ---- ground that is not what it looks like ---- */
+  /* patches of bare ice: no grip at all */
+  if (o.ice) for (let k = 0; k < o.ice; k++) {
+    const px = rng.i(12, W - 20), pw = rng.i(6, 13);
+    for (let x = px; x < px + pw; x++) room.set(x, surf[x], T_ICE);
+  }
+  /* drifts of powdered snow, and pools of quicksand: both swallow you */
+  const phaseKind = o.powder ? T_POWDER : (o.quick ? T_QUICK : 0);
+  const phaseN = o.powder || o.quick || 0;
+  if (phaseKind) {
+    room.phasePools = [];
+    for (let k = 0; k < phaseN; k++) {
+      const px = 22 + Math.round((W - 48) * (k + 0.5) / phaseN) + rng.i(-6, 6);
+      const pw = rng.i(5, 8), depth = rng.i(3, 4);
+      let bed = 0;
+      for (let x = px; x < px + pw; x++) bed = Math.max(bed, surf[x]);
+      const top = bed - depth + 1;
+      for (let x = px; x < px + pw; x++) {
+        for (let y = Math.min(top, surf[x]); y < top; y++) room.set(x, y, T_EMPTY);
+        for (let y = top; y <= bed; y++) room.set(x, y, phaseKind);
+        /* something firm below, so a ring bearer lands rather than falls forever */
+        for (let y = bed + 1; y < bed + 3; y++) room.set(x, y, ground);
+        surf[x] = top;
+      }
+      room.phasePools.push({ x: px, w: pw, y: top });
+    }
+  }
+
   /* ---- traps and moving ground, so the walk is not one flat line ----
      Each feature asks for a different piece of movement: a pit wants a jump
      or a dash, a lift wants patience or a roll across, a spike bed wants a
@@ -1208,6 +1255,23 @@ function buildChapterRoom(o) {
                         layer: rng.bool(0.5) ? 0 : (rng.bool(0.7) ? 1 : 2),
                         sway: rng.r(0.6, 1.8), phase: rng.r(0, TAU) });
   }
+  /* the sphinx sits in one stretch of its own realm and asks its question */
+  if (o.riddle) {
+    const rx = Math.floor(W * 0.56);
+    let gy = surf[rx];
+    for (let i = -5; i <= 5; i++) { surf[rx + i] = gy; room.set(rx + i, gy, groundTop);
+      for (let y = gy + 1; y < H; y++) room.set(rx + i, y, ground); }
+    room.decor.push({ kind: 'sphinx', x: rx * TILE + 8, y: gy * TILE, layer: 1 });
+    room.riddle = { x: rx * TILE + 8, y: gy * TILE, seed: o.seed };
+    /* the gate it keeps: a wall you cannot pass until you answer */
+    const gx = rx + 10;
+    for (let y = gy - 7; y <= gy; y++) room.set(gx, y, T_TOMB);
+    room.gate = { tx: gx, y0: gy - 7, y1: gy };
+    for (let k = 0; k < 8; k++)
+      room.spawns.push({ type: 'coin', x: (gx + 3 + k) * TILE, y: (gy - 2) * TILE });
+  }
+  /* fresh snow lies over whatever is left standing */
+  if (o.snow) laySnow(room, rng);
   room.start = { x: 5 * TILE, y: (surf[5] - 3) * TILE };
   const ex = W - 7;
   room.exits.push({ x: (ex - 1) * TILE, y: (surf[ex] - 4) * TILE, w: 3 * TILE, h: 5 * TILE,
@@ -1224,6 +1288,100 @@ function buildChapterRoom(o) {
     const x = rng.i(6, W - 6);
     room.spawns.push({ type: 'coin', x: x * TILE, y: (surf[x] - rng.i(1, 7)) * TILE });
   }
+  return room;
+}
+/* A blanket of fresh snow, measured every four pixels across the room.  The
+   player carves tracks in it and the drift fills them in again. */
+const SNOW_SPAN = 4;
+function laySnow(room, rng) {
+  const n = Math.ceil(room.w * TILE / SNOW_SPAN);
+  room.snow = new Float32Array(n);
+  room.snowMax = new Float32Array(n);
+  room.snowGY = new Int16Array(n);
+  for (let i = 0; i < n; i++) {
+    const px = i * SNOW_SPAN + SNOW_SPAN / 2;
+    const tx = Math.floor(px / TILE);
+    /* the first firm ground under the sky in this column */
+    let ty = -1;
+    for (let y = 0; y < room.h; y++) {
+      if (room.phase(tx, y) || room.wet(tx, y)) break;      /* no snow lies on these */
+      if (room.solid(tx, y)) { ty = y; break; }
+    }
+    if (ty < 0) { room.snowGY[i] = -1; continue; }
+    room.snowGY[i] = ty * TILE;
+    const d = 4 + Math.sin(px * 0.021 + 1.3) * 2.2 + Math.sin(px * 0.007) * 1.6 + rng.r(-0.5, 0.5);
+    room.snowMax[i] = clamp(d, 1.5, 8);
+    room.snow[i] = room.snowMax[i];
+  }
+  room.snowFill = 0;
+}
+/* ============================================================
+   THE ROOMS UNDER THE WORLD.  You reach one by falling through
+   quicksand or powdered snow, which only the Pharaoh's Ring
+   lets you do.  A door at the end puts you back on the surface.
+   ============================================================ */
+function buildSecretRoom(id, name, seed, kind) {
+  const rng = new RNG(seed);
+  const W = 68, H = 26;
+  const sandy = kind === 'sand';
+  const ground = sandy ? T_TOMB : T_ROCK;
+  const groundTop = sandy ? T_TOMBTOP : T_ROCKTOP;
+  const room = new Room({ id: id, name: name, mode: 'side', w: W, h: H,
+                          music: 'cave', bg: sandy ? 'tomb' : 'cave',
+                          ambient: 0.14, dark: 0.6 });
+  room.fillRect(0, 0, W, H, ground);
+  /* one long gallery, with a floor to walk and a roof overhead */
+  const FY = H - 5;
+  room.fillRect(2, 5, W - 4, FY - 5, T_EMPTY);
+  for (let x = 2; x < W - 2; x++) room.set(x, FY, groundTop);
+  /* the drop you arrive through, at the near end */
+  room.fillRect(3, 1, 7, 5, T_EMPTY);
+  room.start = { x: 6 * TILE, y: FY * TILE };
+  /* a climb of ledges and a couple of gaps, so it is a level and not a corridor */
+  let x = 12;
+  for (let k = 0; k < 7 && x < W - 14; k++) {
+    if (k % 3 === 2) {
+      /* a gap in the floor with spikes under it */
+      const gw = rng.i(4, 6);
+      for (let i = 0; i < gw; i++) for (let y = FY; y < H - 1; y++) room.set(x + i, y, T_EMPTY);
+      room.spawns.push({ type: 'spikes', x: x * TILE, y: (H - 1) * TILE - 10, w: gw * TILE, dmg: 3 });
+      x += gw + rng.i(3, 5);
+    } else {
+      const py = FY - rng.i(4, 8), pw = rng.i(4, 7);
+      for (let i = 0; i < pw; i++) room.set(x + i, py, T_WOOD);
+      for (let i = 0; i < pw; i++) room.spawns.push({ type: 'coin', x: (x + i) * TILE + 8, y: (py - 1) * TILE });
+      x += pw + rng.i(4, 7);
+    }
+  }
+  /* its keepers */
+  for (let k = 0; k < 6; k++) {
+    const sx = rng.i(16, W - 8);
+    room.spawns.push({ type: sandy ? 'mummy' : 'icewisp', x: sx * TILE, y: (FY - (sandy ? 1 : 5)) * TILE });
+  }
+  for (let k = 0; k < 4; k++) {
+    const sx = rng.i(14, W - 8);
+    room.spawns.push({ type: sandy ? 'scarab' : 'wolf', x: sx * TILE, y: (FY - 1) * TILE });
+  }
+  for (let k = 0; k < 24; k++) {
+    const sx = rng.i(8, W - 6);
+    room.spawns.push({ type: 'coin', x: sx * TILE, y: (FY - rng.i(1, 6)) * TILE });
+  }
+  /* the prize, on a plinth at the far end */
+  const px = W - 9;
+  for (let i = -3; i <= 3; i++) room.set(px + i, FY - 1, groundTop);
+  for (let i = -3; i <= 3; i++) room.set(px + i, FY, ground);
+  room.spawns.push({ type: 'relicChest', x: px * TILE + 8, y: (FY - 1) * TILE, pool: sandy ? 'sand' : 'snow' });
+  /* and the door home, standing beside it */
+  room.exits.push({ x: (W - 6) * TILE - 14, y: (FY - 1) * TILE - 44, w: 30, h: 44,
+                    to: '@surface', label: 'BACK TO THE SURFACE', kind: 'cave',
+                    door: { x: (W - 6) * TILE, y: (FY - 1) * TILE } });
+  /* torches, so it reads as a place someone once used */
+  for (let tx = 6; tx < W - 4; tx += 7)
+    room.decor.push({ kind: 'torch', x: tx * TILE + 8, y: (FY - 5) * TILE, layer: 1 });
+  for (let k = 0; k < 26; k++)
+    room.decor.push({ kind: sandy ? 'column' : 'stal', idx: rng.i(0, sandy ? 1 : 3),
+                      x: rng.i(4, W - 4) * TILE, y: (rng.bool(0.5) ? FY : 6) * TILE,
+                      layer: rng.bool(0.5) ? 0 : 2 });
   return room;
 }
 function buildChapterArena(o) {
@@ -1399,6 +1557,66 @@ World.build = function () {
     });
   }
 
+  /* ---- chapter four: the White Silence ---- */
+  const snowDecor = [{ kind: 'pine', n: 3, p: 0.20 }, { kind: 'rock', n: 3, p: 0.08 },
+                     { kind: 'crystal', n: 3, p: 0.06 }, { kind: 'tuft', n: 4, p: 0.10 }];
+  const snowRooms = [
+    { id: 'frost', name: 'FROSTFELL', seed: 4301, w: 154, hazards: 6, ambient: 0.34, dark: 0.16,
+      parts: ['FROSTFELL', 'THE WIND SCOUR', 'THE DRIFT ROAD', 'THE HOAR WOOD', 'THE WHITE STAIR'],
+      snow: true, powder: 2, ice: 3,
+      spawns: [{ type: 'wolf', n: 12 }, { type: 'icewisp', n: 10, air: true }, { type: 'yeti', n: 3 }],
+      to: 'frostEnd', toLabel: 'THE RIME COLOSSUS', boss: 'rimeColossus' },
+    { id: 'glacier', name: 'GLACIER HEART', seed: 4302, w: 162, hazards: 8, ambient: 0.28, dark: 0.3,
+      parts: ['GLACIER HEART', 'THE BLUE CREVASSE', 'THE MORAINE', 'THE ICEFALL', 'THE COLD VAULT'],
+      snow: true, powder: 3, ice: 5,
+      spawns: [{ type: 'wolf', n: 13 }, { type: 'icewisp', n: 14, air: true }, { type: 'yeti', n: 5 }],
+      to: 'glacierEnd', toLabel: 'THE FROST WYRM', boss: 'frostWyrm' },
+    { id: 'aurora', name: 'AURORA CROWN', seed: 4303, w: 170, hazards: 10, ambient: 0.24, dark: 0.38,
+      parts: ['AURORA CROWN', 'THE LIGHT FIELDS', 'THE STILL LAKE', 'THE NORTH GATE', 'THE PALE THRONE'],
+      snow: true, powder: 4, ice: 6,
+      spawns: [{ type: 'wolf', n: 14 }, { type: 'icewisp', n: 18, air: true }, { type: 'yeti', n: 8 }],
+      to: 'auroraEnd', toLabel: 'THE PALE MONARCH', boss: 'paleMonarch' }
+  ];
+  for (const d of snowRooms) {
+    buildRealmChain(Object.assign({ music: 'tide' }, d), {
+      bg: 'snow', ground: T_SNOW, groundTop: T_SNOWTOP, plat: T_ICE,
+      decor: snowDecor, doorKind: 'cave', bossMusic: 'bossDeep'
+    });
+  }
+
+  /* ---- chapter five: the Golden Waste ---- */
+  const sandDecor = [{ kind: 'pillar', n: 2, p: 0.12 }, { kind: 'rock', n: 3, p: 0.10 },
+                     { kind: 'cactus', n: 3, p: 0.12 }, { kind: 'bone', n: 3, p: 0.08 }];
+  const sandRooms = [
+    { id: 'dune', name: 'THE DUNE SEA', seed: 4401, w: 162, hazards: 8, ambient: 0.4, dark: 0,
+      parts: ['THE DUNE SEA', 'THE SHIFTING FLATS', 'THE BONE FIELD', 'THE SALT PAN', 'THE LAST WELL'],
+      quick: 3,
+      spawns: [{ type: 'scarab', n: 14 }, { type: 'vulture', n: 12, air: true }, { type: 'mummy', n: 4 }],
+      to: 'duneEnd', toLabel: 'THE DUNE MAW', boss: 'duneMaw' },
+    { id: 'sphinx', name: 'SPHINX HOLLOW', seed: 4402, w: 170, hazards: 10, ambient: 0.34, dark: 0.2,
+      parts: ['SPHINX HOLLOW', 'THE ASKING ROAD', 'THE RIDDLE GATE', 'THE COURT OF QUESTIONS', 'THE LION STAIR'],
+      quick: 4, riddleAt: 2,
+      spawns: [{ type: 'scarab', n: 14 }, { type: 'vulture', n: 14, air: true }, { type: 'mummy', n: 7 }],
+      to: 'sphinxEnd', toLabel: 'THE SPHINX', boss: 'sphinx' },
+    { id: 'suntomb', name: 'THE SUN TOMB', seed: 4403, w: 178, hazards: 12, ambient: 0.26, dark: 0.4,
+      parts: ['THE SUN TOMB', 'THE PAINTED HALL', 'THE SHAFT OF KINGS', 'THE TREASURY', 'THE GOLDEN DOOR'],
+      quick: 5, tomb: true,
+      spawns: [{ type: 'scarab', n: 12 }, { type: 'vulture', n: 12, air: true }, { type: 'mummy', n: 10 },
+               { type: 'soldier', n: 8 }],
+      to: 'suntombEnd', toLabel: 'THE PHARAOH', boss: 'pharaoh' }
+  ];
+  for (const d of sandRooms) {
+    buildRealmChain(Object.assign({ music: 'ember' }, d), {
+      bg: d.tomb ? 'tomb' : 'waste', ground: d.tomb ? T_TOMB : T_SAND,
+      groundTop: d.tomb ? T_TOMBTOP : T_SANDTOP,
+      plat: T_TOMB, decor: sandDecor, doorKind: 'cave', bossMusic: 'bossAsh'
+    });
+  }
+
+  /* the two rooms under the world, reached by falling through phase ground */
+  World.rooms.secretSand = buildSecretRoom('secretSand', 'THE BURIED VAULT', 5501, 'sand');
+  World.rooms.secretSnow = buildSecretRoom('secretSnow', 'THE HOLLOW UNDER THE DRIFT', 5502, 'snow');
+
   /* hide the code papers: two per realm, out in its first area */
   World.LEVELS.forEach((lv, li) => {
     const room = World.rooms[lv.start];
@@ -1460,7 +1678,35 @@ World.LEVELS = [
     rooms: ['obsidian', 'obsidian2', 'obsidian3', 'obsidianEnd'], start: 'obsidian', boss: 'obsidianEnd', node: { x: 194, y: 74 } },
   { name: 'MOLTEN CROWN', taker: 'THE MAGMA TAKES', sub: 'IFRIT, THE LAST FLAME', theme: 'molten', enemyHp: 12,
     coinScale: 28, coinBonus: 10, bossHp: 18,
-    rooms: ['molten', 'molten2', 'molten3', 'moltenEnd'], start: 'molten', boss: 'moltenEnd', node: { x: 310, y: 148 } }
+    rooms: ['molten', 'molten2', 'molten3', 'moltenEnd'], start: 'molten', boss: 'moltenEnd', node: { x: 310, y: 148 } },
+
+  /* the white silence: five levels to a realm, and the cold bites */
+  { name: 'FROSTFELL', taker: 'THE COLD TAKES', sub: 'THE RIME COLOSSUS', theme: 'frost', enemyHp: 14,
+    coinScale: 34, coinBonus: 12, bossHp: 16,
+    rooms: ['frost', 'frost2', 'frost3', 'frost4', 'frost5', 'frostEnd'],
+    start: 'frost', boss: 'frostEnd', node: { x: 76, y: 152 } },
+  { name: 'GLACIER HEART', taker: 'THE ICE TAKES', sub: 'THE FROST WYRM', theme: 'frost', enemyHp: 16,
+    coinScale: 40, coinBonus: 14, bossHp: 18,
+    rooms: ['glacier', 'glacier2', 'glacier3', 'glacier4', 'glacier5', 'glacierEnd'],
+    start: 'glacier', boss: 'glacierEnd', node: { x: 194, y: 74 } },
+  { name: 'AURORA CROWN', taker: 'THE NIGHT TAKES', sub: 'THE PALE MONARCH', theme: 'frost', enemyHp: 18,
+    coinScale: 46, coinBonus: 16, bossHp: 20,
+    rooms: ['aurora', 'aurora2', 'aurora3', 'aurora4', 'aurora5', 'auroraEnd'],
+    start: 'aurora', boss: 'auroraEnd', node: { x: 310, y: 148 } },
+
+  /* the golden waste */
+  { name: 'THE DUNE SEA', taker: 'THE SAND TAKES', sub: 'THE DUNE MAW', theme: 'waste', enemyHp: 20,
+    coinScale: 54, coinBonus: 18, bossHp: 20,
+    rooms: ['dune', 'dune2', 'dune3', 'dune4', 'dune5', 'duneEnd'],
+    start: 'dune', boss: 'duneEnd', node: { x: 76, y: 152 } },
+  { name: 'SPHINX HOLLOW', taker: 'THE QUESTION TAKES', sub: 'THE SPHINX', theme: 'waste', enemyHp: 22,
+    coinScale: 62, coinBonus: 20, bossHp: 22,
+    rooms: ['sphinx', 'sphinx2', 'sphinx3', 'sphinx4', 'sphinx5', 'sphinxEnd'],
+    start: 'sphinx', boss: 'sphinxEnd', node: { x: 194, y: 74 } },
+  { name: 'THE SUN TOMB', taker: 'THE TOMB TAKES', sub: 'THE PHARAOH', theme: 'waste', enemyHp: 24,
+    coinScale: 72, coinBonus: 24, bossHp: 24,
+    rooms: ['suntomb', 'suntomb2', 'suntomb3', 'suntomb4', 'suntomb5', 'suntombEnd'],
+    start: 'suntomb', boss: 'suntombEnd', node: { x: 310, y: 148 } }
 ];
 
 /* ============================================================
@@ -1485,7 +1731,19 @@ World.CODES = [
   { code: 'GOLEM3400', kind: 'coins', amount: 3400, level: 7 },
   { code: 'OBSIDIANUPGRADE', kind: 'ticket', amount: 3, level: 7 },
   { code: 'IFRIT5000', kind: 'coins', amount: 5000, level: 8 },
-  { code: 'MOLTENUPGRADE', kind: 'ticket', amount: 4, level: 8 }
+  { code: 'MOLTENUPGRADE', kind: 'ticket', amount: 4, level: 8 },
+  { code: 'WOLF7000', kind: 'coins', amount: 7000, level: 9 },
+  { code: 'FROSTUPGRADE', kind: 'ticket', amount: 4, level: 9 },
+  { code: 'YETI9000', kind: 'coins', amount: 9000, level: 10 },
+  { code: 'GLACIERUPGRADE', kind: 'ticket', amount: 4, level: 10 },
+  { code: 'MONARCH12000', kind: 'coins', amount: 12000, level: 11 },
+  { code: 'AURORAUPGRADE', kind: 'ticket', amount: 5, level: 11 },
+  { code: 'SCARAB15000', kind: 'coins', amount: 15000, level: 12 },
+  { code: 'DUNEUPGRADE', kind: 'ticket', amount: 5, level: 12 },
+  { code: 'RIDDLE18000', kind: 'coins', amount: 18000, level: 13 },
+  { code: 'SPHINXUPGRADE', kind: 'ticket', amount: 5, level: 13 },
+  { code: 'PHARAOH25000', kind: 'coins', amount: 25000, level: 14 },
+  { code: 'TOMBUPGRADE', kind: 'ticket', amount: 6, level: 14 }
 ];
 World.codeByName = function (name) {
   const n = String(name || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -1499,7 +1757,9 @@ World.TUTORIAL = { name: 'TUTORIAL', sub: 'LEARN THE MOVES', start: 'tutorial',
 World.CHAPTERS = [
   { name: 'CHAPTER ONE', sub: 'THE GREEN REALM', levels: [0, 1, 2] },
   { name: 'CHAPTER TWO', sub: 'THE SUNKEN DEPTHS', levels: [3, 4, 5] },
-  { name: 'CHAPTER THREE', sub: 'THE ASHEN REACH', levels: [6, 7, 8] }
+  { name: 'CHAPTER THREE', sub: 'THE ASHEN REACH', levels: [6, 7, 8] },
+  { name: 'CHAPTER FOUR', sub: 'THE WHITE SILENCE', levels: [9, 10, 11] },
+  { name: 'CHAPTER FIVE', sub: 'THE GOLDEN WASTE', levels: [12, 13, 14] }
 ];
 /* The last page of the map holds one realm and no levels yet.  Chains hold
    it shut.  It sits after every chapter. */

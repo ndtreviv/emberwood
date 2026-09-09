@@ -30,14 +30,13 @@ window.requestAnimationFrame = function(cb){ return setTimeout(function(){ cb(pe
 <script src="../js/game.js"></script>
 <script>
 var ticks=0, phase=0, phaseTick=0;
-var ROOMS=['glade','deep','maze','cave','mine','lair','cloud1','olympus','mush1','mushboss','gullet','shore','shore2','shore3','shoreEnd','drowned','drowned2','drowned3','drownedEnd','abyss','abyss2','abyss3','abyssEnd','cinder','cinder2','cinder3','cinderEnd','obsidian','obsidian2','obsidian3','obsidianEnd','molten','molten2','molten3','moltenEnd'];
+var ROOMS=['glade','deep','maze','cave','mine','lair','cloud1','olympus','mush1','mushboss','gullet','shore','shore2','shore3','shoreEnd','drowned','drowned2','drowned3','drownedEnd','abyss','abyss2','abyss3','abyssEnd','cinder','cinder2','cinder3','cinderEnd','obsidian','obsidian2','obsidian3','obsidianEnd','molten','molten2','molten3','moltenEnd','frost','frost2','frost3','frost4','frost5','frostEnd','glacier','glacier2','glacier3','glacier4','glacier5','glacierEnd','aurora','aurora2','aurora3','aurora4','aurora5','auroraEnd','dune','dune2','dune3','dune4','dune5','duneEnd','sphinx','sphinx2','sphinx3','sphinx4','sphinx5','sphinxEnd','suntomb','suntomb2','suntomb3','suntomb4','suntomb5','suntombEnd','secretSand','secretSnow'];
 function note(m){ window.__log.push(m); dump(); }
 var iv=setInterval(function(){
   try{
     if(typeof G==='undefined') return;
     ticks++; phaseTick++;
     if(G.state==='title'){ Input.hitKeys['Enter']=true; return; }
-    if(G.state==='intro'){ if(!window.__sawIntro){window.__sawIntro=1;note('the opening story runs, and SKIP ends it');} Input.hitKeys['Escape']=true; return; }
     if(G.state==='files'){ var fr=fileRect(0); Input.mx=fr.x+fr.w/2; Input.my=fr.y+fr.h/2;
       Input.taps=[{id:'mouse',x:Input.mx,y:Input.my}]; Input.mhit=true; return; }
     if(G.state==='map'){ G.tutorialDone=true; G.mapMode='realm'; G.unlocked=9; var n=World.LEVELS[0].node; Input.mx=n.x; Input.my=n.y; Input.mhit=true; return; }

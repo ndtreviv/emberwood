@@ -48,8 +48,43 @@ const TEE_COLS = [
   { name: 'PLUM',  base: '#8f5fc0', dark: '#5d3a86', light: '#c39ae8' },
   { name: 'SLATE', base: '#5d6a80', dark: '#3a4354', light: '#8fa0b8' }
 ];
+/* Clothes cut to the pattern of a realm.  They are bought, not given, and a
+   suit overrides the plain shirt colour. */
+const SUITS = {
+  wood:     { name: 'WOODWARDEN', realm: 'EMBERWOOD', cost: 300,
+              base: '#4f7f4a', dark: '#2f5636', light: '#7ec44f', legs: '#7a5230', trim: '#c68e3f' },
+  cloud:    { name: 'SKYRUNNER', realm: 'AETHER CITY', cost: 500,
+              base: '#e6edf6', dark: '#a8b6c8', light: '#ffffff', legs: '#5f7aa8', trim: '#ffe14d' },
+  mush:     { name: 'CAPWEAVE', realm: 'SPOREWOOD', cost: 800,
+              base: '#c9403a', dark: '#8e2a20', light: '#e8695c', legs: '#e8dcc0', trim: '#f6efdc' },
+  shore:    { name: 'WRACKCOAT', realm: 'TIDEWRACK', cost: 1200,
+              base: '#3f8f8a', dark: '#25605e', light: '#6fc4bc', legs: '#c8b98c', trim: '#cfeaff' },
+  drowned:  { name: 'NAVEPLATE', realm: 'DROWNED HALL', cost: 1800,
+              base: '#2f4a6b', dark: '#1b2c42', light: '#4f7fa8', legs: '#3f5f6b', trim: '#6fc4a8' },
+  abyss:    { name: 'LANTERNSKIN', realm: 'THE TRENCH', cost: 2600,
+              base: '#241c3a', dark: '#140f24', light: '#463a6b', legs: '#1b1630', trim: '#8fd0e8' },
+  cinder:   { name: 'ASHWALKER', realm: 'CINDER FIELDS', cost: 3600,
+              base: '#4a3a44', dark: '#2a2028', light: '#6d5a64', legs: '#3a2c30', trim: '#ff7a2a' },
+  obsidian: { name: 'GLASSMAIL', realm: 'OBSIDIAN STEPS', cost: 5000,
+              base: '#2a2438', dark: '#161222', light: '#4a3a58', legs: '#241c2c', trim: '#a86fe0' },
+  molten:   { name: 'CROWNFORGE', realm: 'MOLTEN CROWN', cost: 7000,
+              base: '#8a2410', dark: '#4a1208', light: '#c0341a', legs: '#3a1a12', trim: '#ffd06a' },
+  frost:    { name: 'RIMECLOAK', realm: 'FROSTFELL', cost: 9000,
+              base: '#e8eef8', dark: '#aebdd2', light: '#ffffff', legs: '#8fa8c4', trim: '#8fd0e8' },
+  glacier:  { name: 'CREVASSE', realm: 'GLACIER HEART', cost: 12000,
+              base: '#4f8fb0', dark: '#2f5f7a', light: '#8fd0e8', legs: '#3f6f8a', trim: '#dff4ff' },
+  aurora:   { name: 'NIGHTBANNER', realm: 'AURORA CROWN', cost: 15000,
+              base: '#3a2f5a', dark: '#221a38', light: '#6f5aa0', legs: '#2a2244', trim: '#6fd0a0' },
+  dune:     { name: 'SANDSTRIDE', realm: 'THE DUNE SEA', cost: 19000,
+              base: '#d9bd7e', dark: '#a8894f', light: '#f0dca8', legs: '#8a6a3a', trim: '#3f7f5a' },
+  sphinx:   { name: 'RIDDLEWEAVE', realm: 'SPHINX HOLLOW', cost: 24000,
+              base: '#2f5fb0', dark: '#1c3a70', light: '#5f9fe0', legs: '#c9a06a', trim: '#e0b040' },
+  suntomb:  { name: 'SUNREGALIA', realm: 'THE SUN TOMB', cost: 30000,
+              base: '#e0b040', dark: '#9c7418', light: '#f6d878', legs: '#241c14', trim: '#2f5fb0' }
+};
+const SUIT_KEYS = Object.keys(SUITS);
 /* what the hero currently looks like; heroFrame reads this as it draws */
-const LOOK = { hair: 0, hairCol: 0, outfit: 0, tee: 0, cape: 'none' };
+const LOOK = { hair: 0, hairCol: 0, outfit: 0, tee: 0, cape: 'none', suit: 'none' };
 function applyLook(o) {
   if (!o) return;
   if (typeof o.hair === 'number') LOOK.hair = clamp(o.hair | 0, 0, HAIR_STYLES.length - 1);
@@ -57,11 +92,24 @@ function applyLook(o) {
   if (typeof o.outfit === 'number') LOOK.outfit = clamp(o.outfit | 0, 0, OUTFITS.length - 1);
   if (typeof o.tee === 'number') LOOK.tee = clamp(o.tee | 0, 0, TEE_COLS.length - 1);
   if (typeof o.cape === 'string') LOOK.cape = o.cape;
+  if (typeof o.suit === 'string') LOOK.suit = SUITS[o.suit] ? o.suit : 'none';
   const h = HAIR_COLS[LOOK.hairCol];
   HP.hair = C(h.base); HP.hairD = C(h.dark); HP.hairL = C(h.light);
   const t = TEE_COLS[LOOK.tee];
-  if (LOOK.outfit === 1) { HP.tunic = C(t.base); HP.tunicD = C(t.dark); HP.tunicL = C(t.light); }
-  else { HP.tunic = C('#48a24f'); HP.tunicD = C('#2e6c38'); HP.tunicL = C('#71c96e'); }
+  const suit = SUITS[LOOK.suit];
+  if (suit) {
+    /* a bought suit dresses the whole body, not the shirt alone */
+    HP.tunic = C(suit.base); HP.tunicD = C(suit.dark); HP.tunicL = C(suit.light);
+    HP.legs = C(suit.legs); HP.legsD = sh(C(suit.legs), -0.22);
+    HP.scarf = C(suit.trim); HP.scarfD = sh(C(suit.trim), -0.3);
+    HP.belt = C(suit.trim); HP.beltD = sh(C(suit.trim), -0.34);
+  } else {
+    HP.legs = C('#dccdA6'); HP.legsD = C('#b2a279');
+    HP.scarf = C('#c9392b'); HP.scarfD = C('#8f2820');
+    HP.belt = C('#7d4f25'); HP.beltD = C('#513118');
+    if (LOOK.outfit === 1) { HP.tunic = C(t.base); HP.tunicD = C(t.dark); HP.tunicL = C(t.light); }
+    else { HP.tunic = C('#48a24f'); HP.tunicD = C('#2e6c38'); HP.tunicL = C('#71c96e'); }
+  }
 }
 
 const HP = {
@@ -2831,6 +2879,913 @@ function tileSand(seed) {
   for (let k = 0; k < 3; k++) g.disc(r.i(1, 14), r.i(4, 14), r.r(0.8, 1.4), C('#f0e8cc'));
   return g;
 }
+/* ============================================================
+   THE WHITE SILENCE AND THE GOLDEN WASTE — tiles
+   ============================================================ */
+const WSP = {
+  snow: C('#e8eef8'), snowD: C('#c3cfe2'), snowL: C('#ffffff'), snowX: C('#9fb0c8'),
+  rime: C('#8fa8c4'), rimeD: C('#5f7490'),
+  ice: C('#8fd0e8'), iceD: C('#4f8fb0'), iceL: C('#cdeefb'),
+  sand: C('#d9bd7e'), sandD: C('#a8894f'), sandL: C('#f0dca8'),
+  quick: C('#b39a5e'), quickD: C('#7d6636'), quickL: C('#cfb87c'),
+  tomb: C('#b09563'), tombD: C('#7b6338'), tombL: C('#d8bd86'),
+  gold: C('#e0b040'), goldD: C('#9c7418'), lapis: C('#2f5fb0')
+};
+function tileSnow(seed, top) {
+  const g = new Pix(16, 16), r = new RNG(seed);
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++)
+    g.set(x, y, r.bool(0.18) ? WSP.snowD : WSP.snow);
+  if (top) {
+    for (let x = 0; x < 16; x++) {
+      const d = 3 + Math.round(Math.sin(x * 0.5 + seed) * 1.6);
+      for (let y = 0; y < d; y++) g.set(x, y, WSP.snowL);
+      if (r.bool(0.3)) g.set(x, d, WSP.snowL);
+    }
+  } else {
+    for (let k = 0; k < 7; k++) {
+      const x = r.i(1, 13), y = r.i(2, 13);
+      g.rect(x, y, r.i(2, 4), 1, WSP.snowX);
+    }
+    for (let k = 0; k < 4; k++) g.disc(r.i(2, 13), r.i(2, 13), r.r(0.8, 1.6), WSP.rime);
+  }
+  return g;
+}
+function tileIce(seed) {
+  const g = new Pix(16, 16), r = new RNG(seed);
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++)
+    g.set(x, y, r.bool(0.2) ? WSP.iceD : WSP.ice);
+  /* the fracture lines that make ice read as ice */
+  for (let k = 0; k < 4; k++) {
+    const x0 = r.i(0, 15), y0 = r.i(0, 15);
+    g.line(x0, y0, x0 + r.i(-6, 6), y0 + r.i(-6, 6), WSP.iceL);
+  }
+  for (let x = 0; x < 16; x++) if (r.bool(0.4)) g.set(x, 0, WSP.iceL);
+  for (let k = 0; k < 3; k++) g.rect(r.i(1, 12), r.i(1, 13), r.i(2, 3), 1, WSP.iceL);
+  return g;
+}
+/* powdered snow: it looks like a drift and it is a hole */
+function tilePowder(seed, f) {
+  const g = new Pix(16, 16), r = new RNG(seed);
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++)
+    g.set(x, y, r.bool(0.34) ? WSP.snowL : WSP.snow);
+  /* it stirs, which is the only thing that tells it from firm snow */
+  for (let x = 0; x < 16; x++) {
+    const d = 2 + Math.round(Math.sin(x * 0.7 + f * 1.6) * 1.4);
+    for (let y = 0; y < d; y++) g.set(x, y, WSP.snowL);
+  }
+  for (let k = 0; k < 10; k++) {
+    const x = (r.i(0, 15) + f * 3) % 16, y = r.i(2, 15);
+    g.set(x, y, WSP.snowX);
+  }
+  return g;
+}
+function tileSandTop(seed) {
+  const g = tileSand(seed);
+  const r = new RNG(seed + 7);
+  for (let x = 0; x < 16; x++) {
+    const d = 3 + Math.round(Math.sin(x * 0.42 + seed) * 1.5);
+    for (let y = 0; y < d; y++) g.set(x, y, WSP.sandL);
+  }
+  for (let k = 0; k < 5; k++) g.set(r.i(0, 15), r.i(0, 3), C('#fff4d6'));
+  return g;
+}
+/* quicksand: a slow turning eye of sand */
+function tileQuick(seed, f) {
+  const g = new Pix(16, 16), r = new RNG(seed);
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++)
+    g.set(x, y, r.bool(0.3) ? WSP.quickD : WSP.quick);
+  /* rings that turn, so it reads as something moving */
+  for (let k = 0; k < 3; k++) {
+    const rad = 3 + k * 3;
+    for (let a = 0; a < 34; a++) {
+      const ang = a / 34 * TAU + f * 0.5 + k * 0.7;
+      g.set(8 + Math.cos(ang) * rad, 8 + Math.sin(ang) * rad * 0.7,
+            (a + k) % 3 === 0 ? WSP.quickL : WSP.quickD);
+    }
+  }
+  for (let k = 0; k < 5; k++) {
+    const a = (k / 5) * TAU + f * 0.8;
+    g.set(8 + Math.cos(a) * 6, 8 + Math.sin(a) * 4, C('#5f4a22'));
+  }
+  return g;
+}
+function tileTomb(seed, top) {
+  const g = new Pix(16, 16), r = new RNG(seed);
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++)
+    g.set(x, y, r.bool(0.2) ? WSP.tombD : WSP.tomb);
+  /* dressed blocks, with a course line across the middle */
+  g.rect(0, 0, 16, 1, WSP.tombL);
+  g.rect(0, 7, 16, 1, WSP.tombD);
+  g.rect(0, 15, 16, 1, WSP.tombD);
+  g.rect((seed & 1) ? 4 : 11, 0, 1, 8, WSP.tombD);
+  g.rect((seed & 1) ? 11 : 4, 8, 1, 8, WSP.tombD);
+  if (top) for (let x = 0; x < 16; x++) g.set(x, 0, WSP.gold);
+  /* a painted band now and then */
+  if (r.bool(0.3)) {
+    const y = r.i(2, 12);
+    for (let x = 1; x < 15; x += 3) { g.rect(x, y, 2, 2, WSP.lapis); g.set(x + 2, y + 1, WSP.gold); }
+  }
+  return g;
+}
+/* ---------- the creatures of the White Silence ---------- */
+const FRP = {
+  fur: C('#c8d2e2'), furD: C('#8c99b0'), furL: C('#f0f5ff'), furX: C('#5f6c84'),
+  ice: C('#8fd0e8'), iceD: C('#3f7f9e'), iceL: C('#dff4ff'),
+  eye: C('#3fd0ff'), rage: C('#ff6a5a'), out: C('#1b2434'),
+  horn: C('#e6edf6'), hornD: C('#a8b6c8'), maw: C('#4a3348'), tooth: C('#f6f9ff')
+};
+function wolfFrame(mode, i, n) {
+  const g = new Pix(42, 28), r = new RNG(1400 + i);
+  const t = i / n * TAU;
+  const gait = Math.sin(t), gait2 = Math.sin(t + Math.PI * 0.6);
+  const pounce = mode === 'charge';
+  const crouch = pounce ? 3 : 0;
+  const bodyY = 15 - crouch + (pounce ? 0 : Math.abs(gait) * 0.8);
+  /* the tail, out behind */
+  const tailA = pounce ? -0.5 : -0.2 + gait * 0.25;
+  g.thick(9, bodyY - 1, 9 - Math.cos(tailA) * 9, bodyY - 1 + Math.sin(tailA) * 9, 4, FRP.furD);
+  g.thick(9, bodyY - 1, 9 - Math.cos(tailA) * 7, bodyY - 1 + Math.sin(tailA) * 7, 3, FRP.fur);
+  /* legs */
+  for (const [lx, ph] of [[13, gait], [16, gait2], [28, gait2], [31, gait]]) {
+    const swing = pounce ? (lx > 22 ? -4 : 4) : ph * 4;
+    g.thick(lx, bodyY + 2, lx + swing, 26, 3, lx > 22 ? FRP.fur : FRP.furD);
+    g.rect(lx + swing - 2, 25, 5, 2, FRP.furX);
+  }
+  /* body */
+  g.ell(21, bodyY, 13, 6.4, FRP.fur);
+  g.ell(21, bodyY - 2, 12, 4.6, FRP.furL);
+  g.ell(16, bodyY + 1, 8, 5, FRP.furD);
+  /* the ruff at the shoulders */
+  for (let k = 0; k < 9; k++) {
+    const a = -1.4 + k * 0.3;
+    g.thick(29, bodyY - 1, 29 + Math.cos(a) * 7, bodyY - 1 + Math.sin(a) * 7, 2, k % 2 ? FRP.furL : FRP.fur);
+  }
+  /* head */
+  const hx = 34, hy = bodyY - 4 + (pounce ? -1 : 0);
+  g.ell(hx, hy, 6, 5, FRP.fur);
+  g.ell(hx + 1, hy - 1, 5, 3.6, FRP.furL);
+  /* muzzle */
+  g.poly([[hx + 3, hy - 1], [hx + 10, hy + 1], [hx + 3, hy + 3]], FRP.furD);
+  g.set(hx + 9, hy + 1, FRP.furX);
+  /* ears */
+  for (const s2 of [-1, 1]) g.poly([[hx - 1 + s2, hy - 4], [hx + 1 + s2 * 2, hy - 9], [hx + 3 + s2, hy - 4]],
+                                   s2 < 0 ? FRP.furD : FRP.fur);
+  /* eye and teeth */
+  g.set(hx + 3, hy - 1, pounce ? FRP.rage : FRP.eye);
+  g.set(hx + 4, hy - 1, pounce ? FRP.rage : FRP.eye);
+  if (pounce || mode === 'roar') {
+    for (let k = 0; k < 3; k++) { g.set(hx + 5 + k * 2, hy + 2, FRP.tooth); g.set(hx + 6 + k * 2, hy + 1, FRP.tooth); }
+  }
+  /* frost on its back */
+  for (let k = 0; k < 5; k++) g.set(r.i(14, 28), bodyY - r.i(4, 6), FRP.iceL);
+  g.shade({ top: 0.10, bot: 0.16 });
+  g.outline(FRP.out);
+  return g;
+}
+function iceWispFrame(i, n) {
+  const g = new Pix(24, 24);
+  const t = i / n * TAU;
+  const pulse = 1 + Math.sin(t) * 0.16;
+  /* a shell of ice shards turning round a cold heart */
+  for (let k = 0; k < 6; k++) {
+    const a = t * 0.6 + k / 6 * TAU;
+    const rad = 8 * pulse;
+    const x = 12 + Math.cos(a) * rad, y = 12 + Math.sin(a) * rad * 0.8;
+    g.poly([[x, y - 4], [x + 2.4, y], [x, y + 4], [x - 2.4, y]], k % 2 ? FRP.ice : FRP.iceL);
+    g.set(x, y, FRP.iceL);
+  }
+  g.disc(12, 12, 5 * pulse, FRP.iceD);
+  g.disc(12, 12, 3.4 * pulse, FRP.ice);
+  g.disc(11, 11, 1.8 * pulse, C('#ffffff'));
+  g.outline(FRP.out);
+  return g;
+}
+function yetiFrame(mode, i, n) {
+  const g = new Pix(46, 50), r = new RNG(1500 + i);
+  const t = i / n * TAU;
+  const wind = mode === 'throw' ? clamp(i / Math.max(1, n - 1), 0, 1) : 0;
+  const sway = mode === 'walk' ? Math.sin(t) * 2 : 0;
+  const bob = mode === 'walk' ? Math.abs(Math.cos(t)) * 1.4 : Math.sin(t) * 0.8;
+  const cx = 23, foot = 48, hip = foot - 13 - bob;
+  /* legs */
+  for (const s2 of [-1, 1]) {
+    g.thick(cx + s2 * 5, hip, cx + s2 * 7 + (mode === 'walk' ? s2 * Math.sin(t) * 4 : 0), foot, 8,
+            s2 < 0 ? FRP.furD : FRP.fur);
+    g.rect(cx + s2 * 7 - 4, foot - 2, 9, 3, FRP.furX);
+  }
+  /* the great body */
+  g.ell(cx + sway * 0.4, hip - 10, 15, 13, FRP.fur);
+  g.ell(cx - 3 + sway * 0.4, hip - 13, 12, 9, FRP.furL);
+  g.ell(cx + 8, hip - 6, 7, 8, FRP.furD);
+  /* shaggy fringe */
+  for (let k = 0; k < 16; k++) {
+    const x = 9 + k * 1.8, len = 3 + (k % 3);
+    g.rect(x, hip + 1, 1, len, k % 2 ? FRP.furD : FRP.fur);
+  }
+  /* arms: one drawn back to throw */
+  const ra = -0.6 - wind * 1.7;
+  g.thick(cx + 12, hip - 16, cx + 12 + Math.cos(ra) * 15, hip - 16 + Math.sin(ra) * 15, 7, FRP.fur);
+  g.disc(cx + 12 + Math.cos(ra) * 16, hip - 16 + Math.sin(ra) * 16, 5, FRP.furL);
+  g.thick(cx - 12, hip - 16, cx - 16, hip - 2, 7, FRP.furD);
+  g.disc(cx - 16, hip - 1, 5, FRP.furD);
+  /* the snowball, once it is wound up */
+  if (wind > 0.4) {
+    const bx = cx + 12 + Math.cos(ra) * 18, by = hip - 16 + Math.sin(ra) * 18;
+    g.disc(bx, by, 5, FRP.furL);
+    g.disc(bx - 1, by - 1, 3, C('#ffffff'));
+  }
+  /* head, sunk into the shoulders */
+  const hy = hip - 26;
+  g.ell(cx, hy, 9, 8, FRP.fur);
+  g.ell(cx - 1, hy - 2, 7.4, 5.6, FRP.furL);
+  /* the mask of a face */
+  g.ell(cx + 1, hy + 2, 5.4, 4, FRP.furD);
+  g.set(cx - 2, hy, FRP.eye); g.set(cx - 1, hy, FRP.eye);
+  g.set(cx + 3, hy, FRP.eye); g.set(cx + 4, hy, FRP.eye);
+  if (mode !== 'walk') { g.ell(cx + 1, hy + 4, 3.4, 2, FRP.maw); for (let k = 0; k < 3; k++) g.set(cx - 1 + k * 2, hy + 3, FRP.tooth); }
+  /* horns of ice */
+  for (const s2 of [-1, 1]) {
+    g.poly([[cx + s2 * 6, hy - 5], [cx + s2 * 11, hy - 14], [cx + s2 * 8, hy - 4]], FRP.ice);
+    g.line(cx + s2 * 7, hy - 6, cx + s2 * 10, hy - 12, FRP.iceL);
+  }
+  for (let k = 0; k < 8; k++) g.set(r.i(11, 34), hip - r.i(6, 22), FRP.iceL);
+  g.shade({ top: 0.10, bot: 0.18 });
+  g.outline(FRP.out);
+  return g;
+}
+/* ---------- the creatures of the Golden Waste ---------- */
+const GWP = {
+  shell: C('#3f7f5a'), shellD: C('#255239'), shellL: C('#6fb98a'),
+  chit: C('#2a2438'), chitL: C('#4a4160'),
+  wrap: C('#d8c9a0'), wrapD: C('#a4906a'), wrapL: C('#f2e8cc'),
+  flesh: C('#7a6448'), rot: C('#4a5a3a'),
+  gold: C('#e0b040'), goldD: C('#9c7418'), goldL: C('#f6d878'),
+  lapis: C('#2f5fb0'), lapisL: C('#5f9fe0'),
+  eye: C('#ffd06a'), glare: C('#ff5a3a'),
+  feather: C('#4a4038'), featherD: C('#2a231e'), featherL: C('#7a6a58'),
+  beak: C('#e0b040'), skin: C('#c9a06a'), out: C('#1c1408'), steel: C('#b8c2d0')
+};
+function scarabFrame(mode, i, n) {
+  const g = new Pix(34, 24), r = new RNG(1600 + i);
+  const t = i / n * TAU;
+  const step = Math.sin(t);
+  const rush = mode === 'rush';
+  const bodyY = 14 - Math.abs(step) * (rush ? 0.4 : 1.0);
+  /* six legs, three a side, out of phase */
+  for (let k = 0; k < 3; k++) {
+    const lx = 10 + k * 7;
+    const sw = Math.sin(t + k * 2.1) * (rush ? 5 : 3);
+    g.thick(lx, bodyY + 3, lx + sw, 22, 2, GWP.chit);
+    g.thick(lx + 2, bodyY + 3, lx + 2 - sw, 21, 2, GWP.chitL);
+  }
+  /* the shell: hard from above, soft below */
+  g.ell(17, bodyY, 14, 8, GWP.shellD);
+  g.ell(17, bodyY - 1.5, 13, 6.4, GWP.shell);
+  g.ell(15, bodyY - 3, 10, 4, GWP.shellL);
+  /* the seam and the wing case marks */
+  g.rect(17, bodyY - 8, 1, 14, GWP.shellD);
+  for (let k = 0; k < 4; k++) {
+    g.set(11 + k * 4, bodyY - 4, GWP.gold);
+    g.set(11 + k * 4, bodyY + 2, GWP.goldD);
+  }
+  /* the sun disc a scarab carries */
+  g.disc(17, bodyY - 2, 3.4, GWP.gold);
+  g.disc(16.4, bodyY - 2.6, 2, GWP.goldL);
+  /* head and horn */
+  g.ell(30, bodyY + 1, 4.6, 4, GWP.chit);
+  g.poly([[31, bodyY - 3], [34, bodyY - 8], [33, bodyY - 1]], GWP.chitL);
+  g.set(29, bodyY, rush ? GWP.glare : GWP.eye);
+  g.set(29, bodyY + 2, rush ? GWP.glare : GWP.eye);
+  for (let k = 0; k < 5; k++) g.set(r.i(8, 26), bodyY - r.i(2, 7), GWP.shellL);
+  g.shade({ top: 0.12, bot: 0.18 });
+  g.outline(GWP.out);
+  return g;
+}
+function vultureFrame(mode, i, n) {
+  const g = new Pix(38, 26);
+  const t = i / n * TAU;
+  const stoop = mode === 'dive';
+  const flap = stoop ? -6 : Math.sin(t) * 7;
+  const cx = 19, cy = 13;
+  /* wings */
+  for (const s2 of [-1, 1]) {
+    const tipY = cy - flap * (s2 < 0 ? 1 : 0.92);
+    g.poly([[cx + s2 * 3, cy - 1], [cx + s2 * 12, tipY - 3], [cx + s2 * 18, tipY + 1],
+            [cx + s2 * 11, cy + 3], [cx + s2 * 4, cy + 3]],
+           s2 < 0 ? GWP.featherD : GWP.feather);
+    for (let k = 0; k < 4; k++)
+      g.line(cx + s2 * 5, cy, cx + s2 * (12 + k * 2), tipY + k * 1.6, GWP.featherL);
+  }
+  /* body */
+  g.ell(cx, cy + 2, 5.4, 6, GWP.feather);
+  g.ell(cx, cy + 4, 4, 4, GWP.featherD);
+  /* the bare neck and the hooked head */
+  const hy = stoop ? cy + 5 : cy - 5;
+  g.thick(cx, cy - 1, cx + 2, hy, 3, GWP.skin);
+  g.ell(cx + 3, hy, 3.4, 3, GWP.skin);
+  g.poly([[cx + 5, hy - 1], [cx + 10, hy + 1], [cx + 5, hy + 2]], GWP.beak);
+  g.set(cx + 3, hy - 1, stoop ? GWP.glare : GWP.eye);
+  /* the ruff of feathers at the base of the neck */
+  for (let k = 0; k < 6; k++) g.set(cx - 3 + k, cy - 2, GWP.featherL);
+  /* talons */
+  for (const s2 of [-1, 1]) g.thick(cx + s2 * 2, cy + 7, cx + s2 * 3, cy + 11, 2, GWP.beak);
+  g.shade({ top: 0.12, bot: 0.14 });
+  g.outline(GWP.out);
+  return g;
+}
+function mummyFrame(mode, i, n) {
+  const g = new Pix(28, 36), r = new RNG(1700 + i);
+  const t = i / n * TAU;
+  const reach = mode === 'grab' ? clamp(i / Math.max(1, n - 1), 0, 1) : 0;
+  const shuffle = mode === 'walk' ? Math.sin(t) * 3 : 0;
+  const cx = 14, foot = 34, hip = foot - 12, sho = hip - 10;
+  /* legs, bound together */
+  g.thick(cx - 2, hip, cx - 3 + shuffle, foot, 5, GWP.wrapD);
+  g.thick(cx + 2, hip, cx + 3 - shuffle, foot, 5, GWP.wrap);
+  /* torso */
+  g.poly([[cx - 6, sho], [cx + 6, sho], [cx + 5, hip + 1], [cx - 5, hip + 1]], GWP.wrap);
+  /* the wrappings, band by band */
+  for (let y = sho; y < foot; y += 3) {
+    const off = Math.sin(y * 0.7 + 1) * 1.4;
+    g.rect(cx - 6 + off, y, 12, 1, (y & 1) ? GWP.wrapD : GWP.wrapL);
+  }
+  /* a strip come loose, trailing */
+  for (let k = 0; k < 7; k++)
+    g.set(cx - 7 - k, hip + 2 + Math.sin(k * 0.8 + t) * 2, GWP.wrapL);
+  /* arms, out ahead when it reaches */
+  const aa = -0.15 - reach * 0.2;
+  for (const s2 of [-1, 1]) {
+    const ex = cx + 7 + reach * 6, ey = sho + 4 + s2 * 2 + Math.sin(aa) * 4;
+    g.thick(cx + s2 * 4, sho + 2, ex, ey, 4, s2 < 0 ? GWP.wrapD : GWP.wrap);
+    g.disc(ex + 1, ey, 2.6, GWP.wrapL);
+  }
+  /* head, bound but for the eyes */
+  g.ell(cx, sho - 6, 6, 6.4, GWP.wrap);
+  for (let y = sho - 12; y < sho - 1; y += 3) g.rect(cx - 6, y, 12, 1, GWP.wrapD);
+  g.rect(cx - 5, sho - 7, 10, 3, GWP.chit);
+  g.set(cx - 3, sho - 6, GWP.eye); g.set(cx - 2, sho - 6, GWP.eye);
+  g.set(cx + 2, sho - 6, GWP.eye); g.set(cx + 3, sho - 6, GWP.eye);
+  /* the gold collar of someone who mattered */
+  g.rect(cx - 6, sho - 1, 12, 2, GWP.gold);
+  g.set(cx - 3, sho, GWP.lapis); g.set(cx + 3, sho, GWP.lapis);
+  for (let k = 0; k < 6; k++) g.set(r.i(cx - 6, cx + 6), r.i(sho, foot - 2), GWP.rot);
+  g.shade({ top: 0.10, bot: 0.18 });
+  g.outline(GWP.out);
+  return g;
+}
+function soldierFrame(mode, i, n) {
+  const g = new Pix(26, 34);
+  const t = i / n * TAU;
+  const thrust = mode === 'thrust' ? clamp(i / Math.max(1, n - 1), 0, 1) : 0;
+  const step = mode === 'walk' ? Math.sin(t) * 4 : 0;
+  const cx = 12, foot = 32, hip = foot - 12, sho = hip - 9;
+  /* legs */
+  g.thick(cx, hip, cx + step, foot, 4, GWP.skin);
+  g.thick(cx, hip, cx - step, foot, 4, C('#a4804a'));
+  g.rect(cx + step - 3, foot - 2, 7, 2, GWP.wrapD);
+  /* the linen kilt */
+  g.poly([[cx - 5, hip - 3], [cx + 5, hip - 3], [cx + 6, hip + 4], [cx - 6, hip + 4]], GWP.wrapL);
+  for (let k = 0; k < 5; k++) g.rect(cx - 5 + k * 2, hip - 3, 1, 7, GWP.wrapD);
+  /* torso and the gold collar */
+  g.poly([[cx - 5, sho], [cx + 5, sho], [cx + 4, hip - 2], [cx - 4, hip - 2]], GWP.skin);
+  g.rect(cx - 5, sho, 10, 3, GWP.gold);
+  g.set(cx - 2, sho + 1, GWP.lapis); g.set(cx + 2, sho + 1, GWP.lapis);
+  /* the nemes cloth of a household guard */
+  g.ell(cx, sho - 6, 4.6, 5, GWP.skin);
+  g.poly([[cx - 6, sho - 9], [cx + 6, sho - 9], [cx + 7, sho + 1], [cx + 4, sho + 1],
+          [cx + 4, sho - 5], [cx - 4, sho - 5], [cx - 4, sho + 1], [cx - 7, sho + 1]], GWP.lapis);
+  for (let k = 0; k < 4; k++) { g.rect(cx - 7, sho - 8 + k * 2, 3, 1, GWP.gold); g.rect(cx + 5, sho - 8 + k * 2, 3, 1, GWP.gold); }
+  g.set(cx - 2, sho - 6, GWP.out); g.set(cx + 2, sho - 6, GWP.out);
+  /* the shield on the near arm */
+  g.poly([[cx - 9, sho + 1], [cx - 3, sho], [cx - 3, hip + 2], [cx - 9, hip]], GWP.wrapD);
+  g.poly([[cx - 8, sho + 2], [cx - 4, sho + 1], [cx - 4, hip], [cx - 8, hip - 1]], GWP.wrap);
+  g.disc(cx - 6, sho + 6, 2, GWP.gold);
+  /* the spear, level and then driven forward */
+  const sx = cx + 4 + thrust * 9;
+  g.thick(cx + 3, sho + 3, sx, sho + 3, 3, GWP.skin);
+  g.thick(sx - 12, sho + 5, sx + 10, sho + 2, 2, C('#7a5230'));
+  g.poly([[sx + 10, sho + 2], [sx + 17, sho + 2], [sx + 10, sho - 2]], GWP.steel);
+  g.poly([[sx + 10, sho + 2], [sx + 17, sho + 2], [sx + 10, sho + 6]], C('#8a94a6'));
+  g.shade({ top: 0.10, bot: 0.16 });
+  g.outline(GWP.out);
+  return g;
+}
+/* ============================================================
+   THE SIX NEW GUARDIANS.  One builder per chapter, three
+   silhouettes each, so a realm's keeper is its own creature.
+   ============================================================ */
+function frostBossFrame(variant, mode, i, n) {
+  const g = new Pix(96, 104), r = new RNG(1800 + variant * 31 + i);
+  const t = i / n * TAU;
+  const atk = mode === 'attack';
+  const cx = 48, foot = 100;
+  const bob = Math.sin(t) * (atk ? 3.4 : 2);
+  if (variant === 0) {
+    /* THE RIME COLOSSUS: a wall of ice on two legs, with fists of it */
+    const hip = foot - 26 - bob;
+    for (const s2 of [-1, 1]) {
+      g.poly([[cx + s2 * 8, hip], [cx + s2 * 22, hip + 6], [cx + s2 * 24, foot], [cx + s2 * 6, foot]],
+             s2 < 0 ? FRP.rimeD : FRP.rime);
+      g.rect(cx + s2 * 15 - 8, foot - 4, 17, 5, FRP.iceD);
+    }
+    /* the trunk, cut like a glacier face */
+    g.poly([[cx - 26, hip - 34], [cx + 26, hip - 34], [cx + 20, hip + 3], [cx - 20, hip + 3]], FRP.ice);
+    for (let k = 0; k < 9; k++) {
+      const y = hip - 32 + k * 4;
+      g.line(cx - 24 + (k % 3) * 5, y, cx + 20 - (k % 4) * 6, y + 3, FRP.iceL);
+    }
+    g.poly([[cx - 24, hip - 32], [cx - 6, hip - 30], [cx - 14, hip - 4]], FRP.iceL);
+    /* arms, drawn back to swing */
+    const swing = atk ? clamp(i / Math.max(1, n - 1), 0, 1) : 0.35;
+    for (const s2 of [-1, 1]) {
+      const a = -0.9 + swing * 1.6 * s2;
+      const ex = cx + s2 * 30 + Math.cos(a) * 8, ey = hip - 22 + Math.sin(a) * 16;
+      g.thick(cx + s2 * 22, hip - 26, ex, ey, 11, s2 < 0 ? FRP.rimeD : FRP.rime);
+      g.disc(ex, ey, 10, FRP.ice);
+      g.disc(ex - 2, ey - 2, 6, FRP.iceL);
+      for (let k = 0; k < 4; k++)
+        g.poly([[ex + s2 * 6, ey - 6 + k * 4], [ex + s2 * 15, ey - 8 + k * 4], [ex + s2 * 6, ey - 2 + k * 4]], FRP.iceL);
+    }
+    /* the head, sunk between the shoulders */
+    const hy = hip - 42;
+    g.ell(cx, hy, 13, 11, FRP.rime);
+    g.ell(cx, hy - 2, 11, 8, FRP.ice);
+    g.rect(cx - 9, hy - 1, 18, 5, C('#12202e'));
+    g.rect(cx - 7, hy + 0, 5, 3, FRP.eye); g.rect(cx + 3, hy + 0, 5, 3, FRP.eye);
+    /* the crown of spikes */
+    for (let k = -3; k <= 3; k++)
+      g.poly([[cx + k * 6 - 3, hy - 9], [cx + k * 6, hy - 20 - Math.abs(k) * -3], [cx + k * 6 + 3, hy - 9]], FRP.iceL);
+  } else if (variant === 1) {
+    /* THE FROST WYRM: a long neck out of a coiled body */
+    const by = foot - 20 - bob;
+    for (let k = 0; k < 5; k++) {
+      const a = t * 0.3 + k * 1.2;
+      g.ell(cx - 6 + Math.cos(a) * 16, by + Math.sin(a) * 5, 19 - k * 2, 9 - k, k % 2 ? FRP.furD : FRP.fur);
+    }
+    g.ell(cx - 4, by, 30, 15, FRP.fur);
+    g.ell(cx - 8, by - 4, 25, 10, FRP.furL);
+    /* the wings, half folded */
+    for (const s2 of [-1, 1]) {
+      const lift = atk ? 16 : 8 + Math.sin(t) * 4;
+      g.poly([[cx - 6, by - 10], [cx + s2 * 26, by - 12 - lift], [cx + s2 * 40, by - 4 - lift],
+              [cx + s2 * 20, by + 2]], s2 < 0 ? FRP.iceD : FRP.ice);
+      for (let k = 0; k < 4; k++)
+        g.line(cx - 6, by - 10, cx + s2 * (22 + k * 5), by - 10 - lift + k * 4, FRP.iceL);
+    }
+    /* the neck, and the skull at the end of it */
+    const rise = atk ? 26 : 20 + Math.sin(t) * 3;
+    let nx = cx + 14, ny = by - 8;
+    for (let k = 0; k < 10; k++) {
+      const q = k / 9;
+      const px = lerp(nx, cx + 34, q), py = lerp(ny, by - 8 - rise, q);
+      g.disc(px, py, 7 - q * 3, k % 2 ? FRP.fur : FRP.furL);
+      g.set(px, py - (7 - q * 3), FRP.iceL);
+    }
+    const hx = cx + 34, hy = by - 8 - rise;
+    g.ell(hx, hy, 10, 7, FRP.furL);
+    g.poly([[hx + 4, hy - 3], [hx + 20, hy + 1], [hx + 4, hy + 5]], FRP.fur);
+    g.poly([[hx + 2, hy + 2], [hx + 19, hy + 2], [hx + 4, hy + 7]], FRP.furD);
+    if (atk) for (let k = 0; k < 5; k++) { g.set(hx + 7 + k * 2, hy + 3, FRP.tooth); g.set(hx + 8 + k * 2, hy + 5, FRP.tooth); }
+    g.set(hx + 2, hy - 1, atk ? FRP.rage : FRP.eye); g.set(hx + 3, hy - 1, atk ? FRP.rage : FRP.eye);
+    for (const s2 of [-1, 1]) g.poly([[hx - 2, hy - 4], [hx - 10, hy - 16 + s2 * 3], [hx + 2, hy - 4]], FRP.horn);
+  } else {
+    /* THE PALE MONARCH: a robed thing that does not touch the ground */
+    const by = foot - 34 - bob * 2;
+    /* the halo of shards */
+    for (let k = 0; k < 10; k++) {
+      const a = t * 0.5 + k / 10 * TAU;
+      const x = cx + Math.cos(a) * 34, y = by - 34 + Math.sin(a) * 12;
+      g.poly([[x, y - 5], [x + 3, y], [x, y + 5], [x - 3, y]], k % 2 ? FRP.ice : FRP.iceL);
+    }
+    /* the robe, falling into nothing */
+    g.poly([[cx - 20, by - 18], [cx + 20, by - 18], [cx + 13, foot], [cx - 13, foot]], FRP.rimeD);
+    g.poly([[cx - 15, by - 18], [cx + 6, by - 18], [cx + 4, foot - 4], [cx - 9, foot - 2]], FRP.rime);
+    for (let k = 0; k < 7; k++)
+      g.line(cx - 16 + k * 5, by - 16, cx - 11 + k * 4, foot - 2, FRP.iceL);
+    /* ragged hem */
+    for (let k = 0; k < 12; k++) g.rect(cx - 13 + k * 2.3, foot - 3 + (k % 3), 2, 4, FRP.rimeD);
+    /* the arms, held out */
+    const spread = atk ? 1.25 : 0.85;
+    for (const s2 of [-1, 1]) {
+      const ex = cx + s2 * 28 * spread, ey = by - 20 + (atk ? -10 : 4);
+      g.thick(cx + s2 * 12, by - 22, ex, ey, 6, FRP.rime);
+      g.disc(ex, ey, 5, FRP.iceL);
+      if (atk) for (let k = 0; k < 3; k++) g.disc(ex + s2 * (6 + k * 5), ey - k * 3, 3 - k * 0.6, FRP.ice);
+    }
+    /* the cowl, and the two lights inside it */
+    const hy = by - 34;
+    g.ell(cx, hy, 12, 13, FRP.rimeD);
+    g.ell(cx, hy + 2, 9, 10, C('#0d1622'));
+    g.rect(cx - 6, hy, 4, 3, FRP.eye); g.rect(cx + 3, hy, 4, 3, FRP.eye);
+    /* the crown */
+    for (let k = -2; k <= 2; k++)
+      g.poly([[cx + k * 7 - 3, hy - 10], [cx + k * 7, hy - 24 + Math.abs(k) * 5], [cx + k * 7 + 3, hy - 10]], FRP.iceL);
+    g.rect(cx - 15, hy - 11, 30, 4, FRP.ice);
+  }
+  for (let k = 0; k < 10; k++) g.set(r.i(8, 88), r.i(20, 96), FRP.iceL);
+  g.shade({ top: 0.10, bot: 0.18, right: 0.08 });
+  g.outline(FRP.out);
+  return g;
+}
+function sandBossFrame(variant, mode, i, n) {
+  const g = new Pix(104, 104), r = new RNG(1900 + variant * 41 + i);
+  const t = i / n * TAU;
+  const atk = mode === 'attack';
+  const cx = 52, foot = 100;
+  const bob = Math.sin(t) * 2.4;
+  if (variant === 0) {
+    /* THE DUNE MAW: a worm standing out of the sand */
+    const rise = atk ? 8 : 0;
+    const sway = Math.sin(t) * 6;
+    let px = cx - 10, py = foot;
+    for (let k = 0; k < 12; k++) {
+      const q = k / 11;
+      const x = cx - 10 + Math.sin(q * 2.2 + t * 0.4) * 14 + sway * q;
+      const y = foot - q * (74 + rise);
+      const rad = 15 - q * 3.5;
+      g.ell(x, y, rad, rad * 0.86, k % 2 ? C('#8a6a3a') : C('#a4804a'));
+      g.ell(x - rad * 0.25, y - rad * 0.3, rad * 0.6, rad * 0.5, C('#c9a06a'));
+      /* the ring of plates round each segment */
+      for (let m = 0; m < 6; m++) {
+        const a = m / 6 * TAU + q * 2;
+        g.set(x + Math.cos(a) * rad * 0.8, y + Math.sin(a) * rad * 0.7, GWP.chit);
+      }
+      px = x; py = y;
+    }
+    /* the maw: four jaws opening on a ring of teeth */
+    const gape = atk ? 1 : 0.35;
+    g.disc(px, py, 15, GWP.chit);
+    g.disc(px, py, 11, C('#2a0e10'));
+    for (let m = 0; m < 4; m++) {
+      const a = m / 4 * TAU + Math.PI / 4;
+      const ox = Math.cos(a) * 8 * gape, oy = Math.sin(a) * 8 * gape;
+      g.poly([[px + ox - 6, py + oy], [px + ox + 6, py + oy],
+              [px + ox + Math.cos(a) * 12, py + oy + Math.sin(a) * 12]], C('#a4804a'));
+      for (let k = 0; k < 3; k++)
+        g.poly([[px + ox + (k - 1) * 4 - 2, py + oy], [px + ox + (k - 1) * 4 + 2, py + oy],
+                [px + ox + (k - 1) * 4, py + oy - Math.sin(a) * 0 - 6 * (a > 0 ? 1 : -1)]], C('#f2e8cc'));
+    }
+    for (let m = 0; m < 10; m++) {
+      const a = m / 10 * TAU;
+      g.set(px + Math.cos(a) * 13, py + Math.sin(a) * 13, GWP.eye);
+    }
+    /* the sand it throws up round its base */
+    for (let k = 0; k < 26; k++) {
+      const a = r.r(0, Math.PI), d = r.r(14, 34);
+      g.set(cx - 10 + Math.cos(a) * d, foot - 2 - r.r(0, 5), r.bool(0.5) ? GWP.wrap : GWP.wrapD);
+    }
+  } else if (variant === 1) {
+    /* THE SPHINX: a lion couchant with a king's head */
+    const by = foot - 18 - bob * 0.5;
+    /* the body, lying along the ground */
+    g.ell(cx - 4, by, 34, 17, C('#c9a06a'));
+    g.ell(cx - 10, by - 6, 26, 10, C('#e0bd86'));
+    /* the forelegs, out in front */
+    for (const oy of [-4, 3]) {
+      g.rect(cx + 16, by + oy, 26, 7, C('#c9a06a'));
+      g.rect(cx + 16, by + oy, 26, 2, C('#e0bd86'));
+      for (let k = 0; k < 4; k++) g.rect(cx + 38 + k, by + oy + 4, 2, 4, C('#a4804a'));
+    }
+    /* the haunch and tail */
+    g.ell(cx - 26, by - 2, 14, 13, C('#b8905a'));
+    for (let k = 0; k < 8; k++) g.set(cx - 38 - k, by + 6 + Math.sin(k * 0.6 + t) * 3, C('#a4804a'));
+    /* the wings, folded back along it */
+    for (const s2 of [-1, 1]) {
+      const lift = atk ? 12 : 4;
+      g.poly([[cx - 2, by - 12], [cx - 24, by - 22 - lift], [cx - 34, by - 10 - lift], [cx - 8, by - 6]],
+             s2 < 0 ? GWP.goldD : GWP.gold);
+      for (let k = 0; k < 5; k++)
+        g.line(cx - 4, by - 11, cx - 12 - k * 5, by - 20 - lift + k * 3, GWP.goldL);
+    }
+    /* the nemes headdress and the face */
+    const hx = cx + 20, hy = by - 30;
+    g.poly([[hx - 16, hy - 12], [hx + 16, hy - 12], [hx + 18, hy + 14], [hx + 9, hy + 14],
+            [hx + 9, hy + 2], [hx - 9, hy + 2], [hx - 9, hy + 14], [hx - 18, hy + 14]], GWP.lapis);
+    for (let k = 0; k < 6; k++) {
+      g.rect(hx - 18, hy - 10 + k * 4, 9, 2, GWP.gold);
+      g.rect(hx + 9, hy - 10 + k * 4, 9, 2, GWP.gold);
+    }
+    g.ell(hx, hy, 9, 10, GWP.skin);
+    g.ell(hx, hy - 3, 8, 6, C('#e0bd86'));
+    /* the eyes, lined in kohl */
+    g.rect(hx - 6, hy - 2, 5, 2, C('#1c1408'));
+    g.rect(hx + 2, hy - 2, 5, 2, C('#1c1408'));
+    g.set(hx - 5, hy - 2, atk ? GWP.glare : GWP.eye);
+    g.set(hx + 3, hy - 2, atk ? GWP.glare : GWP.eye);
+    g.rect(hx - 3, hy + 4, 7, 1, C('#8a6a3a'));
+    /* the false beard and the cobra on the brow */
+    g.rect(hx - 2, hy + 6, 4, 7, GWP.lapis);
+    g.rect(hx - 2, hy + 6, 4, 1, GWP.gold);
+    g.poly([[hx - 2, hy - 11], [hx + 2, hy - 11], [hx + 3, hy - 18], [hx - 3, hy - 18]], GWP.gold);
+    g.disc(hx, hy - 19, 3, C('#3f7f5a'));
+    g.set(hx - 1, hy - 20, GWP.eye); g.set(hx + 1, hy - 20, GWP.eye);
+  } else {
+    /* THE PHARAOH: crook, flail and a crown that is too tall */
+    const hip = foot - 24 - bob;
+    const sho = hip - 20;
+    /* the kilt and legs */
+    g.rect(cx - 5, hip, 5, 24, GWP.skin);
+    g.rect(cx + 1, hip, 5, 24, C('#a4804a'));
+    g.rect(cx - 9, foot - 3, 9, 4, GWP.wrapD);
+    g.rect(cx + 1, foot - 3, 9, 4, GWP.wrapD);
+    g.poly([[cx - 12, hip - 8], [cx + 12, hip - 8], [cx + 14, hip + 6], [cx - 14, hip + 6]], GWP.wrapL);
+    for (let k = 0; k < 8; k++) g.rect(cx - 12 + k * 3.4, hip - 8, 1, 14, GWP.wrapD);
+    g.rect(cx - 14, hip - 9, 28, 3, GWP.gold);
+    /* torso */
+    g.poly([[cx - 11, sho], [cx + 11, sho], [cx + 9, hip - 6], [cx - 9, hip - 6]], GWP.skin);
+    g.poly([[cx - 11, sho], [cx - 2, sho], [cx - 3, hip - 6], [cx - 9, hip - 6]], C('#e0bd86'));
+    /* the broad collar */
+    for (let k = 0; k < 3; k++) {
+      g.ell(cx, sho + 1 + k * 2, 12 - k * 2, 4 - k * 0.6, k % 2 ? GWP.lapis : GWP.gold);
+    }
+    /* the arms, crossed over the chest holding crook and flail */
+    const open = atk ? 1 : 0;
+    for (const s2 of [-1, 1]) {
+      const ex = cx + s2 * (10 + open * 14), ey = sho + 10 - open * 8;
+      g.thick(cx + s2 * 9, sho + 4, ex, ey, 5, s2 < 0 ? C('#a4804a') : GWP.skin);
+      g.disc(ex, ey, 3.4, GWP.skin);
+    }
+    /* the crook */
+    const kx = cx - 10 - open * 14, ky = sho + 10 - open * 8;
+    g.thick(kx, ky + 12, kx, ky - 16, 3, GWP.gold);
+    g.thick(kx, ky - 16, kx + 7, ky - 20, 3, GWP.gold);
+    g.thick(kx + 7, ky - 20, kx + 8, ky - 13, 3, GWP.goldD);
+    /* the flail */
+    const fx = cx + 10 + open * 14, fy = sho + 10 - open * 8;
+    g.thick(fx, fy + 10, fx, fy - 14, 3, GWP.gold);
+    for (let k = -1; k <= 1; k++) {
+      const a = -1.5 + k * 0.35 + (atk ? Math.sin(t) * 0.3 : 0);
+      g.thick(fx, fy - 14, fx + Math.cos(a) * 9, fy - 14 + Math.sin(a) * 9 + 12, 2, GWP.lapis);
+      g.disc(fx + Math.cos(a) * 9, fy - 2 + Math.sin(a) * 9, 2.4, GWP.goldL);
+    }
+    /* the head and the double crown */
+    const hy = sho - 12;
+    g.ell(cx, hy, 8, 9, GWP.skin);
+    g.rect(cx - 6, hy - 2, 5, 2, C('#1c1408'));
+    g.rect(cx + 2, hy - 2, 5, 2, C('#1c1408'));
+    g.set(cx - 5, hy - 2, atk ? GWP.glare : GWP.eye);
+    g.set(cx + 3, hy - 2, atk ? GWP.glare : GWP.eye);
+    g.rect(cx - 2, hy + 8, 4, 8, GWP.lapis);
+    g.rect(cx - 2, hy + 8, 4, 1, GWP.gold);
+    /* the white crown inside the red one */
+    g.poly([[cx - 10, hy - 6], [cx + 10, hy - 6], [cx + 8, hy - 30], [cx - 8, hy - 30]], C('#c9403a'));
+    g.poly([[cx - 7, hy - 8], [cx + 5, hy - 8], [cx + 3, hy - 34], [cx - 5, hy - 34]], C('#f2e8cc'));
+    g.disc(cx - 1, hy - 34, 4, C('#f2e8cc'));
+    g.thick(cx + 8, hy - 26, cx + 16, hy - 34, 2, C('#c9403a'));
+    g.poly([[cx - 3, hy - 7], [cx + 3, hy - 7], [cx + 4, hy - 15], [cx - 4, hy - 15]], GWP.gold);
+    g.disc(cx, hy - 17, 3.4, C('#3f7f5a'));
+    g.set(cx - 1, hy - 18, GWP.eye); g.set(cx + 1, hy - 18, GWP.eye);
+    /* the sun disc behind the crown, when it calls on it */
+    if (atk) {
+      for (let k = 0; k < 12; k++) {
+        const a = k / 12 * TAU + t * 0.3;
+        g.thick(cx, hy - 20, cx + Math.cos(a) * 30, hy - 20 + Math.sin(a) * 30, 2, GWP.goldL);
+      }
+    }
+  }
+  for (let k = 0; k < 8; k++) g.set(r.i(8, 96), r.i(30, 98), GWP.wrapL);
+  g.shade({ top: 0.10, bot: 0.18, right: 0.08 });
+  g.outline(GWP.out);
+  return g;
+}
+/* ---------- the standing things of the two new chapters ---------- */
+function pineSprite(seed) {
+  const g = new Pix(34, 62), r = new RNG(seed);
+  const cx = 17;
+  g.rect(cx - 2, 46, 4, 16, TP.woodD);
+  g.rect(cx - 1, 46, 2, 16, TP.wood);
+  /* four skirts of needles, each under its own load of snow */
+  for (let k = 0; k < 4; k++) {
+    const y = 48 - k * 12, w = 15 - k * 3;
+    g.poly([[cx, y - 16], [cx - w, y], [cx + w, y]], C('#1f4a33'));
+    g.poly([[cx, y - 15], [cx - w * 0.6, y - 2], [cx + w * 0.5, y - 2]], C('#2f6b46'));
+    /* snow lying on the branch */
+    for (let i = -w; i <= w; i++) {
+      const d = Math.round((1 - Math.abs(i) / w) * 5);
+      if (d <= 0) continue;
+      for (let j = 0; j < 2; j++) g.set(cx + i, y - 1 - j - Math.round(d * 0.2), WSP.snowL);
+      if (r.bool(0.4)) g.set(cx + i, y, WSP.snow);
+    }
+  }
+  g.disc(cx, 4, 3, WSP.snowL);
+  for (let k = 0; k < 12; k++) g.set(r.i(4, 29), r.i(6, 50), r.bool(0.5) ? WSP.snowL : C('#3f8a58'));
+  g.outline(C('#12241c'));
+  return g;
+}
+function cactusSprite(seed) {
+  const g = new Pix(26, 46), r = new RNG(seed);
+  const cx = 13, body = C('#3f7f5a'), bodyD = C('#255239'), bodyL = C('#6fb98a');
+  g.rect(cx - 4, 8, 8, 38, body);
+  g.rect(cx - 4, 8, 3, 38, bodyL);
+  g.rect(cx + 2, 8, 2, 38, bodyD);
+  g.ell(cx, 9, 4, 4, body);
+  g.ell(cx - 1, 8, 3, 3, bodyL);
+  /* the arms, one up each side */
+  const arms = [[-1, 22], [1, 28]];
+  for (const [sd, ay] of arms) {
+    if (!r.bool(0.8)) continue;
+    g.rect(cx + sd * 4, ay, sd > 0 ? 6 : -6, 6, body);
+    g.rect(cx + sd * 9 - (sd > 0 ? 0 : 3), ay - 12, 3, 18, body);
+    g.ell(cx + sd * 9 + (sd > 0 ? 1 : -1), ay - 12, 2, 2, bodyL);
+  }
+  /* ribs and spines */
+  for (let y = 9; y < 45; y += 3) {
+    g.set(cx - 2, y, bodyD); g.set(cx + 1, y, bodyD);
+    if (r.bool(0.5)) { g.set(cx - 5, y, C('#e8dcc0')); g.set(cx + 4, y, C('#e8dcc0')); }
+  }
+  if (r.bool(0.4)) { g.disc(cx, 6, 2.4, C('#e8557a')); g.disc(cx - 1, 5, 1.2, C('#ffd6e4')); }
+  g.shade({ top: 0.10, bot: 0.16 });
+  g.outline(C('#14301f'));
+  return g;
+}
+function boneSprite(seed) {
+  const g = new Pix(40, 26), r = new RNG(seed);
+  const bone = C('#e8dcc0'), boneD = C('#b3a681'), boneX = C('#8a7e5e');
+  const kind = seed % 3;
+  if (kind === 0) {
+    /* a ribcage half buried */
+    g.thick(4, 24, 34, 22, 3, boneD);
+    for (let k = 0; k < 7; k++) {
+      const x = 7 + k * 4, h = 8 + Math.sin(k * 0.7) * 4;
+      g.thick(x, 23, x + 2, 23 - h, 2, k % 2 ? bone : boneD);
+    }
+    g.set(6, 24, boneX);
+  } else if (kind === 1) {
+    /* a skull in the sand */
+    g.ell(16, 17, 10, 8, bone);
+    g.ell(14, 15, 7, 5, C('#f6efdc'));
+    g.ell(12, 18, 2.6, 2.4, C('#241c14'));
+    g.ell(19, 18, 2.6, 2.4, C('#241c14'));
+    for (let k = 0; k < 5; k++) g.rect(11 + k * 2, 23, 1, 3, boneD);
+    g.thick(24, 20, 34, 24, 3, boneD);
+    /* a horn, from whatever it was */
+    g.thick(9, 11, 2, 4, 2, boneD);
+    g.thick(23, 11, 30, 4, 2, boneD);
+  } else {
+    /* a long bone and a shard, dropped where they fell */
+    g.thick(4, 22, 30, 18, 4, boneD);
+    g.disc(4, 22, 3.4, bone); g.disc(30, 18, 3.4, bone);
+    g.disc(3, 20, 2.4, bone); g.disc(31, 20, 2.4, bone);
+    g.thick(20, 25, 36, 23, 2, boneX);
+  }
+  for (let k = 0; k < 8; k++) g.set(r.i(0, 39), r.i(20, 25), C('#d9bd7e'));
+  g.outline(C('#3a3020'));
+  return g;
+}
+/* the sphinx that asks the question, cut in stone beside the road */
+function sphinxStatueSprite() {
+  const g = new Pix(58, 46), r = new RNG(2100);
+  const stone = C('#c9a06a'), stoneD = C('#9c7844'), stoneL = C('#e0bd86');
+  const by = 40;
+  /* the plinth */
+  g.rect(2, by + 1, 54, 5, stoneD);
+  g.rect(2, by + 1, 54, 1, stoneL);
+  /* the lion body */
+  g.ell(24, by - 8, 20, 9, stone);
+  g.ell(20, by - 12, 15, 5, stoneL);
+  g.ell(8, by - 7, 8, 7, stoneD);
+  for (const oy of [-4, 1]) {
+    g.rect(36, by - 6 + oy, 16, 5, stone);
+    g.rect(36, by - 6 + oy, 16, 1, stoneL);
+    for (let k = 0; k < 3; k++) g.rect(49 + k, by - 3 + oy, 1, 3, stoneD);
+  }
+  /* the headdress and face */
+  const hx = 40, hy = by - 26;
+  g.poly([[hx - 11, hy - 8], [hx + 11, hy - 8], [hx + 12, hy + 10], [hx + 6, hy + 10],
+          [hx + 6, hy + 1], [hx - 6, hy + 1], [hx - 6, hy + 10], [hx - 12, hy + 10]], C('#3f5f9e'));
+  for (let k = 0; k < 5; k++) {
+    g.rect(hx - 12, hy - 7 + k * 3, 6, 1, C('#e0b040'));
+    g.rect(hx + 6, hy - 7 + k * 3, 6, 1, C('#e0b040'));
+  }
+  g.ell(hx, hy, 6, 7, stone);
+  g.ell(hx, hy - 2, 5, 4, stoneL);
+  g.rect(hx - 4, hy - 1, 3, 2, C('#241c14'));
+  g.rect(hx + 2, hy - 1, 3, 2, C('#241c14'));
+  g.rect(hx - 2, hy + 4, 4, 1, stoneD);
+  g.rect(hx - 1, hy + 6, 3, 5, C('#3f5f9e'));
+  /* the cobra on the brow */
+  g.poly([[hx - 1, hy - 8], [hx + 1, hy - 8], [hx + 2, hy - 13], [hx - 2, hy - 13]], C('#e0b040'));
+  g.disc(hx, hy - 14, 2.4, C('#3f7f5a'));
+  /* weathering */
+  for (let k = 0; k < 24; k++) g.set(r.i(4, 53), r.i(10, by), r.bool(0.5) ? stoneD : stoneL);
+  g.shade({ top: 0.10, bot: 0.16 });
+  g.outline(C('#1c1408'));
+  return g;
+}
+/* ============================================================
+   THE POUCH AND WHAT GOES IN IT
+   ============================================================ */
+function pouchIconSprite() {
+  const g = new Pix(22, 22);
+  const hide = C('#8a5f36'), hideD = C('#5c3d21'), hideL = C('#b4835010'.slice(0, 7));
+  const cord = C('#c9a06a'), gold = C('#e0b040');
+  /* a drawstring bag, fat at the bottom */
+  g.ell(11, 14, 8, 7, hideD);
+  g.ell(11, 14, 7, 6, hide);
+  g.ell(9, 12, 4, 3, C('#a4713f'));
+  /* the neck, gathered */
+  g.rect(7, 5, 8, 4, hideD);
+  g.rect(8, 5, 6, 3, hide);
+  for (let k = 0; k < 4; k++) g.rect(8 + k * 2, 5, 1, 4, hideD);
+  /* the cord */
+  g.rect(5, 6, 12, 1, cord);
+  g.set(4, 7, cord); g.set(17, 7, cord);
+  g.set(3, 8, cord); g.set(18, 8, cord);
+  /* something bright inside, showing at the mouth */
+  g.set(10, 4, gold); g.set(12, 4, gold); g.set(11, 3, C('#f6d878'));
+  g.outline(C('#2a1a0e'));
+  return g;
+}
+function artifactIcon(key) {
+  const g = new Pix(16, 16);
+  const gold = C('#e0b040'), goldD = C('#9c7418'), goldL = C('#f6d878');
+  const lapis = C('#2f5fb0'), lapisL = C('#5f9fe0');
+  if (key === 'ring') {
+    g.ell(8, 9, 6, 6, goldD);
+    g.ell(8, 9, 4, 4, [0, 0, 0, 0]);
+    g.ell(8, 8, 5.4, 5.4, gold);
+    g.ell(8, 9, 4, 4, [0, 0, 0, 0]);
+    g.ell(8, 3, 4, 3.4, goldL);
+    g.ell(8, 3, 2.4, 2, lapis);
+    g.set(7, 2, lapisL); g.set(9, 3, C('#ffffff'));
+  } else if (key === 'scarab') {
+    g.ell(8, 9, 6, 5, C('#3f7f5a'));
+    g.ell(8, 8, 5, 3.6, C('#6fb98a'));
+    g.rect(8, 4, 1, 10, C('#255239'));
+    g.ell(8, 4, 2.6, 2, C('#255239'));
+    g.disc(8, 8, 2, gold);
+    for (let k = 0; k < 3; k++) { g.set(2 + k, 7 + k, C('#255239')); g.set(13 - k, 7 + k, C('#255239')); }
+  } else if (key === 'frostbead') {
+    g.disc(8, 8, 6, C('#3f7f9e'));
+    g.disc(8, 8, 4.6, C('#8fd0e8'));
+    g.disc(6.6, 6.6, 2, C('#dff4ff'));
+    for (let k = 0; k < 6; k++) {
+      const a = k / 6 * TAU;
+      g.set(8 + Math.cos(a) * 5, 8 + Math.sin(a) * 5, C('#ffffff'));
+    }
+  } else if (key === 'emberchip') {
+    g.poly([[8, 1], [13, 8], [8, 15], [3, 8]], C('#8a2410'));
+    g.poly([[8, 3], [11, 8], [8, 13], [5, 8]], C('#ff7a2a'));
+    g.poly([[8, 5], [9.6, 8], [8, 11], [6.4, 8]], C('#ffd06a'));
+    g.set(8, 8, C('#fff0b0'));
+  } else if (key === 'feather') {
+    g.thick(5, 14, 11, 3, 1, C('#8a8474'));
+    for (let k = 0; k < 8; k++) {
+      const t = k / 7;
+      const x = lerp(5, 11, t), y = lerp(14, 3, t);
+      const w = Math.round((1 - t) * 4 + 1);
+      g.rect(x - w, y, w, 1, k % 2 ? C('#e6edf6') : C('#c3cfe2'));
+      g.rect(x + 1, y, w, 1, k % 2 ? C('#c3cfe2') : C('#e6edf6'));
+    }
+    g.disc(11, 3, 1.4, C('#ffffff'));
+  } else if (key === 'saltvial') {
+    g.rect(6, 2, 4, 3, C('#8a8474'));
+    g.poly([[5, 5], [11, 5], [12, 14], [4, 14]], C('#a8cbd6'));
+    g.poly([[6, 8], [10, 8], [11, 13], [5, 13]], C('#f6f9ff'));
+    for (let k = 0; k < 5; k++) g.set(6 + (k % 4), 9 + (k % 4), C('#cfeaff'));
+    g.set(5, 6, C('#ffffff'));
+  } else if (key === 'ankh') {
+    g.rect(7, 6, 2, 9, C('#b4763a'));
+    g.rect(4, 8, 8, 2, C('#b4763a'));
+    g.ell(8, 4, 3, 3.4, C('#d18f4a'));
+    g.ell(8, 4, 1.4, 1.8, [0, 0, 0, 0]);
+    g.set(6, 3, C('#e8b070')); g.set(5, 8, C('#e8b070'));
+  } else {
+    /* the stone eye */
+    g.ell(8, 8, 7, 5, C('#8a8474'));
+    g.ell(8, 8, 5.6, 3.8, C('#e8dcc0'));
+    g.disc(8, 8, 3, C('#3f7f9e'));
+    g.disc(8, 8, 1.6, C('#101820'));
+    g.set(7, 7, C('#ffffff'));
+    g.rect(2, 8, 2, 1, C('#5c5648')); g.rect(12, 8, 2, 1, C('#5c5648'));
+  }
+  g.outline(C('#1c1408'));
+  return g;
+}
+/* the chest a secret room keeps its prize in */
+function relicChestSprite(open) {
+  const g = new Pix(26, 22);
+  const wood = C('#7a5230'), woodD = C('#4a3220'), woodL = C('#9c6c41');
+  const gold = C('#e0b040'), goldD = C('#9c7418');
+  g.rect(2, 10, 22, 11, wood);
+  g.rect(2, 10, 22, 1, woodL);
+  g.rect(2, 20, 22, 2, woodD);
+  for (let x = 4; x < 24; x += 5) g.rect(x, 11, 1, 9, woodD);
+  g.rect(2, 15, 22, 2, gold);
+  g.rect(11, 13, 4, 6, goldD);
+  g.set(12, 15, C('#2a1a0e')); g.set(13, 15, C('#2a1a0e'));
+  if (open) {
+    g.poly([[2, 10], [24, 10], [26, 2], [4, 2]], woodD);
+    g.poly([[4, 9], [22, 9], [24, 3], [6, 3]], wood);
+    for (let k = 0; k < 7; k++) g.disc(6 + k * 3, 9 - (k % 3), 1.4, k % 2 ? gold : C('#f6d878'));
+  } else {
+    g.ell(13, 10, 11, 5, wood);
+    g.ell(13, 9, 10, 4, woodL);
+    g.rect(2, 9, 22, 2, gold);
+  }
+  g.outline(C('#241708'));
+  return g;
+}
 function coralSprite(size, seed) {
   const r = new RNG(seed);
   const w = 22 + size * 14, h = 26 + size * 20;
@@ -3062,149 +4017,6 @@ function chainRingSprite() {
   g.outline(C('#1d222b'));
   return g;
 }
-/* ============================================================
-   THE ANCIENT WARRIORS — silhouettes for the opening story
-   ============================================================ */
-const WAR = {
-  dark: C('#171223'), mid: C('#2a2138'), lift: C('#3a2f4c'),
-  rim: C('#e0bd80'), rim2: C('#ffe6ae'),
-  cloak: [C('#4a2436'), C('#243a4a'), C('#3d3a20'), C('#3a2448')],
-  steel: C('#7f8798'), steelD: C('#454c5c'), wood: C('#4a3324')
-};
-/* a light from the left picks out the leading edge of the figure */
-function rimLight(g, side) {
-  for (let y = 0; y < g.h; y++) {
-    let first = -1;
-    for (let x = 0; x < g.w; x++) {
-      const xx = side < 0 ? x : g.w - 1 - x;
-      if (g.alphaAt(xx, y) > 160) { first = xx; break; }
-    }
-    if (first < 0) continue;
-    g.set(first, y, (y & 3) === 0 ? WAR.rim2 : WAR.rim);
-  }
-}
-function warriorSprite(kind, pose, i, n) {
-  const g = new Pix(28, 34);
-  const cx = 13, foot = 31;
-  const hip = foot - 13, sho = hip - 9, headY = sho - 4;
-  const ph = n > 1 ? i / n * TAU : 0;
-  let stepA = 0, stepB = 0, bob = 0, lean = 0, arm = 0, swing = 0, crouch = 0;
-  if (pose === 'walk') {
-    stepA = Math.sin(ph) * 5; stepB = -stepA;
-    bob = Math.abs(Math.cos(ph)) * 1.2;
-    lean = 1.4; arm = -Math.sin(ph) * 3.2;
-  } else if (pose === 'fight') {
-    const k = i / Math.max(1, n - 1);
-    swing = -2.2 + k * 3.4;              /* over the shoulder, then down */
-    stepA = 4; stepB = -3; lean = 2.6; crouch = 1.6; arm = 2;
-  } else if (pose === 'stand') {
-    bob = Math.sin(ph) * 0.8; stepA = 2; stepB = -2; arm = 0.4;
-  } else if (pose === 'point') {
-    stepA = 3; stepB = -3; lean = 0.6; arm = 6;
-  }
-  const hy = hip - bob - crouch, sy = sho - bob - crouch, hdy = headY - bob - crouch;
-  const lx = cx + lean;
-
-  /* the cloak, behind everything */
-  const back = 5 + Math.abs(stepA) * 0.5;
-  g.poly([[lx - 1, sy - 2], [lx - back - 4, hy + 6], [lx - back - 1, foot - 1],
-          [lx + 1, foot - 3], [lx + 2, hy]], WAR.cloak[kind % 4]);
-  g.poly([[lx - 1, sy - 1], [lx - back - 2, hy + 7], [lx - 1, foot - 4]], WAR.mid);
-
-  /* legs */
-  g.thick(cx, hy, cx + stepA, foot, 3, WAR.dark);
-  g.thick(cx, hy, cx + stepB, foot, 3, WAR.mid);
-  g.rect(cx + stepA - 2, foot - 1, 5, 2, WAR.dark);
-  g.rect(cx + stepB - 2, foot - 1, 5, 2, WAR.mid);
-
-  /* torso and head */
-  g.poly([[lx - 4, sy], [lx + 4, sy], [lx + 3, hy + 1], [lx - 3, hy + 1]], WAR.dark);
-  g.poly([[lx - 4, sy], [lx - 1, sy], [lx - 2, hy + 1], [lx - 3, hy + 1]], WAR.lift);
-  g.disc(lx + 1, hdy, 3.4, WAR.dark);
-  g.rect(lx - 3, hdy - 3, 8, 2, WAR.mid);        /* the brow of a helm */
-  g.set(lx + 4, hdy - 3, WAR.rim);
-  g.set(lx + 4, hdy - 2, WAR.rim);
-
-  /* the weapon arm */
-  const ax = lx + 3, ay = sy + 2;
-  const hx = ax + 5 + arm, hyy = ay + 3 - arm * 0.5;
-  g.thick(ax, ay, hx, hyy, 3, WAR.dark);
-  if (kind === 0) {
-    /* sword and a round shield */
-    const bx = hx + Math.cos(swing) * 13, by2 = hyy + Math.sin(swing) * 13;
-    g.thick(hx, hyy, bx, by2, 2, WAR.steel);
-    g.thick(hx - 1, hyy - 1, hx + 1, hyy + 1, 3, WAR.steelD);
-    g.disc(lx - 4, sy + 4, 4.6, WAR.mid);
-    g.disc(lx - 4, sy + 4, 3.4, WAR.dark);
-    g.disc(lx - 4, sy + 4, 1.3, WAR.steel);
-  } else if (kind === 1) {
-    /* a long spear, carried level or thrust */
-    const a2 = swing * 0.5 - 0.35;
-    g.thick(hx - Math.cos(a2) * 9, hyy - Math.sin(a2) * 9,
-            hx + Math.cos(a2) * 15, hyy + Math.sin(a2) * 15, 2, WAR.wood);
-    g.poly([[hx + Math.cos(a2) * 15, hyy + Math.sin(a2) * 15],
-            [hx + Math.cos(a2) * 20, hyy + Math.sin(a2) * 20 - 2],
-            [hx + Math.cos(a2) * 20, hyy + Math.sin(a2) * 20 + 2]], WAR.steel);
-  } else if (kind === 2) {
-    /* a great axe */
-    const a2 = swing - 0.2;
-    const tx = hx + Math.cos(a2) * 14, ty = hyy + Math.sin(a2) * 14;
-    g.thick(hx, hyy, tx, ty, 2, WAR.wood);
-    g.ell(tx, ty, 4.6, 3.4, WAR.steel);
-    g.ell(tx + 1.4, ty, 3.0, 2.4, WAR.dark);
-  } else {
-    /* a bow, and a short blade at the hip */
-    g.thick(hx, hyy - 7, hx + 3, hyy, 2, WAR.wood);
-    g.thick(hx + 3, hyy, hx, hyy + 7, 2, WAR.wood);
-    g.line(hx, hyy - 7, hx, hyy + 7, WAR.steelD);
-    g.thick(lx - 3, hy, lx - 6, hy + 6, 2, WAR.steelD);
-  }
-  rimLight(g, -1);
-  g.outline(C('#0b0812'));
-  return g;
-}
-/* flatten a finished sprite into a dark shape, with a hint of its own form */
-function silhouetteOf(cv, tint) {
-  const c = document.createElement('canvas');
-  c.width = cv.width; c.height = cv.height;
-  const x = c.getContext('2d');
-  x.imageSmoothingEnabled = false;
-  x.drawImage(cv, 0, 0);
-  x.globalCompositeOperation = 'source-atop';
-  x.fillStyle = tint;
-  x.fillRect(0, 0, c.width, c.height);
-  x.globalAlpha = 0.24;
-  x.drawImage(cv, 0, 0);
-  return c;
-}
-/* the islands that the warriors see from the outcrop */
-function archipelagoView() {
-  const g = new Pix(VW, 92), r = new RNG(4242);
-  const isles = [[44, 58, 34, 15], [120, 50, 26, 20], [188, 62, 40, 13],
-                 [258, 48, 22, 22], [318, 60, 32, 14], [88, 74, 20, 9], [230, 78, 24, 8]];
-  for (const [ix, iy, iw, ih] of isles) {
-    /* a peak with a green skirt and a pale beach */
-    g.ell(ix, iy + 4, iw * 0.62, 3.4, C('#e0d3a8'));
-    g.poly([[ix, iy - ih], [ix - iw / 2, iy + 3], [ix + iw / 2, iy + 3]], C('#2f4a52'));
-    g.poly([[ix, iy - ih], [ix - iw / 4, iy - ih * 0.3], [ix + iw / 4, iy - ih * 0.3]], C('#5d7a80'));
-    g.poly([[ix - iw / 2 + 2, iy + 3], [ix - iw / 6, iy - ih * 0.4], [ix + iw / 6, iy - ih * 0.4],
-            [ix + iw / 2 - 2, iy + 3]], C('#2b4a30'));
-    for (let k = 0; k < 8; k++) {
-      const x = ix + r.r(-iw / 2 + 3, iw / 2 - 3);
-      g.disc(x, iy + r.r(-2, 2), r.r(1.6, 3), C('#3d6b40'));
-    }
-  }
-  /* the sea between them */
-  for (let y = 0; y < 92; y++) {
-    const t = y / 91;
-    for (let x = 0; x < VW; x++) {
-      if (g.alphaAt(x, y) > 40) continue;
-      const band = Math.sin(x * 0.11 + y * 0.5) > 0.7 && ((x + y) & 3) === 0;
-      g.set(x, y, band ? C('#8fd0ff') : mixc(C('#1d4b80'), C('#3f8fd0'), t));
-    }
-  }
-  return g;
-}
 function mapNodeSprite(theme) {
   const g = new Pix(64, 64), r = new RNG(theme.length * 137 + 7);
   const cx = 32, cy = 30, R = 24;
@@ -3257,6 +4069,72 @@ function mapNodeSprite(theme) {
     /* a couple of fence rails */
     for (const fx of [cx - 16, cx + 16]) g.rect(fx, cy + 2, 2, 10, C('#6a4a2a'));
     g.rect(cx - 16, cy + 4, 34, 2, C('#7a5230'));
+  } else if (theme === 'frost' || theme === 'glacier' || theme === 'aurora') {
+    /* a white land under a cold sky */
+    g.disc(cx, cy, R, theme === 'aurora' ? C('#2f3a5e') : C('#8fa8c4'));
+    if (theme === 'aurora') {
+      for (let k = 0; k < 4; k++) {
+        for (let x = cx - R; x < cx + R; x++) {
+          const y = cy - 12 + k * 5 + Math.sin(x * 0.2 + k) * 3;
+          if (Math.hypot(x - cx, y - cy) <= R - 1)
+            g.set(x, y, [C('#6fd0a0'), C('#8fd0e8'), C('#a86fe0'), C('#cfeaff')][k]);
+        }
+      }
+    }
+    for (let x = cx - R; x < cx + R; x++) {
+      const h = 16 + Math.sin((x - cx) * 0.16) * 9 + Math.sin((x - cx) * 0.06) * 6;
+      for (let y = cy + 22 - h; y < cy + R; y++)
+        if (Math.hypot(x - cx, y - cy) <= R - 1)
+          g.set(x, y, (cy + 22 - h + 3 > y) ? C('#f2f7fd') : C('#c3cfe2'));
+    }
+    if (theme === 'glacier') {
+      for (let k = -2; k <= 2; k++)
+        g.poly([[cx + k * 8, cy + 18], [cx + k * 8 - 5, cy - 2], [cx + k * 8 + 5, cy + 18]], C('#8fd0e8'));
+    } else {
+      for (let k = 0; k < 5; k++) {
+        const x = cx - 16 + k * 8, y = cy + 8 + r.r(-3, 3);
+        if (Math.hypot(x - cx, y - cy) > R - 4) continue;
+        g.rect(x, y + 3, 1, 5, C('#3f5f4a'));
+        for (let t2 = 0; t2 < 3; t2++)
+          g.poly([[x, y - 5 + t2 * 4], [x - 4 + t2, y + t2 * 4], [x + 4 - t2, y + t2 * 4]], C('#2f6b46'));
+        g.set(x, y - 6, C('#ffffff'));
+      }
+    }
+    for (let k = 0; k < 14; k++) g.disc(cx + r.r(-R * 0.9, R * 0.9), cy + r.r(-R * 0.9, R * 0.4), r.r(0.7, 1.3), C('#ffffff'));
+  } else if (theme === 'dune' || theme === 'sphinx' || theme === 'suntomb') {
+    g.disc(cx, cy, R, C('#e0904a'));
+    for (let x = cx - R; x < cx + R; x++)
+      for (let y = cy - R; y < cy; y++)
+        if (Math.hypot(x - cx, y - cy) <= R) g.set(x, y, y < cy - 12 ? C('#a8664a') : C('#f0c070'));
+    /* the dunes */
+    for (let x = cx - R; x < cx + R; x++) {
+      const h = 14 + Math.sin((x - cx) * 0.1) * 7 + Math.sin((x - cx) * 0.05) * 5;
+      for (let y = cy + 22 - h; y < cy + R; y++)
+        if (Math.hypot(x - cx, y - cy) <= R - 1)
+          g.set(x, y, (cy + 22 - h + 3 > y) ? C('#f0dca8') : C('#c08c4e'));
+    }
+    if (theme === 'dune') {
+      for (const [px, ph] of [[cx - 9, 16], [cx + 9, 11]]) {
+        g.poly([[px, cy + 6 - ph], [px - ph * 0.8, cy + 6], [px + ph * 0.8, cy + 6]], C('#8a5f38'));
+        g.poly([[px, cy + 6 - ph], [px, cy + 6], [px + ph * 0.8, cy + 6]], C('#a4713f'));
+      }
+    } else if (theme === 'sphinx') {
+      /* the lion, couchant */
+      g.ell(cx - 2, cy + 8, 15, 6, C('#c9a06a'));
+      g.rect(cx + 8, cy + 6, 12, 5, C('#c9a06a'));
+      g.poly([[cx + 6, cy - 6], [cx + 18, cy - 6], [cx + 19, cy + 4], [cx + 5, cy + 4]], C('#2f5fb0'));
+      g.ell(cx + 12, cy - 1, 4, 4.6, C('#e0bd86'));
+      g.set(cx + 10, cy - 2, C('#1c1408')); g.set(cx + 14, cy - 2, C('#1c1408'));
+      g.rect(cx + 5, cy - 7, 15, 2, C('#e0b040'));
+    } else {
+      /* the tomb door, standing in the sand */
+      g.rect(cx - 9, cy - 12, 18, 24, C('#b09563'));
+      g.rect(cx - 9, cy - 12, 18, 3, C('#e0b040'));
+      g.rect(cx - 5, cy - 6, 10, 18, C('#241c14'));
+      g.rect(cx - 3, cy - 3, 2, 2, C('#2f5fb0')); g.rect(cx + 1, cy - 3, 2, 2, C('#2f5fb0'));
+      g.disc(cx, cy + 4, 2.4, C('#e0b040'));
+    }
+    for (let k = 0; k < 10; k++) g.disc(cx + r.r(-R * 0.9, R * 0.9), cy + r.r(-R * 0.9, R * 0.9), r.r(0.6, 1.2), C('#f6dca0'));
   } else if (theme === 'archipelago') {
     /* a ring of green islands in a bright sea, seen from far off */
     g.disc(cx, cy, R, C('#2f6fb0'));
@@ -3797,6 +4675,30 @@ Art.steps = function () {
     Art.angler = { anchor: { x: 16, y: 13 }, swim: frames(6, (i, n) => anglerFrame(i, n)) };
   });
   push('THE ASHEN REACH', () => {
+    Art.ui.pouch = pouchIconSprite().canvas();
+    Art.item.artifact = {};
+    for (const k of ['ring', 'scarab', 'frostbead', 'emberchip', 'feather', 'saltvial', 'ankh', 'eye'])
+      Art.item.artifact[k] = artifactIcon(k).canvas();
+    Art.item.chest = [relicChestSprite(false).canvas(), relicChestSprite(true).canvas()];
+    Art.prop.pine = [];
+    for (let i = 0; i < 3; i++) { const q = pineSprite(1301 + i); Art.prop.pine.push(prop(q, q.w / 2, q.h)); }
+    Art.prop.cactus = [];
+    for (let i = 0; i < 3; i++) { const q = cactusSprite(1311 + i); Art.prop.cactus.push(prop(q, q.w / 2, q.h)); }
+    Art.prop.bone = [];
+    for (let i = 0; i < 3; i++) { const q = boneSprite(1321 + i); Art.prop.bone.push(prop(q, q.w / 2, q.h)); }
+    Art.prop.sphinx = prop(sphinxStatueSprite(), 29, 46);
+    Art.tile.snow = []; Art.tile.snowTop = []; Art.tile.ice = [];
+    Art.tile.sandTop = []; Art.tile.tomb = []; Art.tile.tombTop = [];
+    for (let i = 0; i < 4; i++) {
+      Art.tile.snow.push(tileSnow(1201 + i, false).canvas());
+      Art.tile.snowTop.push(tileSnow(1211 + i, true).canvas());
+      Art.tile.ice.push(tileIce(1221 + i).canvas());
+      Art.tile.sandTop.push(tileSandTop(1231 + i).canvas());
+      Art.tile.tomb.push(tileTomb(1241 + i, false).canvas());
+      Art.tile.tombTop.push(tileTomb(1251 + i, true).canvas());
+    }
+    Art.tile.powder = frames(6, i => tilePowder(1261, i));
+    Art.tile.quick = frames(8, i => tileQuick(1271, i));
     Art.tile.ash = []; Art.tile.ashTop = []; Art.tile.obsid = [];
     for (let i = 0; i < 4; i++) {
       Art.tile.ash.push(tileAsh(951 + i, false).canvas());
@@ -3829,24 +4731,52 @@ Art.steps = function () {
     Art.ashTitan = mk(ashTitanFrame);
     Art.ifrit = mk(ifritFrame);
   });
-  push('THE ANCIENT WARRIORS', () => {
-    Art.intro = { anchor: { x: 13, y: 31 }, walk: [], fight: [], stand: [], point: [] };
-    for (let k = 0; k < 4; k++) {
-      Art.intro.walk.push(frames(6, (i, n) => warriorSprite(k, 'walk', i, n)));
-      Art.intro.fight.push(frames(4, (i, n) => warriorSprite(k, 'fight', i, n)));
-      Art.intro.stand.push(frames(2, (i, n) => warriorSprite(k, 'stand', i, n)));
-      Art.intro.point.push([warriorSprite(k, 'point', 0, 1).canvas()]);
-    }
-    Art.intro.isles = archipelagoView().canvas();
-    Art.intro.bear = Art.bear.walk.map(c => silhouetteOf(c, '#1a1420'));
-    Art.intro.bearRoar = Art.bear.roar.map(c => silhouetteOf(c, '#241826'));
+  push('THE WHITE SILENCE', () => {
+    const anch = { x: 48, y: 100 };
+    const mkf = (v) => ({ anchor: anch,
+                          idle: frames(4, (i, n) => frostBossFrame(v, 'idle', i, n)),
+                          attack: frames(4, (i, n) => frostBossFrame(v, 'attack', i, n)) });
+    Art.rimeColossus = mkf(0);
+    Art.frostWyrm = mkf(1);
+    Art.paleMonarch = mkf(2);
+    Art.wolf = { anchor: { x: 21, y: 27 },
+                 walk: frames(8, (i, n) => wolfFrame('walk', i, n)),
+                 charge: frames(6, (i, n) => wolfFrame('charge', i, n)),
+                 roar: [wolfFrame('roar', 0, 2).canvas(), wolfFrame('roar', 1, 2).canvas()] };
+    Art.iceWisp = { anchor: { x: 12, y: 12 }, idle: frames(8, (i, n) => iceWispFrame(i, n)) };
+    Art.yeti = { anchor: { x: 23, y: 49 },
+                 walk: frames(6, (i, n) => yetiFrame('walk', i, n)),
+                 throw: frames(5, (i, n) => yetiFrame('throw', i, n)),
+                 slam: frames(4, (i, n) => yetiFrame('slam', i, n)) };
+  });
+  push('THE GOLDEN WASTE', () => {
+    const anch = { x: 52, y: 100 };
+    const mks = (v) => ({ anchor: anch,
+                          idle: frames(4, (i, n) => sandBossFrame(v, 'idle', i, n)),
+                          attack: frames(4, (i, n) => sandBossFrame(v, 'attack', i, n)) });
+    Art.duneMaw = mks(0);
+    Art.sphinx = mks(1);
+    Art.pharaoh = mks(2);
+    Art.scarab = { anchor: { x: 17, y: 23 },
+                   walk: frames(6, (i, n) => scarabFrame('walk', i, n)),
+                   rush: frames(4, (i, n) => scarabFrame('rush', i, n)) };
+    Art.vulture = { anchor: { x: 19, y: 13 },
+                    fly: frames(6, (i, n) => vultureFrame('fly', i, n)),
+                    dive: [vultureFrame('dive', 0, 2).canvas(), vultureFrame('dive', 1, 2).canvas()] };
+    Art.mummy = { anchor: { x: 14, y: 35 },
+                  walk: frames(6, (i, n) => mummyFrame('walk', i, n)),
+                  grab: frames(4, (i, n) => mummyFrame('grab', i, n)) };
+    Art.soldier = { anchor: { x: 12, y: 33 },
+                    walk: frames(6, (i, n) => soldierFrame('walk', i, n)),
+                    thrust: frames(4, (i, n) => soldierFrame('thrust', i, n)) };
   });
   push('THE REALM', () => {
     Art.map.bg = mapBackground().canvas();
     Art.map.tutorial = mapNodeSprite('tutorial').canvas();
     Art.prop.sign = prop(signSprite(), 10, 26);
     Art.idol = { anchor: { x: 14, y: 27 }, idle: frames(6, (i, n) => idolSprite(i, n)) };
-    Art.map.node = ['forest', 'cloud', 'mush', 'shore', 'drowned', 'abyss', 'cinder', 'obsidian', 'molten']
+    Art.map.node = ['forest', 'cloud', 'mush', 'shore', 'drowned', 'abyss', 'cinder', 'obsidian', 'molten',
+                    'frost', 'glacier', 'aurora', 'dune', 'sphinx', 'suntomb']
       .map(t => mapNodeSprite(t).canvas());
     Art.map.lock = lockSprite().canvas();
     Art.map.archipelago = mapNodeSprite('archipelago').canvas();

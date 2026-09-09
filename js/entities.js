@@ -89,6 +89,8 @@ const COIN_PULL = 4.2;
 const FLIP_CD = 0.85, ROLLCUT_CD = 0.9;
 /* how long the sword must be held before the gale is ready */
 const CHARGE_FULL = 0.62;
+/* snow is measured every four pixels across a room */
+const SNOW_STEP = 4;
 
 class Player {
   constructor() {
@@ -107,6 +109,7 @@ class Player {
     this.flipCd = 0; this.rollCutCd = 0; this.chain = 0; this.chainT = 0;
     this.chargeT = 0; this.chargeCd = 0; this.chargeRang = false;
     this.wallDir = 0; this.wallT = 0; this.wallCd = 0;
+    this.sinkT = 0; this.sinkSaid = false;
     this.tapT = 0; this.flurryT = 0; this.flurryCd = 0; this.flurryHit = null;
     this.heldBy = null; this.heldT = 0; this.heldDmg = 0; this.heldPaid = 0;
     this.heldMode = 'squeeze'; this.slamDir = 0; this.slamHit = false;
@@ -159,7 +162,9 @@ class Player {
       }));
       return;
     }
-    this.burnT = Math.max(0, this.burnT - dt);
+    /* the frost bead makes the fire burn out twice as fast */
+    const fast = (G.hasArtifact && G.hasArtifact('frostbead')) ? 2 : 1;
+    this.burnT = Math.max(0, this.burnT - dt * fast);
     this.burnAcc += dt;
     /* half a heart a second, and the tuck does not turn it aside */
     while (this.burnAcc >= 1) {
@@ -319,14 +324,17 @@ class Player {
   }
   /* The windstep charm carries the dash further.  It does not bring the dash
      back any sooner: the wait is the same at every step. */
-  get dashCdMax() { return 1.15; }
+  get dashCdMax() { return 1.15 * (G.hasArtifact && G.hasArtifact('saltvial') ? 0.67 : 1); }
   get dashSpan() { return Math.min(0.34, 0.16 * (1 + this.up.dash * 0.16)); }
   /* the lodestone reaches further with every step, but never pulls harder:
      the draw itself is the same whatever you have bought */
   get magnetR() { return 62 + this.up.magnet * 24; }
   /* the whetstone bites half as deep as it used to: a step is worth half a
      point, not a whole one */
-  get atkDmg() { return 2 + Math.floor(this.up.sword * 0.5); }
+  get atkDmg() {
+    return 2 + Math.floor(this.up.sword * 0.5) +
+           (G.hasArtifact && G.hasArtifact('emberchip') ? 1 : 0);
+  }
   /* Hold the sword rather than tapping it and the blade gathers the air.
      Let go on a full charge and it goes out as a blade of wind. */
   get charged() { return this.chargeT >= CHARGE_FULL; }
@@ -492,6 +500,97 @@ class Player {
     this.vx = this.rollDir * this.speedMax * 1.75;
     G.waves.push(new AirSlash(this.cx + this.rollDir * 14, this.cy + 2, this.rollDir, this.specialDmg, 'rollcut'));
     return true;
+  }
+  /* ============================================================
+     PHASE GROUND — quicksand and powdered snow.  It looks like ground
+     and it is not.  It swallows anyone who steps on it.  The Pharaoh's
+     Ring lets you fall straight through, to whatever lies below.
+     ============================================================ */
+  updateSink(dt) {
+    const room = G.room;
+    if (room.mode !== 'side' || this.dead) { this.sinkT = 0; return; }
+    const inPhase = room.boxPhase(this.x + 2, this.y + this.h - 6, this.w - 4, 8);
+    if (!inPhase) {
+      if (this.sinkT > 0) this.sinkT = Math.max(0, this.sinkT - dt * 2.4);
+      return;
+    }
+    const ring = G.hasArtifact && G.hasArtifact('ring');
+    this.sinkT += dt;
+    const quick = room.get(Math.floor(this.cx / TILE),
+                           Math.floor((this.y + this.h - 2) / TILE)) === T_QUICK;
+    const col = quick ? ['#cfb87c', '#7d6636'] : ['#ffffff', '#c3cfe2'];
+    for (let i = 0; i < 2; i++) G.particles.push(new Particle({
+      x: this.cx + rr(-7, 7), y: this.y + this.h - rr(0, 5),
+      vx: rr(-0.7, 0.7), vy: rr(-1.2, -0.1), life: rr(0.2, 0.5),
+      col: col[0], col2: col[1], size: rr(1, 2.4), grav: 0.08
+    }));
+    if (ring) {
+      /* the ring carries you down through it, into whatever is below */
+      this.vy = Math.max(this.vy, 3.4);
+      this.vx *= 0.7;
+      if (this.sinkT > 0.55 && G.dropThroughPhase) { this.sinkT = 0; G.dropThroughPhase(quick); }
+      return;
+    }
+    /* without it the ground holds you, and it does not let go */
+    this.vy = clamp(this.vy, -0.4, 0.55);
+    this.vx *= 0.5;
+    this.grounded = false;
+    this.rollT = 0; this.spinT = 0;
+    if (this.sinkT > 0.4 && !this.sinkSaid) {
+      this.sinkSaid = true;
+      G.texts.push(new FloatText(this.cx, this.y - 6, quick ? 'SINKING' : 'GIVING WAY', '#ffd06a'));
+      Snd.hurt();
+    }
+    if (this.sinkT >= 2.0) { this.sinkT = 0; this.hp = 0; this.die(); }
+  }
+  /* Fresh snow gives under a boot.  A track stays where you walked, and the
+     drift fills it in again over the next few seconds. */
+  updateSnow(dt) {
+    const room = G.room;
+    if (!room.snow) return;
+    const step = SNOW_STEP;
+    const n = room.snow.length;
+    /* the drift creeps back */
+    room.snowFill = (room.snowFill || 0) + dt;
+    if (room.snowFill > 0.1) {
+      /* a track takes the better part of half a minute to fill in again */
+      const back = room.snowFill * 0.16;
+      room.snowFill = 0;
+      for (let i = 0; i < n; i++)
+        if (room.snow[i] < room.snowMax[i]) room.snow[i] = Math.min(room.snowMax[i], room.snow[i] + back);
+    }
+    if (this.dead) return;
+    const i0 = Math.max(0, Math.floor((this.x - 1) / step));
+    const i1 = Math.min(n - 1, Math.floor((this.x + this.w + 1) / step));
+    const foot = this.y + this.h;
+    let pushed = 0;
+    for (let i = i0; i <= i1; i++) {
+      const gy = room.snowGY[i];
+      if (gy < 0) continue;
+      if (foot < gy - room.snow[i] - 3 || foot > gy + 6) continue;
+      const was = room.snow[i];
+      if (was <= 0.2) continue;
+      room.snow[i] = 0;
+      pushed += was;
+    }
+    /* What a boot pushes out heaps up just clear of the track, never back
+       into it, so a track stays a track. */
+    if (pushed > 0) {
+      for (const j of [i0 - 1, i0 - 2, i1 + 1, i1 + 2]) {
+        if (j < 0 || j >= n || room.snowGY[j] < 0) continue;
+        const add = pushed * ((j === i0 - 1 || j === i1 + 1) ? 0.16 : 0.08);
+        room.snowMax[j] = Math.min(10, room.snowMax[j] + add);
+        room.snow[j] = Math.min(room.snowMax[j], room.snow[j] + add);
+      }
+    }
+    if (pushed > 0.6 && Math.random() < 0.7) {
+      const dir = Math.sign(this.vx) || 1;
+      for (let k = 0; k < 2; k++) G.particles.push(new Particle({
+        x: this.cx + rr(-6, 6), y: this.y + this.h - rr(0, 4),
+        vx: dir * rr(0.4, 2.0), vy: rr(-1.8, -0.3), life: rr(0.25, 0.6),
+        col: '#ffffff', col2: '#c3cfe2', size: rr(1, 2.4), grav: 0.1
+      }));
+    }
   }
   /* which side a wall stands on: +1 to the right, -1 to the left, 0 for neither */
   wallAt() {
@@ -788,6 +887,8 @@ class Player {
       this.updateTop(dt, L, Rk, U, D);
     } else this.updateSide(dt, L, Rk, U, D);
 
+    this.updateSink(dt);
+    this.updateSnow(dt);
     this.updateCape(dt);
 
     /* trail fade */
@@ -941,8 +1042,11 @@ class Player {
       else if (wantH > this.h && this.canStand()) this.setHeight(PH);
 
       /* horizontal */
-      const accel = this.grounded ? 0.30 : 0.20;
-      const fric = this.grounded ? 0.62 : 0.86;
+      /* ice gives no grip: you keep what speed you had, and you steer badly */
+      const icy = this.grounded &&
+        room.slippy(Math.floor(this.cx / TILE), Math.floor((this.y + this.h + 1) / TILE));
+      const accel = icy ? 0.09 : (this.grounded ? 0.30 : 0.20);
+      const fric = icy ? 0.985 : (this.grounded ? 0.62 : 0.86);
       const steer = (this.rollT > 0 || this.spinT > 0) ? 0 : (this.hurtT > 0 ? 0.35 : 1);
       if (dir && steer > 0 && !this.crouching) {
         this.vx = approach(this.vx, dir * this.speedMax * (this.inWater ? 0.62 : 1), accel * steer * s);
@@ -1022,7 +1126,9 @@ class Player {
             }));
           }
         } else {
-          this.vy = this.inWater ? -3.2 : -6.3;
+          /* the feather token puts more spring in a jump */
+          const lift = (G.hasArtifact && G.hasArtifact('feather')) ? -7.2 : -6.3;
+          this.vy = this.inWater ? -3.2 : lift;
           Snd.jump();
         }
         this.grounded = false; this.coyote = 0; this.jumpBuf = 0;
@@ -2464,7 +2570,8 @@ class Cinderwing extends Enemy {
       this.vy = approach(this.vy, dy / d * 2.9, 0.12 * dt * 60);
       if (Math.random() < 0.8) G.particles.push(new Particle({
         x: this.x + rr(-4, 4), y: this.y + rr(-3, 3), vx: rr(-0.3, 0.3), vy: rr(-0.6, 0),
-        life: rr(0.25, 0.6), col: '#ff7a2a', col2: '#6a1a08', size: rr(1.4, 2.8), grav: -0.02, type: 'fire'
+        life: rr(0.25, 0.6), col: this.trailCol || '#ff7a2a', col2: this.trailCol2 || '#6a1a08',
+        size: rr(1.4, 2.8), grav: -0.02, type: this.trailType || 'fire'
       }));
       if (this.stateT <= 0) { this.state = 'walk'; this.stateT = 1.3; }
     }
@@ -2825,6 +2932,30 @@ const GUARDIANS = {
     proj: { col: '#ff7a2a', col2: '#4a3a44', dmg: 4, grav: 0.04, fiery: true, snd: 'fireball' } },
   /* the last guardian: three times the health, fire that sticks, and a hand
      that takes you off the floor */
+  /* ---- the White Silence ---- */
+  rimeColossus: { art: 'rimeColossus', title: 'THE RIME COLOSSUS', hp: 190, scale: 1.4,
+    attacks: ['slam', 'volley', 'shock', 'strike'], shots: 9, spread: 2.0,
+    strikeCol: '#8fd0e8', touch: 5,
+    proj: { col: '#8fd0e8', col2: '#3f7f9e', dmg: 5, grav: 0.04, snd: 'fire' } },
+  frostWyrm: { art: 'frostWyrm', title: 'THE FROST WYRM', hp: 220, scale: 1.5,
+    attacks: ['charge', 'aimed', 'bite', 'volley'], shots: 5, spread: 1.1, touch: 6,
+    proj: { col: '#dff4ff', col2: '#4f8fb0', dmg: 6, grav: 0, home: 1.4, snd: 'fire' } },
+  paleMonarch: { art: 'paleMonarch', title: 'THE PALE MONARCH', hp: 260, scale: 1.4,
+    attacks: ['nova', 'strike', 'summon', 'grasp'], minion: 'IceWisp', brood: 3,
+    shots: 13, spread: 2.6, strikeCol: '#dff4ff', touch: 6, graspDmg: 8,
+    proj: { col: '#8fd0e8', col2: '#3f7f9e', dmg: 6, grav: 0, home: 1.0, snd: 'fire' } },
+  /* ---- the Golden Waste ---- */
+  duneMaw: { art: 'duneMaw', title: 'THE DUNE MAW', hp: 300, scale: 1.3,
+    attacks: ['bite', 'quake', 'volley', 'aimed'], shots: 9, spread: 2.2, touch: 6,
+    proj: { col: '#e0bd86', col2: '#8a6a3a', dmg: 6, grav: 0.05, snd: 'gulp' } },
+  sphinx: { art: 'sphinx', title: 'THE SPHINX', hp: 340, scale: 1.3,
+    attacks: ['strike', 'nova', 'summon', 'charge'], minion: 'Scarab', brood: 4,
+    shots: 12, spread: 2.6, strikeCol: '#e0b040', touch: 6,
+    proj: { col: '#f6d878', col2: '#9c7418', dmg: 6, grav: 0, home: 1.2, snd: 'fire' } },
+  pharaoh: { art: 'pharaoh', title: 'THE PHARAOH', hp: 420, scale: 1.4,
+    attacks: ['army', 'brand', 'nova', 'strike', 'grasp'], minion: 'Soldier', brood: 5,
+    shots: 15, spread: 2.9, strikeCol: '#f6d878', touch: 6, graspDmg: 10,
+    proj: { col: '#f6d878', col2: '#9c7418', dmg: 6, grav: 0, home: 1.1, fiery: true, snd: 'fireball' } },
   ifrit: { art: 'ifrit', title: 'IFRIT, THE MOLTEN CROWN', hp: 504, scale: 1.9,
     attacks: ['volley', 'nova', 'charge', 'strike', 'brand', 'grasp'],
     shots: 11, spread: 2.8, strikeCol: '#ffd06a', touch: 4,
@@ -3025,7 +3156,7 @@ class Guardian extends Enemy {
           for (let k = 0; k < n; k++) {
             const bx = clamp(p.cx + (k ? rr(-70, 70) : 0), 30, G.room.pxW() - 30);
             const by = p.cy + (k ? rr(-16, 16) : 0);
-            G.waves.push(new Maw(bx, by, cfg.touch || 6));
+            G.waves.push(new Maw(bx, by, cfg.touch || 6, cfg.proj.col, cfg.proj.col2));
           }
           Snd.gulp(); G.shake(4);
         }
@@ -3051,10 +3182,31 @@ class Guardian extends Enemy {
         this.mode = 'attack';
         if (!this.grasped && this.stateT < 1.4) {
           this.grasped = true;
-          G.waves.push(new GrabHand(this, p.cx, p.cy, 10));
+          G.waves.push(new GrabHand(this, p.cx, p.cy, cfg.graspDmg || 10,
+                                    cfg.proj.col, cfg.proj.col2));
           Snd.charge(); G.shake(4);
         }
         if (this.stateT <= 0) this.grasped = false;
+        break;
+      }
+      /* the Pharaoh calls up a rank of the household guard */
+      case 'army': {
+        this.mode = 'attack';
+        this.shotT -= dt;
+        if (this.shotT <= 0 && this.brood < cfg.brood + this.phase) {
+          this.shotT = 0.34; this.brood++;
+          const side = this.brood % 2 ? 1 : -1;
+          const sx = clamp(this.x + side * (60 + this.brood * 22), 40, G.room.pxW() - 40);
+          const sy = G.room.groundBelow(sx, this.y - 60);
+          const sd = new Soldier(sx, sy);
+          sd.face = sx > p.cx ? -1 : 1;
+          G.enemies.push(sd);
+          Snd.charge(); G.shake(3);
+          for (let k = 0; k < 18; k++) G.particles.push(new Particle({
+            x: sx + rr(-10, 10), y: sy, vx: rr(-2, 2), vy: rr(-3, -0.4), life: rr(0.3, 0.7),
+            col: '#f6d878', col2: '#9c7418', size: rr(1, 2.6), grav: 0.16
+          }));
+        }
         break;
       }
       /* the Forgefiend beats the floor, and fire walks out of it */
@@ -3106,7 +3258,8 @@ class Guardian extends Enemy {
         this.shotT -= dt;
         if (this.shotT <= 0 && this.brood < cfg.brood + this.phase - 1) {
           this.shotT = 0.5; this.brood++;
-          const Ctor = { Jelly: Jelly, Emberling: Emberling }[cfg.minion];
+          const Ctor = { Jelly: Jelly, Emberling: Emberling, IceWisp: IceWisp,
+                         Scarab: Scarab, Soldier: Soldier }[cfg.minion];
           const m = new Ctor(this.x + rr(-40, 40), this.y - 40);
           m.vy = -3;
           G.enemies.push(m);
@@ -3166,6 +3319,206 @@ class Guardian extends Enemy {
     if (alpha < 1) c2.globalAlpha = alpha;
     this.drawFlash(c2, img, this.x, this.y, a.x, a.y, this.face > 0, this.scale);
     c2.restore();
+  }
+}
+
+/* ============================================================
+   THE CREATURES OF THE WHITE SILENCE AND THE GOLDEN WASTE
+   Each keeps the habits of a creature you already know, and
+   wears its own coat.
+   ============================================================ */
+
+/* a snow wolf: leaner and faster than a bear, and it howls first */
+class Wolf extends Bear {
+  constructor(x, y) {
+    super(x, y);
+    this.w = 34; this.h = 18;
+    this.hp = 7; this.damage = 3; this.coinDrop = ri(10, 16);
+    this.blood = '#c8d2e2'; this.speed = 0.7; this.swims = false;
+  }
+  draw(c2) {
+    let img;
+    if (this.state === 'roar') img = Art.wolf.roar[this.frame % 2];
+    else if (this.state === 'charge') img = Art.wolf.charge[this.frame % 6];
+    else img = Art.wolf.walk[this.frame % 8];
+    const a = Art.wolf.anchor;
+    this.drawFlash(c2, img, this.x, this.y, a.x, a.y, this.face < 0);
+  }
+}
+/* a shard of cold that hangs in the air and spits ice */
+class IceWisp extends Wisp {
+  constructor(x, y) {
+    super(x, y);
+    this.w = 20; this.h = 20;
+    this.hp = 6; this.damage = 3; this.coinDrop = ri(9, 14); this.blood = '#8fd0e8';
+  }
+  box() { return { x: this.x - 10, y: this.y - 10, w: 20, h: 20 }; }
+  draw(c2) {
+    const a = Art.iceWisp.anchor;
+    const f = Art.iceWisp.idle[Math.floor(this.animT / 0.09) % 8];
+    c2.save();
+    c2.globalCompositeOperation = 'lighter';
+    c2.globalAlpha = 0.20 + Math.sin(this.t * 3) * 0.06;
+    c2.fillStyle = '#8fd0e8';
+    c2.beginPath(); c2.arc(Math.round(this.x), Math.round(this.y), 17, 0, TAU); c2.fill();
+    c2.restore();
+    this.drawFlash(c2, f, this.x, this.y, a.x, a.y, false);
+  }
+}
+/* a yeti: it hits the ground the way a golem does, and it throws snow */
+class Yeti extends Golem {
+  constructor(x, y) {
+    super(x, y);
+    this.w = 34; this.h = 44;
+    this.hp = 14; this.damage = 6; this.coinDrop = ri(16, 24); this.blood = '#c8d2e2';
+    this.speed = 0.3;
+  }
+  draw(c2) {
+    const a = Art.yeti.anchor;
+    let set = Art.yeti.walk, len = 6;
+    if (this.state === 'wind' || this.state === 'throw') { set = Art.yeti.throw; len = 5; }
+    else if (this.state === 'slam' || this.state === 'land') { set = Art.yeti.slam; len = 4; }
+    this.drawFlash(c2, set[this.frame % len], this.x, this.y, a.x, a.y, this.face < 0);
+  }
+}
+/* a scarab: armoured like a crab, and it rushes head down */
+class Scarab extends Crab {
+  constructor(x, y) {
+    super(x, y);
+    this.w = 28; this.h = 18;
+    this.hp = 8; this.damage = 4; this.coinDrop = ri(14, 20); this.blood = '#3f7f5a';
+    this.speed = 0.7;
+  }
+  draw(c2) {
+    const a = Art.scarab.anchor;
+    const rush = this.state === 'charge' || this.state === 'rush';
+    const set = rush ? Art.scarab.rush : Art.scarab.walk;
+    this.drawFlash(c2, set[this.frame % set.length], this.x, this.y, a.x, a.y, this.face < 0);
+  }
+}
+/* a vulture: it circles, then it stoops */
+class Vulture extends Cinderwing {
+  constructor(x, y) {
+    super(x, y);
+    this.w = 22; this.h = 16;
+    this.hp = 7; this.damage = 4; this.coinDrop = ri(12, 18); this.blood = '#4a4038';
+    /* dust off its wings, not embers */
+    this.trailCol = '#d9bd7e'; this.trailCol2 = '#8a6a3a'; this.trailType = 'leaf';
+  }
+  box() { return { x: this.x - 11, y: this.y - 8, w: 22, h: 16 }; }
+  draw(c2) {
+    const a = Art.vulture.anchor;
+    const stoop = this.state === 'dive' || this.state === 'stoop';
+    const set = stoop ? Art.vulture.dive : Art.vulture.fly;
+    this.drawFlash(c2, set[this.frame % set.length], this.x, this.y, a.x, a.y, this.face < 0);
+  }
+}
+/* a mummy: slow, hard to put down, and it reaches for you */
+class Mummy extends Bear {
+  constructor(x, y) {
+    super(x, y);
+    this.w = 22; this.h = 30;
+    this.hp = 12; this.damage = 4; this.coinDrop = ri(16, 22);
+    this.blood = '#d8c9a0'; this.speed = 0.26; this.swims = false;
+  }
+  draw(c2) {
+    const a = Art.mummy.anchor;
+    const reach = this.state === 'charge' || this.state === 'roar';
+    const set = reach ? Art.mummy.grab : Art.mummy.walk;
+    this.drawFlash(c2, set[this.frame % set.length], this.x, this.y, a.x, a.y, this.face < 0);
+  }
+}
+/* One of the Pharaoh's household guard.  It closes to spear length, holds
+   there behind its shield, and drives the point home. */
+class Soldier extends Enemy {
+  constructor(x, y) {
+    super({ x: x, y: y, w: 20, h: 30, hp: 8, damage: 4, coinDrop: ri(10, 16), blood: '#c9a06a' });
+    this.face = rpick([-1, 1]); this.speed = 0.72;
+    this.state = 'walk'; this.reach = 40;
+  }
+  hurt(dmg, fx, fy, mult) {
+    /* the shield turns a blow struck from in front while it holds the line */
+    const fromFront = Math.sign(fx - this.x) === this.face;
+    super.hurt(fromFront && this.state !== 'thrust' ? Math.max(1, Math.round(dmg * 0.6)) : dmg, fx, fy, mult);
+  }
+  update(dt) {
+    this.flash = Math.max(0, this.flash - dt);
+    this.stateT -= dt;
+    this.animT += dt;
+    const p = G.player;
+    const d = p.cx - this.cx, ad = Math.abs(d);
+    if (this.state === 'walk') {
+      this.frame = Math.floor(this.animT / 0.09) % 6;
+      if (!p.dead && ad < 210 && Math.abs(p.cy - this.cy) < 44) this.face = d > 0 ? 1 : -1;
+      this.vx = this.face * this.speed;
+      if (this.grounded && this.edgeAhead()) this.turn();
+      if (ad < this.reach && !p.dead) { this.state = 'ready'; this.stateT = 0.4; this.vx = 0; }
+    } else if (this.state === 'ready') {
+      this.vx = 0;
+      this.frame = 0;
+      if (this.stateT <= 0) { this.state = 'thrust'; this.stateT = 0.34; this.hitDone = false; Snd.swing(); }
+    } else if (this.state === 'thrust') {
+      this.frame = Math.min(3, Math.floor((0.34 - this.stateT) / 0.09));
+      this.vx = this.face * 1.2;
+      if (!this.hitDone && this.stateT < 0.2) {
+        this.hitDone = true;
+        const box = { x: this.face > 0 ? this.x + this.w : this.x - 34, y: this.y - this.h + 6, w: 34, h: 14 };
+        if (!p.dead && rectsOverlap(box, { x: p.x, y: p.y, w: p.w, h: p.h }))
+          if (p.hurt(this.damage, this.cx, this.cy)) { p.vx = this.face * 4.4; p.hurtT = 0.24; }
+      }
+      if (this.stateT <= 0) { this.state = 'rest'; this.stateT = 0.5; }
+    } else {
+      this.vx = approach(this.vx, 0, 0.1 * dt * 60);
+      this.frame = 0;
+      if (this.stateT <= 0) this.state = 'walk';
+    }
+    this.physics(dt);
+    this.touchPlayer(2);
+  }
+  draw(c2) {
+    const a = Art.soldier.anchor;
+    const set = (this.state === 'thrust' || this.state === 'ready') ? Art.soldier.thrust : Art.soldier.walk;
+    this.drawFlash(c2, set[this.frame % set.length], this.x, this.y, a.x, a.y, this.face < 0);
+  }
+}
+
+/* A chest on a plinth at the end of a room under the world.  Touch it and
+   it gives up what it holds. */
+class RelicChest {
+  constructor(x, y, pool) {
+    this.x = x; this.y = y; this.pool = pool || 'sand';
+    this.open = false; this.t = 0; this.dead = false;
+  }
+  box() { return { x: this.x - 13, y: this.y - 22, w: 26, h: 22 }; }
+  update(dt) {
+    this.t += dt;
+    if (this.open) return;
+    const p = G.player;
+    if (p.dead) return;
+    if (!rectsOverlap(this.box(), { x: p.x, y: p.y, w: p.w, h: p.h })) return;
+    this.open = true;
+    G.flags['chest_' + G.roomId] = 1;
+    const key = G.rollArtifact ? G.rollArtifact(2) : null;
+    if (key) G.giveArtifact(key);
+    else { G.payOut(400, this.x, this.y - 14); G.texts.push(new FloatText(this.x, this.y - 26, 'NOTHING NEW', '#a89270')); }
+    Snd.unlock(); G.shake(6); G.flash(0.35);
+    for (let i = 0; i < 40; i++) G.particles.push(new Particle({
+      x: this.x + rr(-10, 10), y: this.y - 12, vx: rr(-2.4, 2.4), vy: rr(-4, -0.4),
+      life: rr(0.4, 1), col: rpick(['#e0b040', '#f6d878', '#ffffff']), col2: '#9c7418',
+      size: rr(1, 2.8), grav: 0.14
+    }));
+  }
+  draw(c2) {
+    const img = Art.item.chest[this.open ? 1 : 0];
+    const bob = this.open ? 0 : Math.sin(this.t * 2) * 0.8;
+    if (!this.open) {
+      c2.save(); c2.globalCompositeOperation = 'lighter';
+      c2.globalAlpha = 0.14 + Math.sin(this.t * 3) * 0.06;
+      c2.fillStyle = '#e0b040';
+      c2.beginPath(); c2.arc(Math.round(this.x), Math.round(this.y - 12), 24, 0, TAU); c2.fill();
+      c2.restore();
+    }
+    blit(c2, img, this.x, this.y + bob, 13, 22);
   }
 }
 
@@ -3536,8 +3889,9 @@ class Tentacle {
 /* The Leviathan's jaws.  They open where you stand, hold a moment, then
    snap shut.  Step out of them and they close on nothing. */
 class Maw {
-  constructor(x, y, dmg) {
+  constructor(x, y, dmg, col, col2) {
     this.x = x; this.y = y; this.dmg = dmg || 6;
+    this.col = col || '#8fd0c0'; this.col2 = col2 || '#1d5a5a';
     this.t = 0; this.life = 1.05; this.dead = false; this.hit = false;
     this.open = 0.52;                 /* the jaws hang open this long */
     this.rw = 34; this.rh = 40;
@@ -3557,7 +3911,7 @@ class Maw {
       Snd.gulp(); G.shake(6);
       for (let i = 0; i < 20; i++) G.particles.push(new Particle({
         x: this.x + rr(-this.rw, this.rw), y: this.y + rr(-8, 8), vx: rr(-3, 3), vy: rr(-3, 1),
-        life: rr(0.2, 0.5), col: '#8fd0c0', col2: '#1d5a5a', size: rr(1, 2.8), grav: 0.14
+        life: rr(0.2, 0.5), col: this.col, col2: this.col2, size: rr(1, 2.8), grav: 0.14
       }));
     }
     if (this.life <= 0) this.dead = true;
@@ -3574,14 +3928,14 @@ class Maw {
     c2.save();
     c2.globalAlpha = Math.min(1, fade * 1.6);
     /* the dark of the throat between the jaws */
-    c2.fillStyle = '#0d2226';
+    c2.fillStyle = '#0d1216';
     c2.beginPath();
     c2.ellipse(Math.round(this.x), Math.round(this.y), this.rw * 0.8, this.rh * g * 0.8, 0, 0, TAU);
     c2.fill();
     /* two rows of teeth, closing on each other */
     for (const side of [-1, 1]) {
       const jy = this.y + side * this.rh * g;
-      c2.fillStyle = '#1d5a5a';
+      c2.fillStyle = this.col2;
       c2.fillRect(Math.round(this.x - this.rw), Math.round(jy - 4), this.rw * 2, 8);
       c2.fillStyle = '#f2f6ea';
       for (let k = 0; k < 9; k++) {
@@ -3597,7 +3951,7 @@ class Maw {
     /* the warning ring while the jaws still hang open */
     if (this.t < this.open) {
       c2.globalAlpha = 0.5 + Math.sin(this.t * 26) * 0.3;
-      c2.strokeStyle = '#8fd0c0';
+      c2.strokeStyle = this.col;
       c2.lineWidth = 1;
       c2.strokeRect(Math.round(this.x - this.rw), Math.round(this.y - this.rh),
                     this.rw * 2, this.rh * 2);
@@ -3659,7 +4013,8 @@ class FireLash {
 /* Ifrit's burning hand.  It reaches out for you and closes on whatever it
    touches.  Stay out of its way and it grasps nothing. */
 class GrabHand {
-  constructor(owner, tx, ty, dmg) {
+  constructor(owner, tx, ty, dmg, col, col2) {
+    this.col = col || '#ff7a2a'; this.col2 = col2 || '#8a2410';
     this.owner = owner;
     this.x = owner.x + owner.face * 22 * (owner.scale || 1);
     this.y = owner.y - 44 * (owner.scale || 1);

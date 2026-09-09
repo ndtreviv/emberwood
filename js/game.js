@@ -10,7 +10,7 @@ const G = {
   enemies: [], coins: [], projectiles: [], particles: [], texts: [], items: [],
   lifts: [], hazards: [],
   cam: { x: 0, y: 0, ax: 0, ay: 0 },
-  shakeAmt: 0, flashAmt: 0, fadeBlack: 0, hitStopT: 0,
+  shakeAmt: 0, flashAmt: 0, hitStopT: 0,
   stats: { coins: 0, kills: 0, time: 0, deaths: 0 },
   clickAttack: false,
   bossFight: false, boss: null,
@@ -120,13 +120,17 @@ function packSave() {
     quests: { claimed: (G.quests && G.quests.claimed) || {},
               daily: (G.quests && G.quests.daily) || null },
     comboBest: G.comboBest || 0,
+    buried: G.buried || null,
+    artifacts: { owned: Object.assign({}, (G.artifacts && G.artifacts.owned) || {}),
+                 slots: ((G.artifacts && G.artifacts.slots) || [null, null, null]).slice() },
+    wardrobe: Object.assign({}, (G.wardrobe && G.wardrobe.owned) || {}),
     tut: G.tut, stats: G.stats
   };
 }
 function readSlot(i) { return Store.read(SAVE_KEY + i, null); }
 function writeSlot(i, data) { Store.write(SAVE_KEY + i, data); }
 G.saveGame = function () {
-  if (G.state === 'load' || G.state === 'title' || G.state === 'intro' || G.state === 'files') return;
+  if (G.state === 'load' || G.state === 'title' || G.state === 'wardrobe' || G.state === 'files') return;
   if (!G.player) return;
   saveLevelState();
   writeSlot(G.slot, packSave());
@@ -155,7 +159,7 @@ function applySave(d) {
   G.codes.used = d.codes && d.codes.used || {};
   G.codes.tickets = (d.codes && d.codes.tickets) || 0;
   G.codes.admin = !!(d.codes && d.codes.admin);
-  G.profile = Object.assign({ hair: 0, hairCol: 0, outfit: 0, tee: 0, cape: 'none' }, d.profile || {});
+  G.profile = Object.assign({ hair: 0, hairCol: 0, outfit: 0, tee: 0, cape: 'none', suit: 'none' }, d.profile || {});
   G.gulletVisits = d.gulletVisits || 0;
   G.unlockedHair = Object.assign({}, d.unlockedHair || {});
   Art.lockExtraHair();
@@ -163,8 +167,24 @@ function applySave(d) {
   G.quests = { claimed: (d.quests && d.quests.claimed) || {},
                daily: (d.quests && d.quests.daily) || null };
   G.comboBest = d.comboBest || 0;
+  {
+    const sl = (d.artifacts && d.artifacts.slots) || [];
+    G.artifacts = { owned: (d.artifacts && d.artifacts.owned) || {},
+                    slots: [sl[0] || null, sl[1] || null, sl[2] || null] };
+    /* never wear what is not owned, and never wear one twice */
+    const seen = {};
+    for (let i = 0; i < ARTIFACT_SLOTS; i++) {
+      const k = G.artifacts.slots[i];
+      if (!k || !artifactBy(k) || !G.artifacts.owned[k] || seen[k]) G.artifacts.slots[i] = null;
+      else seen[k] = 1;
+    }
+  }
+  G.wardrobe = { owned: d.wardrobe || {} };
+  G.buried = d.buried || null;
+  G.surfacing = null;
   G.tut = Object.assign({ move: 0, fight: 0, swim: 0, dash: 0, pierce: 0, climb: 0, parry: 0 }, d.tut || {});
   G.stats = Object.assign({ coins: 0, kills: 0, time: 0, deaths: 0 }, d.stats || {});
+  try { G.applyArtifacts(); } catch (e) { console.error('artifacts', e); }
   try { applyProfile(); } catch (e) { console.error('profile', e); }
   if (G.codes.admin) { try { Art.buildGold(); } catch (e) { /* art may not be up yet */ } }
 }
@@ -172,8 +192,8 @@ function applySave(d) {
    three chapters, the two papers hidden in each of them, and every upgrade
    level at its full nine-realm cap, relics included. */
 function slotTally(d) {
-  const realms = World.LEVELS.length;              /* 3 chapters x 3 realms */
-  const papers = World.CODES.length;               /* 2 in every realm */
+  const realms = World.LEVELS.length;              /* five chapters, three realms each */
+  const papers = World.CODES.length;               /* two in every realm */
   let cap = 0, have = 0;
   for (const it of SHOP_ITEMS) {
     if (it.key === 'tonic') continue;              /* a drink, not progress */
@@ -223,7 +243,7 @@ G.goldAdmin = function () {
     p.up[it.key] = shopMax(it);
   }
   p.up.heart = shopMax(SHOP_ITEMS[0]);
-  p.maxHp = 6 + p.up.heart * 2;
+  p.maxHp = 6 + p.up.heart * 2 + (G.hasArtifact('ankh') ? 2 : 0);
   p.hp = p.maxHp;
   G.codes.tickets += 99;
   try { Art.buildGold(); } catch (err) { console.error('gold avatar', err); }
@@ -310,7 +330,8 @@ G.coinBonus = function () {
 G.comboMult = function () { return 1 + Math.min(2, Math.floor(G.combo / 4) * 0.5); };
 G.coinScale = function () {
   const lv = World.LEVELS[G.level];
-  return (lv && lv.coinScale) || 1;
+  /* the scarab charm pays a quarter more on every kill */
+  return ((lv && lv.coinScale) || 1) * (G.hasArtifact('scarab') ? 1.25 : 1);
 };
 G.purse = function () { return G.codes.admin ? INF : String(G.player.coins); };
 G.spawnCoin = function (x, y, vx, vy, still, si, value) {
@@ -361,6 +382,92 @@ G.needsBubble = function () {
   if (G.roomId === 'gullet') return true;
   return World.chapterOf(G.level) === 1;
 };
+/* ============================================================
+   FALLING THROUGH THE WORLD.  Quicksand and powdered snow only
+   let a ring bearer through.  What is under them is a room of
+   its own, and a door at its end puts you back on the surface.
+   ============================================================ */
+G.dropThroughPhase = function (quick) {
+  if (G.trans || G.buried) return;
+  const p = G.player;
+  G.buried = { roomId: G.roomId, level: G.level, x: p.x, y: p.y - 20 };
+  Snd.door(); G.flash(0.4); G.shake(5);
+  for (let i = 0; i < 30; i++) G.particles.push(new Particle({
+    x: p.cx + rr(-12, 12), y: p.y + p.h, vx: rr(-2, 2), vy: rr(-3, -0.4), life: rr(0.3, 0.8),
+    col: quick ? '#cfb87c' : '#ffffff', col2: quick ? '#7d6636' : '#c3cfe2',
+    size: rr(1, 2.8), grav: 0.16
+  }));
+  G.enterRoom(quick ? 'secretSand' : 'secretSnow', null);
+  G.banner(quick ? 'THE SAND GIVES WAY' : 'THE DRIFT GIVES WAY', 2.6);
+};
+/* The way back up.  The door heaves itself out of the ground, the hero
+   steps through it, and the ground takes it back. */
+G.leaveSecret = function () {
+  if (G.trans) return;
+  /* A save loaded inside a buried room remembers no way back.  The door still
+     works: it puts you out at the head of the realm you were in. */
+  const b = G.buried || { roomId: (World.LEVELS[G.level] || World.LEVELS[0]).start,
+                          level: G.level, x: null, y: null };
+  G.buried = null;
+  Snd.door();
+  G.trans = { t: 0, phase: 'out', dur: 0.42, id: b.roomId, surface: b,
+              exit: b.x === null ? null : { spawnAt: { x: b.x, y: b.y } } };
+};
+const SURFACE_DUR = 2.6;
+function updateSurfacing(dt) {
+  const S = G.surfacing;
+  if (!S) return;
+  S.t += dt;
+  const p = G.player;
+  /* held in place while the door comes up and lets you out */
+  if (S.t < 1.5) { p.vx = 0; p.vy = 0; p.x = S.x - p.w / 2; p.y = S.y - p.h; }
+  if (Math.random() < dt * 40) G.particles.push(new Particle({
+    x: S.x + rr(-18, 18), y: S.y - rr(0, 4), vx: rr(-1, 1), vy: rr(-1.6, -0.2),
+    life: rr(0.3, 0.8), col: '#e0d3a8', col2: '#a8894f', size: rr(1, 2.4), grav: 0.12
+  }));
+  if (S.t >= SURFACE_DUR) G.surfacing = null;
+}
+function drawSurfacing(camX, camY) {
+  const S = G.surfacing;
+  if (!S) return;
+  const x = Math.round(S.x - camX), y = Math.round(S.y - camY);
+  /* three beats: the door rises, it stands open, the ground swallows it */
+  let up;
+  if (S.t < 0.9) up = clamp(S.t / 0.9, 0, 1);
+  else if (S.t < 1.7) up = 1;
+  else up = clamp(1 - (S.t - 1.7) / 0.9, 0, 1);
+  const h = Math.round(46 * up);
+  if (h <= 0) return;
+  ctx.save();
+  /* the sand heaped round its foot */
+  ctx.fillStyle = '#c9a86a';
+  ctx.beginPath(); ctx.ellipse(x, y, 26, 6, 0, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#e0d3a8';
+  ctx.beginPath(); ctx.ellipse(x, y - 1, 22, 4, 0, 0, TAU); ctx.fill();
+  /* the door itself, clipped to whatever has come up so far */
+  ctx.beginPath(); ctx.rect(x - 20, y - h, 40, h); ctx.clip();
+  ctx.fillStyle = '#7b6338';
+  ctx.fillRect(x - 17, y - 46, 34, 46);
+  ctx.fillStyle = '#b09563';
+  ctx.fillRect(x - 15, y - 44, 30, 44);
+  ctx.fillStyle = '#e0b040';
+  ctx.fillRect(x - 17, y - 46, 34, 3);
+  ctx.fillRect(x - 17, y - 30, 34, 2);
+  /* the dark of the way through */
+  const openK = clamp((S.t - 0.9) / 0.4, 0, 1) * clamp((1.9 - S.t) / 0.3, 0, 1);
+  ctx.fillStyle = '#1a1208';
+  ctx.fillRect(x - 10, y - 36, Math.round(20 * clamp(openK, 0, 1)), 36);
+  ctx.fillStyle = '#2f5fb0';
+  for (let k = 0; k < 3; k++) ctx.fillRect(x - 13 + k * 9, y - 26, 4, 4);
+  ctx.restore();
+  /* the hero stepping out, drawn over the door while it stands */
+  if (S.t > 0.9 && S.t < 1.7) {
+    const k = clamp((S.t - 0.9) / 0.8, 0, 1);
+    const px = x - 14 + k * 20;
+    const img = Art.hero.walk[Math.floor(S.t / 0.09) % 8];
+    blit(ctx, img, px, y, Art.hero.anchor.x, Art.hero.anchor.y, false);
+  }
+}
 G.enterRoom = function (id, spawn) {
   const room = World.rooms[id];
   G.room = room; G.roomId = id;
@@ -442,7 +549,15 @@ G.enterRoom = function (id, spawn) {
       case 'emberling': tough(new Emberling(sp.x, sp.y)); break;
       case 'golem': tough(new Golem(sp.x, sp.y)); break;
       case 'cinderwing': tough(new Cinderwing(sp.x, sp.y)); break;
+      case 'wolf': tough(new Wolf(sp.x, sp.y)); break;
+      case 'icewisp': tough(new IceWisp(sp.x, sp.y)); break;
+      case 'yeti': tough(new Yeti(sp.x, sp.y)); break;
+      case 'scarab': tough(new Scarab(sp.x, sp.y)); break;
+      case 'vulture': tough(new Vulture(sp.x, sp.y)); break;
+      case 'mummy': tough(new Mummy(sp.x, sp.y)); break;
+      case 'soldier': tough(new Soldier(sp.x, sp.y)); break;
       case 'idol': G.enemies.push(new Idol(sp.x, sp.y)); break;
+      case 'relicChest': if (!G.flags['chest_' + id]) G.items.push(new RelicChest(sp.x, sp.y, sp.pool)); break;
       case 'guardian': { const gd = hardenBoss(new Guardian(sp.x, sp.y, sp.key)); G.enemies.push(gd); G.boss = gd; break; }
       case 'sporeling': tough(new Sporeling(sp.x, sp.y)); break;
       case 'zeus': { const z = hardenBoss(new Zeus(sp.x, sp.y)); G.enemies.push(z); G.boss = z; break; }
@@ -461,6 +576,9 @@ G.enterRoom = function (id, spawn) {
   G.exitLock = true; G.nearExit = null;
   /* the throne room holds its breath: no music, no wind, and no dragon
      until the armour has had its say */
+  /* a gate the sphinx already opened stays open */
+  if (room.gate && G.flags.riddleDone)
+    for (let y = room.gate.y0; y <= room.gate.y1; y++) room.set(room.gate.tx, y, T_EMPTY);
   G.throne = room.dragonDrop ? { t: 0, phase: 'hush', drop: room.dragonDrop } : null;
   G.acid = room.acid ? { y: room.acid.y } : null;
   G.acidBurnT = 0;
@@ -534,6 +652,13 @@ function updateTransition(dt) {
         G.boss.hp = Math.max(1, Math.min(G.boss.maxHp, sw.bossHp));
         G.boss.awake = true; G.boss.state = 'rest'; G.boss.stateT = 1.2;
       }
+    }
+    if (tr.surface) {
+      /* coming up out of the ground: hold still while the door lets you out */
+      G.level = tr.surface.level;
+      G.surfacing = { t: 0, x: G.player.x + G.player.w / 2, y: G.player.y + G.player.h };
+      G.player.vx = 0; G.player.vy = 0;
+      G.banner('BACK ON THE SURFACE', 2.4);
     }
     if (!tr.swallow) saveLevelState();
     G.flash(0.35);
@@ -634,14 +759,13 @@ function frame(now) {
   let dt = clamp(isFinite(raw) ? raw : 0.016, 0, 0.05);
   G.dt = dt;
   G.t += dt;
-  G.fadeBlack = Math.max(0, G.fadeBlack - dt * 1.1);
 
   /* One bad frame must never kill the loop: catch it, show it, keep going. */
   try {
     updatePad();
     if (G.state === 'load') updateLoad(dt);
     else if (G.state === 'title') updateTitle(dt);
-    else if (G.state === 'intro') updateIntro(dt);
+    else if (G.state === 'wardrobe') updateWardrobe(dt);
     else if (G.state === 'files') updateFiles(dt);
     else if (G.state === 'profile') updateProfile(dt);
     else if (G.state === 'map') updateMap(dt);
@@ -715,7 +839,10 @@ function startGame(slot) {
   G.tut = { move: 0, fight: 0, swim: 0, dash: 0, pierce: 0, climb: 0, parry: 0 };
   G.relicSeen = {}; G.relicShow = null; G.swallowed = null; G.acid = null;
   G.quests = { claimed: {}, daily: null }; G.comboBest = 0; G.questsOpen = false;
-  G.profile = { hair: 0, hairCol: 0, outfit: 0, tee: 0, cape: 'none' };
+  G.artifacts = { owned: {}, slots: [null, null, null] };
+  G.pouchOpen = false; G.wardrobe = { owned: {} };
+  G.buried = null; G.surfacing = null;
+  G.profile = { hair: 0, hairCol: 0, outfit: 0, tee: 0, cape: 'none', suit: 'none' };
   G.gulletVisits = 0;
   G.unlockedHair = {}; Art.lockExtraHair();
   const d = readSlot(G.slot);
@@ -828,6 +955,7 @@ function hudBlockers() {
   else {
     out.push({ x: 4, y: 30, w: 22, h: 22 });                  /* the codes panel */
     out.push({ x: VW - 26, y: 4, w: 22, h: 22 });             /* the chart */
+    out.push(pouchRect());                                    /* the pouch */
   }
   return out;
 }
@@ -916,6 +1044,28 @@ function updatePlay(dt) {
   if (G.state === 'play' && G.roomId !== 'tutorial' && !G.shopOpen && !G.trans && ((Input.tap(mapR) && !tapOnExitBtn) || Input.actHit('map'))) {
     G.leaveLevel(); return;
   }
+  const pchR = pouchRect();
+  G.overPouchIcon = Input.over(pchR) && !G.shopOpen && !G.pouchOpen && G.roomId !== 'tutorial';
+  if (G.state === 'play' && G.roomId !== 'tutorial' && !G.shopOpen && !G.pouchOpen && !G.trans &&
+      Input.tap(pchR) && !tapOnExitBtn) {
+    G.pouchOpen = true; G.pouchSel = -1; G.pouchSlotSel = -1; Snd.ui(); Snd.musicLevel(0.16, 0.3);
+    return;
+  }
+  if (G.pouchOpen) { updatePouch(dt); return; }
+  /* the sphinx: stand at it and ask to be asked */
+  if (G.room.riddle && !G.flags.riddleDone && !G.riddleOpen && G.state === 'play' && !G.trans) {
+    const rq = G.room.riddle;
+    const near = Math.abs(G.player.cx - rq.x) < 42 && Math.abs(G.player.cy - rq.y) < 54;
+    G.nearSphinx = near;
+    const btn = near ? { x: Math.round(rq.x - 44 - G.cam.x), y: Math.round(rq.y - 74 - G.cam.y),
+                         w: 88, h: 14 } : null;
+    G.sphinxBtn = btn;
+    if (near && (Input.actHit('interact') || (btn && Input.tap(btn)))) {
+      G.riddleOpen = true; G.riddleSel = -1; G.riddleMsgT = 0; Snd.ui();
+      return;
+    }
+  } else { G.nearSphinx = false; G.sphinxBtn = null; }
+  if (G.riddleOpen) { updateRiddle(dt); return; }
   if (G.state === 'play' && !G.shopOpen && (Input.actHit('shop') || Input.hit('Escape') || (Input.tap(iconR) && !tapOnExitBtn))) {
     G.shopOpen = true; G.shopSel = -1; Snd.ui();
     Snd.musicLevel(0.16, 0.3);
@@ -993,6 +1143,7 @@ function updatePlay(dt) {
 
   updateThrone(dt);
   updateAcid(dt);
+  updateSurfacing(dt);
   checkExits();
   if (!G.trans) updateCamera(dt);
 }
@@ -1248,6 +1399,12 @@ function checkExits() {
       G.escapeGullet();
       return;
     }
+    if (ex.to === '@surface') {
+      G.nearExit = ex; G.nearExitLocked = false;
+      if (!enterPressed(ex)) continue;
+      G.leaveSecret();
+      return;
+    }
     if (ex.to === 'tutorialDone') {
       const left = G.tutLeft();
       G.nearExit = ex; G.nearExitLocked = left.length > 0;
@@ -1327,6 +1484,439 @@ function updateVictory(dt) {
     }));
   }
   if (G.victoryT > 2 && (Input.hit('Enter') || Input.hit('Space') || Input.mhit)) openMap(false);
+}
+
+/* ============================================================
+   THE WARDROBE.  Clothes cut to the pattern of each realm, sold
+   for coins out of whichever file you last played.
+   ============================================================ */
+const WARD_BOX = { x: 18, y: 12, w: 348, h: 192 };
+const WARD_PER_PAGE = 8;
+function wardRowRect(i) {
+  return { x: WARD_BOX.x + 12 + (i % 2) * 168, y: WARD_BOX.y + 34 + Math.floor(i / 2) * 30,
+           w: 160, h: 26 };
+}
+function wardBackRect() { return { x: WARD_BOX.x + 12, y: WARD_BOX.y + WARD_BOX.h - 22, w: 54, h: 16 }; }
+function wardPageRect(d) {
+  return { x: WARD_BOX.x + WARD_BOX.w - (d < 0 ? 62 : 32), y: WARD_BOX.y + WARD_BOX.h - 22, w: 26, h: 16 };
+}
+function openWardrobe(from) {
+  G.wardFrom = from || 'title';
+  G.wardPage = 0; G.wardSel = -1; G.wardMsgT = 0; G.wardT = 0;
+  if (from === 'title') {
+    /* the title screen has no file open, so it borrows the last one played */
+    const slot = clamp(Store.read(SLOT_KEY, 0) | 0, 0, SLOTS - 1);
+    const d = readSlot(slot);
+    if (!d || !d.used) { G.wardNoFile = true; }
+    else {
+      G.wardNoFile = false;
+      G.slot = slot;
+      if (!G.player) G.player = new Player();
+      G.roomFlags = {}; G.flags = {}; G.levelState = {};
+      G.codes = { found: {}, used: {}, tickets: 0, admin: false };
+      G.quests = { claimed: {}, daily: null };
+      G.artifacts = { owned: {}, slots: [null, null, null] };
+      G.wardrobe = { owned: {} };
+      applySave(d);
+    }
+  } else G.wardNoFile = false;
+  G.state = 'wardrobe';
+  G.particles.length = 0;
+}
+function wardClose() {
+  if (G.wardFrom === 'profile') { G.state = 'profile'; Snd.ui(); return; }
+  G.state = 'title'; initTitle(); Snd.ui(); Snd.play('title'); Snd.ambienceLevel(0.5, 2);
+}
+function updateWardrobe(dt) {
+  G.wardT += dt;
+  G.wardMsgT = Math.max(0, G.wardMsgT - dt);
+  G.flashAmt = Math.max(0, G.flashAmt - dt * 2.2);
+  const back = wardBackRect();
+  G.wardBackHot = Input.over(back);
+  if (Input.tap(back) || Input.hit('Escape')) { wardClose(); return; }
+  const pages = Math.ceil(SUIT_KEYS.length / WARD_PER_PAGE);
+  for (const d of [-1, 1]) {
+    const r = wardPageRect(d);
+    if (Input.tap(r)) { G.wardPage = clamp(G.wardPage + d, 0, pages - 1); G.wardSel = -1; Snd.ui(); }
+  }
+  if (Input.hit('ArrowRight')) G.wardPage = clamp(G.wardPage + 1, 0, pages - 1);
+  if (Input.hit('ArrowLeft')) G.wardPage = clamp(G.wardPage - 1, 0, pages - 1);
+  if (G.wardNoFile) return;
+  const keys = SUIT_KEYS.slice(G.wardPage * WARD_PER_PAGE, (G.wardPage + 1) * WARD_PER_PAGE);
+  G.wardSel = -1;
+  for (let i = 0; i < keys.length; i++) if (Input.over(wardRowRect(i))) G.wardSel = i;
+  if (Input.mhit && G.wardSel >= 0) {
+    const key = keys[G.wardSel], suit = SUITS[key];
+    if (G.wardrobe.owned[key]) {
+      /* owned, so the click wears it, or takes it off again */
+      G.profile.suit = (G.profile.suit === key) ? 'none' : key;
+      applyProfile();
+      G.wardMsg = G.profile.suit === key ? 'YOU PUT IT ON' : 'YOU TAKE IT OFF';
+      G.wardMsgT = 1.4;
+      Snd.buy(); G.saveGame();
+    } else if (G.codes.admin || G.player.coins >= suit.cost) {
+      if (!G.codes.admin) G.player.coins -= suit.cost;
+      G.wardrobe.owned[key] = 1;
+      G.profile.suit = key;
+      applyProfile();
+      G.wardMsg = suit.name + ' IS YOURS';
+      G.wardMsgT = 1.8;
+      Snd.buy(); G.flash(0.3); G.saveGame();
+      for (let k = 0; k < 26; k++) G.particles.push(new Particle({
+        x: rr(WARD_BOX.x, WARD_BOX.x + WARD_BOX.w), y: WARD_BOX.y + WARD_BOX.h,
+        vx: rr(-1, 1), vy: rr(-3, -0.6), life: rr(0.4, 1),
+        col: '#ffeec0', col2: '#c68e3f', size: rr(1, 2.4), grav: 0.06
+      }));
+    } else {
+      G.wardMsg = 'NOT ENOUGH COINS';
+      G.wardMsgT = 1.4;
+      Snd.uiBad();
+    }
+  }
+  for (const pa of G.particles) pa.update(dt);
+  G.particles = G.particles.filter(x => !x.dead);
+}
+function drawWardrobe() {
+  ctx.drawImage(Art.map.bg, 0, 0);
+  for (const pa of G.particles) pa.draw(ctx);
+  const B = WARD_BOX;
+  panel(ctx, B.x, B.y, B.w, B.h);
+  drawText(ctx, 'THE WARDROBE', B.x + 12, B.y + 8, '#f2e2b8', 1, 'left', '#000000');
+  drawText(ctx, 'CLOTHES CUT TO THE PATTERN OF EACH REALM',
+           B.x + B.w - 12, B.y + 8, '#a9b3c9', 1, 'right');
+  if (G.wardNoFile) {
+    drawText(ctx, 'START A FILE FIRST', B.x + B.w / 2, B.y + 84, '#ffeec0', 2, 'center', '#2a1a10');
+    drawText(ctx, 'THE WARDROBE SPENDS THE COINS OF A SAVED GAME',
+             B.x + B.w / 2, B.y + 104, '#a9b3c9', 1, 'center');
+  } else {
+    /* the purse */
+    ctx.drawImage(Art.item.coin[Math.floor(G.wardT / 0.09) % 8], B.x + 12, B.y + 18);
+    drawText(ctx, G.purse(), B.x + 26, B.y + 20, '#ffe98a', 1, 'left', '#000000');
+    drawText(ctx, 'FILE ' + (G.slot + 1), B.x + B.w - 12, B.y + 20, '#a9b3c9', 1, 'right');
+
+    const keys = SUIT_KEYS.slice(G.wardPage * WARD_PER_PAGE, (G.wardPage + 1) * WARD_PER_PAGE);
+    keys.forEach((key, i) => {
+      const suit = SUITS[key], r = wardRowRect(i);
+      const owned = !!G.wardrobe.owned[key];
+      const worn = G.profile.suit === key;
+      const afford = G.codes.admin || G.player.coins >= suit.cost;
+      const hot = G.wardSel === i;
+      ctx.fillStyle = hot ? 'rgba(74,56,34,0.96)' : 'rgba(24,18,12,0.86)';
+      ctx.fillRect(r.x, r.y, r.w, r.h);
+      ctx.fillStyle = worn ? '#6fc46a' : (owned ? '#b8862f' : (afford ? '#8a6a3a' : '#5b4a34'));
+      ctx.fillRect(r.x, r.y, r.w, 1); ctx.fillRect(r.x, r.y + r.h - 1, r.w, 1);
+      ctx.fillRect(r.x, r.y, 1, r.h); ctx.fillRect(r.x + r.w - 1, r.y, 1, r.h);
+      /* a swatch of the cloth itself */
+      ctx.fillStyle = suit.dark; ctx.fillRect(r.x + 4, r.y + 4, 18, 18);
+      ctx.fillStyle = suit.base; ctx.fillRect(r.x + 5, r.y + 5, 16, 12);
+      ctx.fillStyle = suit.light; ctx.fillRect(r.x + 5, r.y + 5, 16, 4);
+      ctx.fillStyle = suit.legs; ctx.fillRect(r.x + 5, r.y + 17, 16, 4);
+      ctx.fillStyle = suit.trim; ctx.fillRect(r.x + 5, r.y + 15, 16, 2);
+      drawText(ctx, suit.name, r.x + 27, r.y + 4, owned ? '#ffeec0' : '#d8c49a', 1, 'left');
+      drawText(ctx, suit.realm, r.x + 27, r.y + 15, '#8a94a6', 1, 'left');
+      const tag = worn ? 'WORN' : (owned ? 'OWNED' : String(suit.cost));
+      drawText(ctx, tag, r.x + r.w - 6, r.y + 9,
+               worn ? '#9be89a' : (owned ? '#b8862f' : (afford ? '#ffe98a' : '#c9403a')), 1, 'right');
+    });
+    const pages = Math.ceil(SUIT_KEYS.length / WARD_PER_PAGE);
+    for (const d of [-1, 1]) {
+      const r = wardPageRect(d);
+      const can = d < 0 ? G.wardPage > 0 : G.wardPage < pages - 1;
+      ctx.fillStyle = can ? 'rgba(58,44,28,0.9)' : 'rgba(34,26,18,0.6)';
+      ctx.fillRect(r.x, r.y, r.w, r.h);
+      drawText(ctx, d < 0 ? '<' : '>', r.x + r.w / 2, r.y + 5, can ? '#ffeec0' : '#5b4a34', 1, 'center');
+    }
+    drawText(ctx, (G.wardPage + 1) + '/' + pages, wardPageRect(-1).x - 8, WARD_BOX.y + WARD_BOX.h - 17,
+             '#a9b3c9', 1, 'right');
+  }
+  const back = wardBackRect();
+  ctx.fillStyle = G.wardBackHot ? 'rgba(74,56,34,0.96)' : 'rgba(24,18,12,0.86)';
+  ctx.fillRect(back.x, back.y, back.w, back.h);
+  ctx.fillStyle = G.wardBackHot ? '#ffd04a' : '#b8862f';
+  ctx.fillRect(back.x, back.y, back.w, 1);
+  drawText(ctx, 'BACK', back.x + back.w / 2, back.y + 5, '#ffeec0', 1, 'center');
+  if (G.wardMsgT > 0) {
+    ctx.save(); ctx.globalAlpha = Math.min(1, G.wardMsgT * 2);
+    drawText(ctx, G.wardMsg, B.x + B.w / 2, B.y + B.h - 18, '#ffd04a', 1, 'center', '#2a1a10');
+    ctx.restore();
+  }
+  if (G.flashAmt > 0) {
+    ctx.save(); ctx.globalAlpha = Math.min(1, G.flashAmt); ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, VW, VH); ctx.restore();
+  }
+}
+
+/* ============================================================
+   THE SPHINX AND ITS QUESTION.  Answer it and the gate opens
+   and the ring is yours.  Answer wrong and it costs a heart.
+   ============================================================ */
+const RIDDLES = [
+  { q: 'WHAT WALKS ON FOUR LEGS AT DAWN, TWO AT NOON, THREE AT DUSK',
+    a: ['A PERSON', 'A LION', 'THE RIVER'], right: 0 },
+  { q: 'THE MORE OF ME YOU TAKE, THE MORE YOU LEAVE BEHIND',
+    a: ['SAND', 'FOOTSTEPS', 'GOLD'], right: 1 },
+  { q: 'I HAVE CITIES BUT NO HOUSES, WATER BUT NO FISH',
+    a: ['A TOMB', 'A DREAM', 'A MAP'], right: 2 },
+  { q: 'I AM ALWAYS COMING BUT I NEVER ARRIVE',
+    a: ['TOMORROW', 'THE WIND', 'THE SEA'], right: 0 }
+];
+const RIDDLE_BOX = { x: 34, y: 40, w: 316, h: 132 };
+function riddleAnswerRect(i) {
+  return { x: RIDDLE_BOX.x + 16, y: RIDDLE_BOX.y + 54 + i * 22, w: RIDDLE_BOX.w - 32, h: 18 };
+}
+function currentRiddle() {
+  const r = G.room && G.room.riddle;
+  if (!r) return null;
+  return RIDDLES[r.seed % RIDDLES.length];
+}
+G.openGate = function () {
+  const room = G.room;
+  if (!room || !room.gate) return;
+  for (let y = room.gate.y0; y <= room.gate.y1; y++) room.set(room.gate.tx, y, T_EMPTY);
+  for (let k = 0; k < 40; k++) G.particles.push(new Particle({
+    x: room.gate.tx * TILE + 8 + rr(-6, 6), y: rr(room.gate.y0, room.gate.y1) * TILE,
+    vx: rr(-3, 3), vy: rr(-3, 1), life: rr(0.4, 1),
+    col: '#e0bd86', col2: '#8a6a3a', size: rr(1, 3), grav: 0.2
+  }));
+  Snd.boom(); G.shake(8);
+};
+function updateRiddle(dt) {
+  G.riddleT = (G.riddleT || 0) + dt;
+  const R = currentRiddle();
+  if (!R) { G.riddleOpen = false; return; }
+  G.riddleMsgT = Math.max(0, (G.riddleMsgT || 0) - dt);
+  const closeR = { x: RIDDLE_BOX.x + RIDDLE_BOX.w - 24, y: RIDDLE_BOX.y + 4, w: 20, h: 16 };
+  G.riddleClose = Input.over(closeR);
+  if (Input.tap(closeR) || Input.hit('Escape')) { G.riddleOpen = false; Snd.ui(); return; }
+  G.riddleSel = -1;
+  for (let i = 0; i < R.a.length; i++) if (Input.over(riddleAnswerRect(i))) G.riddleSel = i;
+  if (G.riddleMsgT > 0) return;
+  let pick = -1;
+  if (Input.mhit && G.riddleSel >= 0) pick = G.riddleSel;
+  if (Input.hit('Digit1')) pick = 0;
+  if (Input.hit('Digit2')) pick = 1;
+  if (Input.hit('Digit3')) pick = 2;
+  if (pick < 0) return;
+  if (pick === R.right) {
+    G.flags.riddleDone = true;
+    G.riddleMsg = 'THE SPHINX STANDS ASIDE';
+    G.riddleMsgT = 1.6;
+    G.openGate();
+    Snd.unlock();
+    if (!G.ownsArtifact('ring')) G.giveArtifact('ring');
+    else G.payOut(1200, G.player.cx, G.player.cy);
+    G.riddleOpen = false;
+    G.saveGame();
+  } else {
+    G.riddleMsg = 'WRONG. THE SPHINX TAKES ITS FEE';
+    G.riddleMsgT = 1.6;
+    Snd.uiBad();
+    const p = G.player;
+    p.invuln = 0;
+    p.hurt(4, p.cx, p.cy - 20);
+    G.shake(7);
+  }
+}
+function drawRiddle() {
+  const R = currentRiddle();
+  if (!R) return;
+  const B = RIDDLE_BOX;
+  ctx.fillStyle = 'rgba(8,6,14,0.72)';
+  ctx.fillRect(0, 0, VW, VH);
+  ctx.fillStyle = 'rgba(38,28,16,0.97)';
+  ctx.fillRect(B.x, B.y, B.w, B.h);
+  ctx.fillStyle = '#e0b040';
+  ctx.fillRect(B.x, B.y, B.w, 1); ctx.fillRect(B.x, B.y + B.h - 1, B.w, 1);
+  ctx.fillRect(B.x, B.y, 1, B.h); ctx.fillRect(B.x + B.w - 1, B.y, 1, B.h);
+  drawText(ctx, 'THE SPHINX ASKS', B.x + 12, B.y + 6, '#ffeec0', 2, 'left', '#2a1a10');
+  const closeR = { x: B.x + B.w - 24, y: B.y + 4, w: 20, h: 16 };
+  ctx.fillStyle = G.riddleClose ? '#c9403a' : 'rgba(20,14,10,0.8)';
+  ctx.fillRect(closeR.x, closeR.y, closeR.w, closeR.h);
+  drawText(ctx, 'X', closeR.x + closeR.w / 2, closeR.y + 4, '#ffeec0', 1, 'center');
+  drawText(ctx, R.q, B.x + B.w / 2, B.y + 28, '#ebdcb6', 1, 'center');
+  R.a.forEach((txt, i) => {
+    const r = riddleAnswerRect(i);
+    const hot = G.riddleSel === i;
+    ctx.fillStyle = hot ? 'rgba(74,56,34,0.96)' : 'rgba(24,18,12,0.9)';
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.fillStyle = hot ? '#ffd04a' : '#8a6a3a';
+    ctx.fillRect(r.x, r.y, r.w, 1);
+    drawText(ctx, (i + 1) + '.  ' + txt, r.x + 10, r.y + 5, hot ? '#ffeec0' : '#d8c49a', 1, 'left');
+  });
+  const foot = G.riddleMsgT > 0 ? G.riddleMsg : 'CLICK AN ANSWER, OR PRESS 1, 2 OR 3';
+  ctx.fillStyle = 'rgba(20,14,10,0.9)';
+  ctx.fillRect(B.x + 1, B.y + B.h - 15, B.w - 2, 14);
+  drawText(ctx, foot, B.x + B.w / 2, B.y + B.h - 11,
+           G.riddleMsgT > 0 ? '#ffd04a' : '#a89270', 1, 'center');
+}
+
+/* ============================================================
+   THE ARTIFACTS POUCH.  Three slots.  Whatever sits in a slot
+   works; whatever sits in the pouch does nothing.
+   ============================================================ */
+const ARTIFACTS = [
+  { key: 'ring', rank: 3, name: "THE PHARAOHS RING", short: 'THE RING',
+    desc: 'WALK THROUGH QUICKSAND AND POWDERED SNOW' },
+  { key: 'ankh', rank: 2, name: 'COPPER ANKH', short: 'ANKH', desc: 'ONE HEART MORE' },
+  { key: 'eye', rank: 2, name: 'THE STONE EYE', short: 'STONE EYE',
+    desc: 'HIDDEN GROUND GIVES OFF A SHIMMER' },
+  { key: 'scarab', rank: 1, name: 'SCARAB CHARM', short: 'SCARAB',
+    desc: 'EVERY KILL PAYS A QUARTER MORE' },
+  { key: 'frostbead', rank: 1, name: 'FROST BEAD', short: 'FROST BEAD',
+    desc: 'FIRE BURNS HALF AS LONG' },
+  { key: 'emberchip', rank: 1, name: 'EMBER CHIP', short: 'EMBER CHIP',
+    desc: 'THE BLADE BITES ONE POINT DEEPER' },
+  { key: 'feather', rank: 1, name: 'FEATHER TOKEN', short: 'FEATHER',
+    desc: 'YOU JUMP HIGHER' },
+  { key: 'saltvial', rank: 1, name: 'SALT VIAL', short: 'SALT VIAL',
+    desc: 'THE DASH RETURNS A THIRD SOONER' }
+];
+const ARTIFACT_SLOTS = 3;
+function artifactBy(key) { for (const a of ARTIFACTS) if (a.key === key) return a; return null; }
+const RANK_COL = ['#a89270', '#c9a06a', '#b9c2d0', '#e0b040'];
+const RANK_NAME = ['', 'COMMON', 'RARE', 'ROYAL'];
+
+G.hasArtifact = function (key) {
+  const a = G.artifacts;
+  return !!(a && a.slots && a.slots.indexOf(key) >= 0);
+};
+G.ownsArtifact = function (key) { return !!(G.artifacts && G.artifacts.owned[key]); };
+G.giveArtifact = function (key) {
+  const it = artifactBy(key);
+  if (!it || !G.artifacts) return false;
+  if (G.artifacts.owned[key]) return false;
+  G.artifacts.owned[key] = 1;
+  /* a free slot takes it at once, so a find is felt straight away */
+  const free = G.artifacts.slots.indexOf(null);
+  if (free >= 0) G.artifacts.slots[free] = key;
+  G.relicShow = { t: 0, name: it.name, sub: it.desc, art: Art.item.artifact[key] };
+  Snd.unlock(); G.flash(0.5);
+  G.applyArtifacts();
+  G.saveGame();
+  return true;
+};
+/* a low ranked artifact the player has not found yet, or nothing */
+G.rollArtifact = function (rank) {
+  const pool = ARTIFACTS.filter(a => a.rank <= (rank || 1) && !G.artifacts.owned[a.key]);
+  if (!pool.length) return null;
+  return pool[Math.floor(Math.random() * pool.length)].key;
+};
+G.applyArtifacts = function () {
+  const p = G.player;
+  if (!p) return;
+  /* the ankh is the only one that changes a stored number */
+  const want = 6 + (p.up.heart || 0) * 2 + (G.hasArtifact('ankh') ? 2 : 0);
+  if (p.maxHp !== want) {
+    const gain = want - p.maxHp;
+    p.maxHp = want;
+    p.hp = clamp(p.hp + Math.max(0, gain), 1, p.maxHp);
+  }
+};
+function pouchRect() { return { x: VW - 26, y: 30, w: 22, h: 22 }; }
+const POUCH_BOX = { x: 32, y: 12, w: 320, h: 192 };
+function pouchSlotRect(i) { return { x: POUCH_BOX.x + 32 + i * 86, y: POUCH_BOX.y + 32, w: 70, h: 54 }; }
+function pouchListRect(i) {
+  return { x: POUCH_BOX.x + 12 + (i % 2) * 150, y: POUCH_BOX.y + 96 + Math.floor(i / 2) * 19,
+           w: 146, h: 17 };
+}
+function ownedArtifacts() { return ARTIFACTS.filter(a => G.artifacts.owned[a.key]); }
+function updatePouch(dt) {
+  G.pouchT = (G.pouchT || 0) + dt;
+  const closeR = { x: POUCH_BOX.x + POUCH_BOX.w - 24, y: POUCH_BOX.y + 4, w: 20, h: 16 };
+  G.pouchClose = Input.over(closeR);
+  if (Input.tap(closeR) || Input.hit('Escape') || Input.actHit('shop')) {
+    G.pouchOpen = false; Snd.ui(); Snd.musicLevel(0.34, 0.4); return;
+  }
+  G.pouchSel = -1; G.pouchSlotSel = -1;
+  for (let i = 0; i < ARTIFACT_SLOTS; i++) if (Input.over(pouchSlotRect(i))) G.pouchSlotSel = i;
+  const own = ownedArtifacts();
+  for (let i = 0; i < own.length; i++) if (Input.over(pouchListRect(i))) G.pouchSel = i;
+  if (Input.mhit && G.pouchSlotSel >= 0) {
+    /* click a slot to empty it */
+    if (G.artifacts.slots[G.pouchSlotSel]) {
+      G.artifacts.slots[G.pouchSlotSel] = null;
+      Snd.ui(); G.applyArtifacts(); G.saveGame();
+    }
+  } else if (Input.mhit && G.pouchSel >= 0) {
+    const key = own[G.pouchSel].key;
+    const at = G.artifacts.slots.indexOf(key);
+    if (at >= 0) { G.artifacts.slots[at] = null; Snd.ui(); }
+    else {
+      let free = G.artifacts.slots.indexOf(null);
+      if (free < 0) free = ARTIFACT_SLOTS - 1;      /* the last slot gives way */
+      G.artifacts.slots[free] = key;
+      Snd.buy();
+    }
+    G.applyArtifacts(); G.saveGame();
+  }
+}
+function drawPouch() {
+  const B = POUCH_BOX;
+  ctx.fillStyle = 'rgba(8,6,14,0.72)';
+  ctx.fillRect(0, 0, VW, VH);
+  ctx.fillStyle = 'rgba(42,30,18,0.97)';
+  ctx.fillRect(B.x, B.y, B.w, B.h);
+  ctx.fillStyle = '#b8862f';
+  ctx.fillRect(B.x, B.y, B.w, 1); ctx.fillRect(B.x, B.y + B.h - 1, B.w, 1);
+  ctx.fillRect(B.x, B.y, 1, B.h); ctx.fillRect(B.x + B.w - 1, B.y, 1, B.h);
+  drawText(ctx, 'THE POUCH', B.x + 12, B.y + 6, '#ffeec0', 2, 'left', '#2a1a10');
+  const closeR = { x: B.x + B.w - 24, y: B.y + 4, w: 20, h: 16 };
+  ctx.fillStyle = G.pouchClose ? '#c9403a' : 'rgba(20,14,10,0.8)';
+  ctx.fillRect(closeR.x, closeR.y, closeR.w, closeR.h);
+  drawText(ctx, 'X', closeR.x + closeR.w / 2, closeR.y + 4, '#ffeec0', 1, 'center');
+  drawText(ctx, 'THREE SLOTS. WHAT SITS IN A SLOT WORKS.', B.x + 12, B.y + 22, '#a89270', 1, 'left');
+
+  /* the three slots */
+  for (let i = 0; i < ARTIFACT_SLOTS; i++) {
+    const r = pouchSlotRect(i);
+    const key = G.artifacts.slots[i];
+    const hot = G.pouchSlotSel === i;
+    ctx.fillStyle = hot ? 'rgba(74,56,34,0.96)' : 'rgba(24,18,12,0.9)';
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.fillStyle = key ? RANK_COL[artifactBy(key).rank] : (hot ? '#ffd04a' : '#6d5a38');
+    ctx.fillRect(r.x, r.y, r.w, 1); ctx.fillRect(r.x, r.y + r.h - 1, r.w, 1);
+    ctx.fillRect(r.x, r.y, 1, r.h); ctx.fillRect(r.x + r.w - 1, r.y, 1, r.h);
+    if (key) {
+      const img = Art.item.artifact[key];
+      ctx.save();
+      ctx.translate(r.x + r.w / 2, r.y + r.h / 2 - 4);
+      ctx.scale(2, 2);
+      ctx.drawImage(img, -8, -8);
+      ctx.restore();
+      drawText(ctx, artifactBy(key).short, r.x + r.w / 2, r.y + r.h - 10, '#ffeec0', 1, 'center');
+    } else {
+      drawText(ctx, 'EMPTY', r.x + r.w / 2, r.y + r.h / 2 - 3, '#6d5a38', 1, 'center');
+    }
+  }
+
+  /* everything found so far */
+  const own = ownedArtifacts();
+  if (!own.length) {
+    drawText(ctx, 'YOU CARRY NOTHING YET. LOOK UNDER THE SAND.',
+             B.x + B.w / 2, B.y + 110, '#a89270', 1, 'center');
+  }
+  own.forEach((a, i) => {
+    const r = pouchListRect(i);
+    const inSlot = G.artifacts.slots.indexOf(a.key) >= 0;
+    const hot = G.pouchSel === i;
+    ctx.fillStyle = hot ? 'rgba(74,56,34,0.96)' : 'rgba(24,18,12,0.86)';
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.fillStyle = inSlot ? '#6fc46a' : RANK_COL[a.rank];
+    ctx.fillRect(r.x, r.y, r.w, 1);
+    ctx.drawImage(Art.item.artifact[a.key], r.x + 2, r.y + 1);
+    drawText(ctx, a.short, r.x + 21, r.y + 5, inSlot ? '#9be89a' : '#ebdcb6', 1, 'left');
+    drawText(ctx, inSlot ? 'WORN' : RANK_NAME[a.rank], r.x + r.w - 5, r.y + 5,
+             inSlot ? '#9be89a' : RANK_COL[a.rank], 1, 'right');
+  });
+
+  /* the line at the foot says what the thing under the cursor does */
+  let foot = 'CLICK A FIND TO WEAR IT. CLICK A SLOT TO TAKE IT OFF.';
+  if (G.pouchSel >= 0 && own[G.pouchSel]) foot = own[G.pouchSel].desc;
+  else if (G.pouchSlotSel >= 0 && G.artifacts.slots[G.pouchSlotSel])
+    foot = artifactBy(G.artifacts.slots[G.pouchSlotSel]).desc;
+  ctx.fillStyle = 'rgba(20,14,10,0.9)';
+  ctx.fillRect(B.x + 1, B.y + B.h - 15, B.w - 2, 14);
+  drawText(ctx, foot, B.x + B.w / 2, B.y + B.h - 11, '#ffeec0', 1, 'center');
 }
 
 /* ============================================================
@@ -2044,6 +2634,135 @@ function drawBackground(camX, camY) {
       ctx.fillRect(Math.round(ex), Math.round(ey), 1, 1);
     }
     ctx.restore();
+  } else if (room.bg === 'snow') {
+    ctx.drawImage(makeSky('white', [[0, '#2f4468'], [0.30, '#5f7aa8'], [0.62, '#9fb4d0'], [1, '#dfe8f4']]), 0, 0);
+    /* the aurora, standing over the whole sky */
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 5; i++) {
+      const ph = G.t * 0.24 + i * 1.3;
+      ctx.globalAlpha = 0.07 + Math.sin(ph) * 0.03;
+      ctx.fillStyle = ['#6fd0a0', '#8fd0e8', '#a86fe0', '#6fd0a0', '#cfeaff'][i];
+      ctx.beginPath();
+      ctx.moveTo(-20, 0);
+      for (let x = -20; x <= VW + 20; x += 8)
+        ctx.lineTo(x, 24 + i * 9 + Math.sin(x * 0.02 + ph) * 12 + Math.sin(x * 0.007 - ph) * 8);
+      for (let x = VW + 20; x >= -20; x -= 8)
+        ctx.lineTo(x, 4 + i * 9 + Math.sin(x * 0.02 + ph) * 12);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+    /* a cold moon */
+    ctx.save(); ctx.globalAlpha = 0.85;
+    ctx.fillStyle = '#eef4fb';
+    ctx.beginPath(); ctx.arc(300 - camX * 0.02, 36 - camY * 0.02, 11, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#c3cfe2';
+    ctx.beginPath(); ctx.arc(303 - camX * 0.02, 33 - camY * 0.02, 3, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(297 - camX * 0.02, 40 - camY * 0.02, 2, 0, TAU); ctx.fill();
+    ctx.restore();
+    /* three ridges of white mountain */
+    for (let L = 0; L < 3; L++) {
+      const par = 0.06 + L * 0.09, base = VH - 116 + L * 22;
+      ctx.fillStyle = ['#6b7c9c', '#8fa0bc', '#c3cfe2'][L];
+      ctx.beginPath(); ctx.moveTo(0, VH);
+      for (let x = 0; x <= VW; x += 3) {
+        const u = (x + camX * par) * (0.012 + L * 0.004);
+        ctx.lineTo(x, Math.round(base - Math.sin(u) * (26 - L * 6) - Math.sin(u * 2.7) * (9 - L * 2) - camY * par));
+      }
+      ctx.lineTo(VW, VH); ctx.closePath(); ctx.fill();
+      /* the snow cap catching the light */
+      ctx.fillStyle = '#f2f7fd';
+      for (let x = 0; x <= VW; x += 3) {
+        const u = (x + camX * par) * (0.012 + L * 0.004);
+        const y = base - Math.sin(u) * (26 - L * 6) - Math.sin(u * 2.7) * (9 - L * 2) - camY * par;
+        if (Math.sin(u) > 0.5) ctx.fillRect(x, Math.round(y), 3, 3);
+      }
+    }
+    /* the snow that is still falling */
+    ctx.save();
+    for (let i = 0; i < 70; i++) {
+      const sx = (i * 83 + Math.sin(G.t * 0.5 + i) * 22 - camX * 0.2) % (VW + 40) - 20;
+      const sy = ((i * 41 + G.t * (10 + (i % 5) * 7)) % (VH + 40) + VH + 40) % (VH + 40) - 20 - camY * 0.15;
+      ctx.globalAlpha = 0.3 + (i % 3) * 0.2;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(Math.round(sx), Math.round(sy), 1, (i % 4) === 0 ? 2 : 1);
+    }
+    ctx.restore();
+    ctx.save(); ctx.globalAlpha = 0.13; ctx.fillStyle = '#dfe8f4';
+    ctx.fillRect(0, 0, VW, VH); ctx.restore();
+  } else if (room.bg === 'waste') {
+    ctx.drawImage(makeSky('waste', [[0, '#3f4a86'], [0.24, '#a8664a'], [0.52, '#e0904a'],
+                                    [0.78, '#f0c070'], [1, '#f6dca0']]), 0, 0);
+    /* a low sun, huge on the horizon */
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const sy2 = VH - 86 - camY * 0.02;
+    ctx.globalAlpha = 0.16;
+    ctx.fillStyle = '#ffd06a';
+    ctx.beginPath(); ctx.arc(120 - camX * 0.02, sy2, 44, 0, TAU); ctx.fill();
+    ctx.globalAlpha = 0.75;
+    ctx.fillStyle = '#ffe6a8';
+    ctx.beginPath(); ctx.arc(120 - camX * 0.02, sy2, 20, 0, TAU); ctx.fill();
+    ctx.restore();
+    /* the dunes, rolling away */
+    for (let L = 0; L < 3; L++) {
+      const par = 0.05 + L * 0.10, base = VH - 96 + L * 26;
+      ctx.fillStyle = ['#a4713f', '#c08c4e', '#dcb06a'][L];
+      ctx.beginPath(); ctx.moveTo(0, VH);
+      for (let x = 0; x <= VW; x += 3) {
+        const u = (x + camX * par) * (0.009 + L * 0.004);
+        ctx.lineTo(x, Math.round(base - Math.sin(u) * (18 - L * 3) - Math.sin(u * 2.1 + 1) * (8 - L)
+                                 - camY * par));
+      }
+      ctx.lineTo(VW, VH); ctx.closePath(); ctx.fill();
+    }
+    /* the pyramids on the far skyline */
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = '#8a5f38';
+    for (const [px, ph2] of [[250, 46], [292, 30], [214, 26]]) {
+      const x = px - camX * 0.045;
+      const b = VH - 92 - camY * 0.04;
+      ctx.beginPath();
+      ctx.moveTo(x, b - ph2); ctx.lineTo(x - ph2 * 0.85, b); ctx.lineTo(x + ph2 * 0.85, b);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#a4713f';
+      ctx.beginPath();
+      ctx.moveTo(x, b - ph2); ctx.lineTo(x, b); ctx.lineTo(x + ph2 * 0.85, b);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#8a5f38';
+    }
+    ctx.restore();
+    /* the sand the wind is carrying */
+    ctx.save();
+    for (let i = 0; i < 46; i++) {
+      const sx = ((i * 67 - G.t * (30 + (i % 5) * 16) - camX * 0.3) % (VW + 40) + VW + 40) % (VW + 40) - 20;
+      const sy = (i * 53 + Math.sin(G.t * 0.8 + i) * 9) % (VH + 20) - 10 - camY * 0.2;
+      ctx.globalAlpha = 0.18 + (i % 3) * 0.1;
+      ctx.fillStyle = (i % 4 === 0) ? '#f6dca0' : '#dcb06a';
+      ctx.fillRect(Math.round(sx), Math.round(sy), (i % 3) + 1, 1);
+    }
+    ctx.restore();
+    /* the shimmer over hot ground */
+    ctx.save();
+    ctx.globalAlpha = 0.05; ctx.fillStyle = '#ffe6a8';
+    for (let y = VH - 70; y < VH; y += 4)
+      ctx.fillRect(Math.round(Math.sin(y * 0.4 + G.t * 2.6) * 3), y, VW, 2);
+    ctx.restore();
+  } else if (room.bg === 'tomb') {
+    ctx.drawImage(makeSky('tomb', [[0, '#150f0a'], [0.5, '#241a10'], [1, '#38281a']]), 0, 0);
+    drawCaveWall(camX, camY, 0.42);
+    /* painted courses on the far wall */
+    ctx.save();
+    ctx.globalAlpha = 0.2;
+    for (let y = 20; y < VH; y += 34) {
+      ctx.fillStyle = '#9c7418';
+      ctx.fillRect(0, Math.round(y - camY * 0.4 % 34), VW, 2);
+      ctx.fillStyle = '#2f5fb0';
+      for (let x = -20; x < VW + 20; x += 18)
+        ctx.fillRect(Math.round(x - camX * 0.4 % 18), Math.round(y + 5 - camY * 0.4 % 34), 8, 8);
+    }
+    ctx.restore();
   } else if (room.bg === 'lair') {
     ctx.drawImage(makeSky('lair', [[0, '#1a0d14'], [0.5, '#2a1018'], [1, '#4a1a16']]), 0, 0);
     drawCaveWall(camX, camY, 0.42);
@@ -2098,6 +2817,14 @@ function drawTiles(camX, camY) {
       case T_ASH: img = Art.tile.ash[v]; break;
       case T_ASHTOP: img = Art.tile.ashTop[v]; break;
       case T_OBSID: img = Art.tile.obsid[v]; break;
+      case T_SNOW: img = Art.tile.snow[v]; break;
+      case T_SNOWTOP: img = Art.tile.snowTop[v]; break;
+      case T_ICE: img = Art.tile.ice[v]; break;
+      case T_SANDTOP: img = Art.tile.sandTop[v]; break;
+      case T_TOMB: img = Art.tile.tomb[v]; break;
+      case T_TOMBTOP: img = Art.tile.tombTop[v]; break;
+      case T_POWDER: img = Art.tile.powder[Math.floor(G.t / 0.22) % 6]; break;
+      case T_QUICK: img = Art.tile.quick[Math.floor(G.t / 0.13) % 8]; break;
       case T_CAVEBG: img = Art.tile.caveBg[v]; break;
     }
     if (!img) continue;
@@ -2187,6 +2914,23 @@ function drawDecor(layer, camX, camY) {
         break;
       }
       case 'fern': { const s = Art.prop.fern[d.idx]; blitSway(ctx, s.c, d.x, d.y, d.sway, wind * 1.1 + d.phase, s.ax, s.ay, 6, 1, d.alpha); break; }
+      case 'pine': { const s = Art.prop.pine[d.idx]; blitSway(ctx, s.c, d.x, d.y, d.sway * 0.6, wind * 0.5 + d.phase, s.ax, s.ay, 10, d.scale || 1, d.alpha); break; }
+      case 'cactus': { const s = Art.prop.cactus[d.idx]; blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
+      case 'bone': { const s = Art.prop.bone[d.idx]; blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
+      case 'sphinx': {
+        const s = Art.prop.sphinx;
+        blit(ctx, s.c, d.x, d.y, s.ax, s.ay);
+        /* the eyes hold a light while the question stands unanswered */
+        if (!G.flags.riddleDone) {
+          ctx.save(); ctx.globalCompositeOperation = 'lighter';
+          ctx.globalAlpha = 0.5 + Math.sin(G.t * 2.4) * 0.2;
+          ctx.fillStyle = '#ffd06a';
+          ctx.fillRect(Math.round(d.x + 8), Math.round(d.y - 27), 3, 2);
+          ctx.fillRect(Math.round(d.x + 14), Math.round(d.y - 27), 3, 2);
+          ctx.restore();
+        }
+        break;
+      }
       case 'nest': {
         const s = Art.prop.nest[d.idx];
         blit(ctx, s.c, d.x, d.y, s.ax, s.ay);
@@ -2415,6 +3159,32 @@ const LW = VW >> 1, LH = VH >> 1;
 /* The forest giants throw a deep shade.  A separate layer darkens the ground
    under each crown and lets a few flecks of sun through the leaves. */
 let shadeCv = null, shadeCtx = null;
+/* The blanket of fresh snow, drawn over the ground it lies on.  Where a boot
+   has been the blanket is gone, and the track fills in again behind you. */
+function drawSnow(camX, camY) {
+  const room = G.room;
+  if (!room.snow) return;
+  const step = SNOW_STEP;
+  const i0 = Math.max(0, Math.floor(camX / step) - 1);
+  const i1 = Math.min(room.snow.length - 1, Math.ceil((camX + VW) / step) + 1);
+  for (let i = i0; i <= i1; i++) {
+    const d = room.snow[i];
+    if (d <= 0.15) continue;
+    const gy = room.snowGY[i];
+    if (gy < 0) continue;
+    const h = Math.max(1, Math.round(d));
+    const x = i * step;
+    ctx.fillStyle = '#e8eef8';
+    ctx.fillRect(x, Math.round(gy - h), step, h);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(x, Math.round(gy - h), step, 1);
+    /* the shadowed lip where a track has been cut */
+    const left = i > 0 ? room.snow[i - 1] : d;
+    const right = i < room.snow.length - 1 ? room.snow[i + 1] : d;
+    if (left < d - 1.2) { ctx.fillStyle = '#aebdd2'; ctx.fillRect(x, Math.round(gy - h), 1, h); }
+    if (right < d - 1.2) { ctx.fillStyle = '#aebdd2'; ctx.fillRect(x + step - 1, Math.round(gy - h), 1, h); }
+  }
+}
 function drawCanopyShade(camX, camY) {
   const room = G.room;
   if (!room.canopy) return;
@@ -2501,14 +3271,18 @@ function drawWorld() {
   drawTiles(camX, camY);
   drawDoors(camX);
   drawWindows(camX, camY);
+  drawSnow(camX, camY);
+  drawSurfacing(camX, camY);
   drawDecor(1, camX, camY);
   for (const L of G.lifts) L.draw(ctx);
   for (const hz of G.hazards) hz.draw(ctx);
   for (const c of G.coins) c.draw(ctx);
   for (const it of G.items) it.draw(ctx);
   for (const e of G.enemies) e.draw(ctx);
-  G.player.draw(ctx);
-  drawSlash(ctx, G.player);
+  if (!(G.surfacing && G.surfacing.t < 1.7)) {
+    G.player.draw(ctx);
+    drawSlash(ctx, G.player);
+  }
   for (const pr of G.projectiles) pr.draw(ctx);
   for (const wv of G.waves) wv.draw(ctx);
   for (const pa of G.particles) pa.draw(ctx);
@@ -2529,6 +3303,17 @@ function drawWorld() {
   drawAimCross();
   drawPad();
   if (G.shopOpen) drawShop();
+  if (G.pouchOpen) drawPouch();
+  if (G.riddleOpen) drawRiddle();
+  else if (G.sphinxBtn) {
+    const b = G.sphinxBtn;
+    ctx.fillStyle = 'rgba(38,28,16,0.92)';
+    ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.fillStyle = '#e0b040';
+    ctx.fillRect(b.x, b.y, b.w, 1); ctx.fillRect(b.x, b.y + b.h - 1, b.w, 1);
+    drawText(ctx, G.mobile ? 'TAP TO BE ASKED' : 'CLICK TO BE ASKED',
+             b.x + b.w / 2, b.y + 4, '#ffeec0', 1, 'center');
+  }
   if (G.codesOpen) drawCodes();
   drawRelicShow();
   if (G.settingsOpen) drawSettings();
@@ -2587,6 +3372,23 @@ function drawHUD() {
   }
   if (G.roomId !== 'tutorial') blit(ctx, Art.ui.map, VW - 15, 15 + mbob, 11, 11);
   if (mhov) drawText(ctx, 'MAP', VW - 15, 29, '#ffe98a', 1, 'center', '#000000');
+  /* the pouch, under the chart */
+  if (G.roomId !== 'tutorial') {
+    const ph = G.overPouchIcon;
+    const pb = ph ? Math.sin(G.t * 6) * 1.2 : 0;
+    if (ph) {
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.22;
+      ctx.fillStyle = '#e0b040';
+      ctx.beginPath(); ctx.arc(VW - 15, 41, 15, 0, TAU); ctx.fill(); ctx.restore();
+    }
+    blit(ctx, Art.ui.pouch, VW - 15, 41 + pb, 11, 11);
+    const worn = G.artifacts ? G.artifacts.slots.filter(k => k).length : 0;
+    if (worn > 0) {
+      ctx.fillStyle = '#e0b040'; ctx.fillRect(VW - 9, 32, 6, 6);
+      drawText(ctx, String(worn), VW - 7, 33, '#2a1a0e', 1, 'left');
+    }
+    if (ph) drawText(ctx, 'POUCH', VW - 15, 55, '#ffe98a', 1, 'center', '#000000');
+  }
 
   /* hearts */
   const hearts = Math.ceil(p.maxHp / 2);
@@ -2791,7 +3593,8 @@ const PAD = [
 function padVisible(b) { void b; return true; }
 function padRect(b) { return { x: b.x - b.w / 2, y: b.y - b.h / 2, w: b.w, h: b.h }; }
 function padActive() {
-  return G.mobile && G.state === 'play' && !G.shopOpen && !G.codesOpen && !G.settingsOpen && !G.trans;
+  return G.mobile && G.state === 'play' && !G.shopOpen && !G.codesOpen && !G.pouchOpen &&
+         !G.riddleOpen && !G.settingsOpen && !G.trans;
 }
 /* one finger on the round pad gives one or two directions, by its angle */
 function hubDirs(t, out) {
@@ -4185,357 +4988,6 @@ function makeStartButton() {
   return cv0;
 }
 
-/* ============================================================
-   THE OPENING STORY — how the ancient warriors found the
-   archipelago.  It runs after PLAY, and SKIP ends it at once.
-   ============================================================ */
-const INTRO_BIOME = {
-  wood:  { sky: [[0, '#2f4f8e'], [0.30, '#6f9fd0'], [0.62, '#a9cfe4'], [1, '#e8cfa8']],
-           far: '#33507a', mid: '#25405a', near: '#16281f', ground: '#0f1c10', prop: 'tree' },
-  peaks: { sky: [[0, '#1a2340'], [0.34, '#3c4c82'], [0.68, '#8f9fd0'], [1, '#dcd4e8']],
-           far: '#3a4468', mid: '#28304e', near: '#171c2e', ground: '#11142a', prop: 'peak' },
-  sea:   { sky: [[0, '#07182c'], [0.40, '#123a58'], [0.76, '#2f6fb0'], [1, '#66aade']],
-           far: '#1a4160', mid: '#102c44', near: '#08182a', ground: '#061320', prop: 'column' },
-  ash:   { sky: [[0, '#240d16'], [0.34, '#5a1e18'], [0.68, '#a8431c'], [1, '#f0a04a']],
-           far: '#4a2320', mid: '#331616', near: '#1b0d0d', ground: '#150909', prop: 'spire' },
-  snow:  { sky: [[0, '#4e648c'], [0.38, '#8fa4c4'], [0.74, '#c8d6e6'], [1, '#f2f7fd']],
-           far: '#93a4c0', mid: '#7688a8', near: '#dfe8f4', ground: '#eef4fb', prop: 'pine' },
-  sand:  { sky: [[0, '#4a3a78'], [0.28, '#9c5a56'], [0.58, '#e08a4a'], [1, '#f6d99a']],
-           far: '#8a5c46', mid: '#6b422f', near: '#c99a5e', ground: '#e0b878', prop: 'dune' },
-  crest: { sky: [[0, '#1e3468'], [0.30, '#4a6ea8'], [0.60, '#94b8d8'], [1, '#f0d8a8']],
-           far: '#3c5a7a', mid: '#2a4256', near: '#16281f', ground: '#0f1c10', prop: 'tree' }
-};
-const INTRO_SCENES = [
-  { id: 'wood',   biome: 'wood',  dur: 4.2, march: true,  cap: 'LONG AGO FOUR WARRIORS LEFT THE GREEN WOOD' },
-  { id: 'bears',  biome: 'wood',  dur: 5.4, march: false, cap: 'THE BEARS OF THE WOOD BARRED THE ROAD' },
-  { id: 'peaks',  biome: 'peaks', dur: 3.2, march: true,  cap: 'THEY CROSSED THE STORM PEAKS' },
-  { id: 'sea',    biome: 'sea',   dur: 3.2, march: true,  cap: 'THEY WADED THE DROWNED HALLS' },
-  { id: 'ash',    biome: 'ash',   dur: 3.2, march: true,  cap: 'THEY WALKED THROUGH ASH AND FIRE' },
-  { id: 'snow',   biome: 'snow',  dur: 3.2, march: true,  cap: 'THEY CROSSED THE WHITE WASTE' },
-  { id: 'sand',   biome: 'sand',  dur: 3.2, march: true,  cap: 'AND THE SAND THAT SWALLOWS' },
-  { id: 'crest',  biome: 'crest', dur: 4.4, march: false, cap: 'AT LAST THEY CLIMBED AN OUTCROP OF TREES' },
-  { id: 'reveal', biome: 'crest', dur: 6.0, march: false, cap: 'AN ARCHIPELAGO THAT NO MAP HELD' },
-  { id: 'attack', biome: 'crest', dur: 4.2, march: false, cap: 'THEY WERE NOT THE FIRST TO FIND IT' },
-  { id: 'black',  biome: 'crest', dur: 2.2, march: false, cap: '' }
-];
-const INTRO_SKIP = { x: VW - 58, y: 4, w: 54, h: 15 };
-const INTRO_GY = 172;                 /* the ground line the warriors walk on */
-
-function startIntro() {
-  G.state = 'intro';
-  G.intro = { t: 0, i: 0, scroll: 0, hot: false, done: false, hush: false };
-  G.particles.length = 0;
-  G.flashAmt = 0; G.shakeAmt = 0;
-  Snd.musicLevel(0.30, 1.6);
-}
-function endIntro() {
-  G.intro = null;
-  Snd.musicLevel(0.34, 1.0);
-  G.fadeBlack = 1;            /* the next screen comes up out of the black */
-  openFiles();
-}
-function introScene() { return INTRO_SCENES[Math.min(G.intro.i, INTRO_SCENES.length - 1)]; }
-function updateIntro(dt) {
-  const I = G.intro;
-  I.t += dt;
-  const sc = introScene();
-  I.scroll += (sc.march ? 46 : 0) * dt;
-  G.flashAmt = Math.max(0, G.flashAmt - dt * 2.2);
-  G.shakeAmt = Math.max(0, G.shakeAmt - dt * 16);
-
-  I.hot = Input.over(INTRO_SKIP);
-  if (Input.tap(INTRO_SKIP) || Input.hit('Escape') || Input.hit('Enter') || Input.hit('Space')) {
-    Snd.ui(); endIntro(); return;
-  }
-  /* everything falls quiet as the attackers close in */
-  if (sc.id === 'attack' && !I.hush) { I.hush = true; Snd.musicLevel(0.0, 1.4); }
-  if (sc.id === 'bears' && I.t > 0.6 && Math.random() < dt * 3.4) {
-    G.particles.push(new Particle({
-      x: rr(210, 300), y: INTRO_GY - rr(6, 26), vx: rr(-2.6, -0.4), vy: rr(-2.2, 0.4),
-      life: rr(0.3, 0.7), col: '#e8cfa8', col2: '#8a5f26', size: rr(1, 2.4), grav: 0.12, drag: 0.94
-    }));
-  }
-  if (sc.biome === 'ash' && Math.random() < dt * 22) G.particles.push(new Particle({
-    x: rr(0, VW), y: rr(-6, VH), vx: rr(-0.6, 0.2), vy: rr(-0.5, -0.1),
-    life: rr(2, 5), col: rpick(['#ff9a4a', '#ffd06a', '#8a5f26']), size: rr(1, 2), grav: 0, type: 'fire'
-  }));
-  if (sc.biome === 'snow' && Math.random() < dt * 40) G.particles.push(new Particle({
-    x: rr(-10, VW + 10), y: -6, vx: rr(-1.4, -0.2), vy: rr(0.5, 1.4),
-    life: rr(3, 6), col: rpick(['#ffffff', '#dfe8f4']), size: rr(1, 2), grav: 0, drag: 1
-  }));
-  if (sc.biome === 'sand' && Math.random() < dt * 26) G.particles.push(new Particle({
-    x: VW + 8, y: rr(INTRO_GY - 44, INTRO_GY + 10), vx: rr(-4, -1.4), vy: rr(-0.4, 0.4),
-    life: rr(0.8, 2), col: rpick(['#e0b878', '#f6d99a']), size: rr(1, 2), grav: 0, drag: 1
-  }));
-  for (const p of G.particles) p.update(dt);
-  G.particles = G.particles.filter(p => !p.dead);
-
-  if (I.t >= sc.dur) {
-    I.t = 0; I.i++;
-    if (I.i >= INTRO_SCENES.length) { endIntro(); return; }
-  }
-}
-
-/* one rolling ridge of a parallax backdrop */
-function introRidge(col, amp, base, freq, scroll, seed) {
-  ctx.fillStyle = col;
-  ctx.beginPath();
-  ctx.moveTo(0, VH);
-  for (let x = 0; x <= VW; x += 2) {
-    const u = (x + scroll) * freq;
-    const y = base - Math.sin(u + seed) * amp - Math.sin(u * 2.3 + seed * 1.7) * amp * 0.45;
-    ctx.lineTo(x, Math.round(y));
-  }
-  ctx.lineTo(VW, VH);
-  ctx.closePath();
-  ctx.fill();
-}
-/* a line of biome shapes along the ground, scrolling past */
-function introProps(kind, col, col2, y, scroll, spacing, scale) {
-  const first = Math.floor(scroll / spacing);
-  for (let k = -1; k < VW / spacing + 2; k++) {
-    const n = first + k;
-    const x = Math.round(n * spacing - scroll);
-    if (x < -60 || x > VW + 60) continue;
-    const w = ((n * 2654435761) >>> 0) / 4294967296;
-    const s = scale * (0.75 + w * 0.5);
-    ctx.fillStyle = col;
-    if (kind === 'tree') {
-      ctx.fillRect(x - 2 * s, y - 26 * s, 4 * s, 26 * s);
-      for (const [ox, oy, orr] of [[0, -30, 11], [-8, -24, 8], [8, -25, 8], [0, -38, 8]]) {
-        ctx.beginPath(); ctx.arc(x + ox * s, y + oy * s, orr * s, 0, TAU); ctx.fill();
-      }
-    } else if (kind === 'peak') {
-      ctx.beginPath();
-      ctx.moveTo(x, y - 54 * s); ctx.lineTo(x - 30 * s, y + 4); ctx.lineTo(x + 30 * s, y + 4);
-      ctx.closePath(); ctx.fill();
-      ctx.fillStyle = col2;
-      ctx.beginPath();
-      ctx.moveTo(x, y - 54 * s); ctx.lineTo(x - 9 * s, y - 36 * s); ctx.lineTo(x + 9 * s, y - 36 * s);
-      ctx.closePath(); ctx.fill();
-    } else if (kind === 'column') {
-      const hgt = (18 + w * 26) * s;
-      ctx.fillRect(x - 4 * s, y - hgt, 8 * s, hgt);
-      ctx.fillRect(x - 7 * s, y - hgt - 3 * s, 14 * s, 3 * s);
-      ctx.fillRect(x - 7 * s, y - 3 * s, 14 * s, 3 * s);
-    } else if (kind === 'spire') {
-      ctx.beginPath();
-      ctx.moveTo(x - 2 * s, y - (30 + w * 24) * s);
-      ctx.lineTo(x - 11 * s, y + 4); ctx.lineTo(x + 11 * s, y + 4);
-      ctx.closePath(); ctx.fill();
-      ctx.fillStyle = col2;
-      ctx.fillRect(x - 1, y - (10 + w * 8) * s, 2, 3);
-    } else if (kind === 'pine') {
-      for (let t = 0; t < 3; t++) {
-        const ww = (13 - t * 3) * s, hh = (13 - t * 2) * s;
-        ctx.beginPath();
-        ctx.moveTo(x, y - (10 + t * 9) * s - hh);
-        ctx.lineTo(x - ww, y - (10 + t * 9) * s);
-        ctx.lineTo(x + ww, y - (10 + t * 9) * s);
-        ctx.closePath(); ctx.fill();
-      }
-      ctx.fillRect(x - 1.5 * s, y - 11 * s, 3 * s, 11 * s);
-    } else if (kind === 'dune') {
-      ctx.beginPath();
-      ctx.ellipse(x, y + 6, 44 * s, (10 + w * 8) * s, 0, Math.PI, TAU);
-      ctx.fill();
-      if (w > 0.62) {
-        ctx.fillStyle = col2;
-        ctx.fillRect(x + 20 * s, y - 22 * s, 4 * s, 22 * s);
-        ctx.fillRect(x + 14 * s, y - 16 * s, 4 * s, 10 * s);
-        ctx.fillRect(x + 26 * s, y - 18 * s, 4 * s, 12 * s);
-      }
-    }
-  }
-}
-/* the four of them, in order, with the pose the scene calls for */
-function introWarriors(pose, baseX, gy, t, flip, spread) {
-  const set = Art.intro[pose];
-  const a = Art.intro.anchor;
-  for (let k = 0; k < 4; k++) {
-    const arr = set[k];
-    const f = arr[Math.floor(t / (pose === 'walk' ? 0.09 : 0.16) + k * 2) % arr.length];
-    const x = baseX + k * (spread || 22);
-    const y = gy + (pose === 'walk' ? Math.sin(t * 11 + k * 2) * 0.6 : 0);
-    blit(ctx, f, x, y, a.x, a.y, flip);
-  }
-}
-function drawIntro() {
-  const I = G.intro, sc = introScene();
-  const B = INTRO_BIOME[sc.biome];
-  const t = I.t;
-  const sk = G.shakeAmt;
-  ctx.save();
-  if (sk > 0.2) ctx.translate(Math.round(rr(-sk, sk)), Math.round(rr(-sk, sk)));
-
-  ctx.drawImage(makeSky('intro-' + sc.biome, B.sky), 0, 0);
-
-  if (sc.id === 'reveal' || sc.id === 'attack' || sc.id === 'black') {
-    drawIntroCrest(sc, t);
-  } else if (sc.id === 'crest') {
-    drawIntroClimb(t);
-  } else {
-    /* the marching band of parallax */
-    introRidge(B.far, 13, 128, 0.011, I.scroll * 0.18, 1.3);
-    introProps(B.prop, B.far, B.mid, 130, I.scroll * 0.18, 96, 0.55);
-    introRidge(B.mid, 10, 150, 0.016, I.scroll * 0.42, 3.1);
-    introProps(B.prop, B.mid, B.far, 152, I.scroll * 0.42, 74, 0.8);
-    ctx.fillStyle = B.ground;
-    ctx.fillRect(0, INTRO_GY, VW, VH - INTRO_GY);
-    ctx.fillStyle = B.near;
-    ctx.fillRect(0, INTRO_GY, VW, 3);
-    introProps(B.prop, B.near, B.ground, INTRO_GY + 2, I.scroll * 1.0, 118, 1.15);
-    if (sc.id === 'bears') drawIntroBears(t);
-    else introWarriors('walk', 132, INTRO_GY, t + I.scroll * 0.02, false, 24);
-  }
-
-  for (const p of G.particles) p.draw(ctx);
-  ctx.restore();
-
-  /* the caption band */
-  const capA = clamp(Math.min(t / 0.7, (sc.dur - t) / 0.7), 0, 1);
-  if (sc.cap && capA > 0.01) {
-    ctx.save();
-    ctx.globalAlpha = capA;
-    ctx.fillStyle = 'rgba(8,6,14,0.86)';
-    ctx.fillRect(0, VH - 18, VW, 18);
-    ctx.fillStyle = '#b8862f';
-    ctx.fillRect(0, VH - 18, VW, 1);
-    drawText(ctx, sc.cap, VW / 2, VH - 13, '#ffeec0', 1, 'center', '#1a1008');
-    ctx.restore();
-  }
-  /* every scene opens and closes on black */
-  const fade = 1 - clamp(Math.min(t / 0.5, (sc.dur - t) / 0.5), 0, 1);
-  const black = sc.id === 'black' ? 1 : fade;
-  if (black > 0.001) {
-    ctx.fillStyle = 'rgba(0,0,0,' + black.toFixed(3) + ')';
-    ctx.fillRect(0, 0, VW, VH);
-  }
-  if (G.flashAmt > 0) {
-    ctx.save(); ctx.globalAlpha = Math.min(1, G.flashAmt);
-    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, VW, VH); ctx.restore();
-  }
-
-  /* the way out, top right */
-  const r = INTRO_SKIP, hot = I.hot;
-  ctx.fillStyle = hot ? 'rgba(74,56,34,0.95)' : 'rgba(10,8,18,0.72)';
-  ctx.fillRect(r.x, r.y, r.w, r.h);
-  ctx.fillStyle = hot ? '#ffd04a' : '#c68e3f';
-  ctx.fillRect(r.x, r.y, r.w, 1); ctx.fillRect(r.x, r.y + r.h - 1, r.w, 1);
-  ctx.fillRect(r.x, r.y, 1, r.h); ctx.fillRect(r.x + r.w - 1, r.y, 1, r.h);
-  drawText(ctx, 'SKIP', r.x + r.w / 2, r.y + 4, hot ? '#ffeec0' : '#d8c49a', 1, 'center');
-}
-/* the fight in the wood */
-function drawIntroBears(t) {
-  const push = Math.sin(t * 1.9) * 10;
-  /* the bears come on from the right and give ground under the blades */
-  const bears = [[262 + push, 0], [312 + push * 0.7, 3]];
-  for (const [bx, off] of bears) {
-    const roar = Math.sin(t * 1.9) > 0.6;
-    const set = roar ? Art.intro.bearRoar : Art.intro.bear;
-    const f = set[Math.floor(t * 9 + off) % set.length];
-    blit(ctx, f, bx, INTRO_GY + 1, Art.bear.anchor.x, Art.bear.anchor.y, true);
-  }
-  introWarriors('fight', 150, INTRO_GY, t, false, 26);
-  /* sparks where blade meets claw */
-  if (Math.sin(t * 6.2) > 0.94) G.flashAmt = Math.max(G.flashAmt, 0.35);
-}
-/* the climb up to the outcrop */
-function drawIntroClimb(t) {
-  const B = INTRO_BIOME.crest;
-  introRidge(B.far, 15, 122, 0.010, 40, 1.3);
-  introRidge(B.mid, 11, 146, 0.015, 90, 3.1);
-  /* the outcrop itself: a shelf of rock that rises to the right */
-  const shelf = x => 196 - Math.min(56, Math.max(0, (x - 40)) * 0.42);
-  ctx.fillStyle = B.ground;
-  ctx.beginPath();
-  ctx.moveTo(0, VH);
-  for (let x = 0; x <= VW; x += 2) ctx.lineTo(x, Math.round(shelf(x)));
-  ctx.lineTo(VW, VH); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = B.near;
-  for (let x = 0; x <= VW; x += 2) ctx.fillRect(x, Math.round(shelf(x)), 2, 3);
-  /* the trees of the outcrop */
-  for (const tx of [214, 248, 286, 322, 356]) {
-    const y = shelf(tx);
-    ctx.fillStyle = B.near;
-    ctx.fillRect(tx - 3, y - 42, 6, 42);
-    for (const [ox, oy, orr] of [[0, -48, 15], [-11, -40, 11], [11, -41, 11], [0, -60, 11]]) {
-      ctx.beginPath(); ctx.arc(tx + ox, y + oy, orr, 0, TAU); ctx.fill();
-    }
-  }
-  /* they walk up the slope and take the crest */
-  const k = clamp(t / 3.0, 0, 1);
-  const bx = lerp(46, 214, k);
-  introWarriors(k >= 1 ? 'stand' : 'walk', bx, shelf(bx + 34) + 2, t, false, 22);
-}
-/* the crest, the sea below, and the shadows that follow */
-function drawIntroCrest(sc, t) {
-  const B = INTRO_BIOME.crest;
-  /* the camera lifts, so the sea slides up into the frame */
-  const lift = sc.id === 'reveal' ? clamp(t / 2.4, 0, 1) : 1;
-  const seaY = lerp(VH + 10, 96, lift);
-  ctx.drawImage(Art.intro.isles, 0, Math.round(seaY));
-  /* mist over the water */
-  ctx.save();
-  ctx.globalAlpha = 0.34;
-  ctx.fillStyle = '#cfe4f4';
-  for (let k = 0; k < 4; k++) {
-    const y = seaY + 8 + k * 14 + Math.sin(G.t * 0.5 + k) * 2;
-    ctx.fillRect(0, Math.round(y), VW, 3);
-  }
-  ctx.restore();
-  /* the outcrop in the near ground, on the left */
-  const shelf = x => 150 + Math.max(0, (x - 128)) * 0.9;
-  ctx.fillStyle = B.ground;
-  ctx.beginPath();
-  ctx.moveTo(0, VH);
-  for (let x = 0; x <= VW; x += 2) ctx.lineTo(x, Math.round(Math.min(VH + 4, shelf(x))));
-  ctx.lineTo(VW, VH); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = B.near;
-  for (let x = 0; x <= VW; x += 2) ctx.fillRect(x, Math.round(Math.min(VH + 4, shelf(x))), 2, 3);
-  for (const tx of [16, 52, 92]) {
-    ctx.fillStyle = B.near;
-    ctx.fillRect(tx - 3, shelf(tx) - 44, 6, 44);
-    for (const [ox, oy, orr] of [[0, -50, 15], [-11, -42, 11], [11, -43, 11], [0, -62, 11]]) {
-      ctx.beginPath(); ctx.arc(tx + ox, shelf(tx) + oy, orr, 0, TAU); ctx.fill();
-    }
-  }
-  const turn = sc.id === 'attack' && t > 1.5;
-  introWarriors(turn ? 'stand' : (sc.id === 'reveal' && t > 2.6 ? 'point' : 'stand'),
-                26, shelf(58), t, turn, 22);
-
-  if (sc.id === 'attack') {
-    /* long shadows sweep in from behind.  The screen shuts before the
-       shape that throws them comes into the frame. */
-    const k = clamp(t / 2.6, 0, 1);
-    ctx.save();
-    ctx.globalAlpha = 0.66 * k;
-    ctx.fillStyle = '#05040a';
-    for (let i = 0; i < 3; i++) {
-      const x0 = VW + 40 - k * (250 + i * 40);
-      ctx.beginPath();
-      ctx.moveTo(x0, shelf(Math.max(0, x0)) - 2);
-      ctx.lineTo(x0 + 74, shelf(Math.max(0, x0 + 74)) - 2);
-      ctx.lineTo(x0 + 40, VH);
-      ctx.lineTo(x0 - 34, VH);
-      ctx.closePath(); ctx.fill();
-    }
-    ctx.restore();
-    /* and the frame closes down from every edge */
-    const v = clamp((t - 2.2) / 1.6, 0, 1);
-    if (v > 0) {
-      ctx.save();
-      ctx.fillStyle = '#000000';
-      const inset = (1 - v) * 0.5;
-      ctx.fillRect(0, 0, VW, Math.round(VH * inset));
-      ctx.fillRect(0, Math.round(VH * (1 - inset)), VW, Math.round(VH * inset) + 1);
-      ctx.fillRect(0, 0, Math.round(VW * inset), VH);
-      ctx.fillRect(Math.round(VW * (1 - inset)), 0, Math.round(VW * inset) + 1, VH);
-      ctx.restore();
-    }
-  }
-}
-
 function initTitle() {
   if (!Art.ui.startBtn) Art.ui.startBtn = makeStartButton();
   const r = new RNG(20250906);
@@ -4599,6 +5051,8 @@ function initTitle() {
   if (Snd.ready) { Snd.play('title'); Snd.startAmbience(); Snd.ambienceLevel(0.5, 2); Snd.musicLevel(0.34, 1.2); }
 }
 
+/* the way into the wardrobe, in the corner opposite the cog */
+function titleWardRect() { return { x: 6, y: 6, w: 92, h: 18 }; }
 function updateTitle(dt) {
   const T = G.title;
   T.t += dt;
@@ -4626,10 +5080,14 @@ function updateTitle(dt) {
   if (G.settingsOpen) { updateSettings(); return; }
   if (T.phase === 'idle' && Input.mhit && T.overGear) { G.settingsOpen = true; G.setSel = -1; Snd.ui(); return; }
 
+  const wr = titleWardRect();
+  T.overWard = T.phase === 'idle' && Input.over(wr);
+  if (T.phase === 'idle' && Input.mhit && T.overWard) { openWardrobe('title'); Snd.ui(); return; }
   if (T.phase === 'idle') {
     T.btnY = T.baseY + Math.sin(T.t * 1.35) * 5;
     const w = 104, h = 30;
-    T.hover = !T.overGear && Math.abs(Input.mx - VW / 2) < w / 2 && Math.abs(Input.my - T.btnY) < h / 2;
+    T.hover = !T.overGear && !T.overWard &&
+              Math.abs(Input.mx - VW / 2) < w / 2 && Math.abs(Input.my - T.btnY) < h / 2;
     T.scale = lerp(T.scale, T.hover ? 1.06 : 1, 1 - Math.pow(0.001, dt));
     if ((T.hover && Input.mhit) || Input.hit('Enter') || Input.hit('Space')) {
       T.phase = 'spin'; T.animT = 0; T.spinV = 0;
@@ -4662,7 +5120,7 @@ function updateTitle(dt) {
   } else if (T.phase === 'boom') {
     T.animT += dt;
     G.flashAmt = Math.max(G.flashAmt, 1.5 - T.animT * 2.4);
-    if (T.animT > 0.5) { startIntro(); return; }   /* the story first, then the files */
+    if (T.animT > 0.5) { openFiles(); return; }   /* pick a file, then the realm map */
   }
 
   for (const p of G.particles) p.update(dt);
@@ -4744,7 +5202,7 @@ function drawTitle() {
   drawText(ctx, 'EMBERWOOD', VW / 2, 26 + bob, '#2a1a10', 5, 'center');
   drawText(ctx, 'EMBERWOOD', VW / 2 - 1, 24 + bob, '#f0c93a', 5, 'center');
   drawText(ctx, 'EMBERWOOD', VW / 2 - 1, 23 + bob, '#ffeec0', 5, 'center');
-  drawText(ctx, 'THREE REALMS, THREE GUARDIANS', VW / 2, 64 + bob, '#f6ecd0', 1, 'center', '#2a1a10');
+  drawText(ctx, 'FIVE CHAPTERS, FIFTEEN REALMS', VW / 2, 64 + bob, '#f6ecd0', 1, 'center', '#2a1a10');
 
   /* start button */
   if (T.phase !== 'boom') {
@@ -4758,6 +5216,16 @@ function drawTitle() {
     }
     ctx.drawImage(Art.ui.startBtn, -52, -15);
     ctx.restore();
+    /* the wardrobe, top left */
+    if (T.phase === 'idle') {
+      const wr = titleWardRect(), wh = T.overWard;
+      ctx.fillStyle = wh ? 'rgba(74,56,34,0.96)' : 'rgba(10,8,18,0.66)';
+      ctx.fillRect(wr.x, wr.y, wr.w, wr.h);
+      ctx.fillStyle = wh ? '#ffd04a' : '#c68e3f';
+      ctx.fillRect(wr.x, wr.y, wr.w, 1); ctx.fillRect(wr.x, wr.y + wr.h - 1, wr.w, 1);
+      ctx.fillRect(wr.x, wr.y, 1, wr.h); ctx.fillRect(wr.x + wr.w - 1, wr.y, 1, wr.h);
+      drawText(ctx, 'WARDROBE', wr.x + wr.w / 2, wr.y + 6, wh ? '#ffeec0' : '#d8c49a', 1, 'center');
+    }
     if (T.phase === 'idle') {
       ctx.save(); ctx.globalAlpha = 0.55 + Math.sin(T.t * 3) * 0.25;
       drawText(ctx, 'CLICK  OR  PRESS  ENTER', VW / 2, T.btnY + 22, '#2a2016', 1, 'center');
@@ -4816,19 +5284,11 @@ function render() {
   ctx.imageSmoothingEnabled = false;
   if (G.state === 'load') { drawLoad(); drawCursor(); return; }
   else if (G.state === 'title') { drawTitle(); drawCursor(); }
-  else if (G.state === 'intro') { drawIntro(); drawCursor(); }
+  else if (G.state === 'wardrobe') { drawWardrobe(); drawCursor(); }
   else if (G.state === 'files') { drawFiles(); drawCursor(); }
   else if (G.state === 'profile') { drawProfile(); drawCursor(); }
   else if (G.state === 'map') { drawMap(); drawCursor(); }
   else drawWorld();
-  /* the story ends on black, so the screen after it comes up out of black */
-  if (G.fadeBlack > 0.002) {
-    ctx.save();
-    ctx.globalAlpha = Math.min(1, G.fadeBlack);
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, VW, VH);
-    ctx.restore();
-  }
 }
 
 if (document.readyState === 'loading') addEventListener('DOMContentLoaded', boot);
