@@ -1122,7 +1122,7 @@ function buildRealmChain(d, theme) {
   }
   World.rooms[d.id + 'End'] = buildChapterArena({
     id: d.id + 'End', name: d.toLabel, seed: d.seed + 500, bg: theme.bg,
-    music: theme.bossMusic,
+    music: theme.bossMusic, oasis: theme.oasis,
     ground: theme.ground, groundTop: theme.groundTop, plat: theme.plat,
     ambient: d.ambient, dark: d.dark, decor: theme.decor, boss: d.boss
   });
@@ -1175,29 +1175,6 @@ function buildChapterRoom(o) {
     const px = rng.i(12, W - 20), pw = rng.i(6, 13);
     for (let x = px; x < px + pw; x++) room.set(x, surf[x], T_ICE);
   }
-  /* drifts of powdered snow, and pools of quicksand: both swallow you */
-  const phaseKind = o.powder ? T_POWDER : (o.quick ? T_QUICK : 0);
-  const phaseN = o.powder || o.quick || 0;
-  if (phaseKind) {
-    room.phasePools = [];
-    for (let k = 0; k < phaseN; k++) {
-      const px = 22 + Math.round((W - 48) * (k + 0.5) / phaseN) + rng.i(-6, 6);
-      const pw = rng.i(5, 8), depth = rng.i(3, 4);
-      let bed = 0;
-      for (let x = px; x < px + pw; x++) bed = Math.max(bed, surf[x]);
-      const top = bed - depth + 1;
-      for (let x = px; x < px + pw; x++) {
-        for (let y = Math.min(top, surf[x]); y < top; y++) room.set(x, y, T_EMPTY);
-        for (let y = top; y <= bed; y++) room.set(x, y, phaseKind);
-        /* something firm below, so a ring bearer lands rather than falls forever */
-        for (let y = bed + 1; y < bed + 3; y++) room.set(x, y, ground);
-        surf[x] = top;
-      }
-      room.phasePools.push({ x: px, w: pw, y: top,
-                             seed: (o.seed * 1013 + k * 7919 + px * 31) >>> 0 });
-    }
-  }
-
   /* ---- traps and moving ground, so the walk is not one flat line ----
      Each feature asks for a different piece of movement: a pit wants a jump
      or a dash, a lift wants patience or a roll across, a spike bed wants a
@@ -1256,6 +1233,43 @@ function buildChapterRoom(o) {
                         layer: rng.bool(0.5) ? 0 : (rng.bool(0.7) ? 1 : 2),
                         sway: rng.r(0.6, 1.8), phase: rng.r(0, TAU) });
   }
+  /* Pools of quicksand and drifts of powdered snow.  Each one lies in a pit
+     dug into the ground, and the pit is filled to the brim: the top row of
+     the pool sits level with the ground on either side of it, and every row
+     under that one is buried.  So what you see is a surface, and what is
+     under it swallows you. */
+  const phaseKind = o.powder ? T_POWDER : (o.quick ? T_QUICK : 0);
+  const phaseN = o.powder || o.quick || 0;
+  if (phaseKind) {
+    room.phasePools = [];
+    for (let k = 0; k < phaseN; k++) {
+      const px = 20 + Math.round((W - 44) * (k + 0.5) / phaseN) + rng.i(-5, 5);
+      const pw = rng.i(5, 8), depth = rng.i(4, 6);
+      /* Level the lip, so the pool reads as one flat surface.  Everything
+         above the lip is cleared and everything below it is filled, right
+         across the pit and one column past it on either side. */
+      let lip = 0;
+      for (let x = px - 2; x <= px + pw + 1; x++) lip = Math.max(lip, surf[x]);
+      lip = Math.min(lip, H - depth - 4);
+      for (let x = px - 2; x <= px + pw + 1; x++) {
+        for (let y = 0; y < lip; y++) room.set(x, y, T_EMPTY);
+        room.set(x, lip, groundTop);
+        for (let y = lip + 1; y < H; y++) room.set(x, y, ground);
+        surf[x] = lip;
+      }
+      /* dig the pit and fill it to the brim, the top row level with the lip */
+      for (let x = px; x < px + pw; x++) {
+        for (let y = lip; y < lip + depth; y++) room.set(x, y, phaseKind);
+        /* a floor under it, so a ring bearer lands rather than falls for ever */
+        for (let y = lip + depth; y < H; y++) room.set(x, y, ground);
+        surf[x] = lip;
+      }
+      room.phasePools.push({ x: px, w: pw, y: lip, depth: depth,
+                             seed: (o.seed * 1013 + k * 7919 + px * 31) >>> 0 });
+    }
+  }
+
+
   /* the sphinx sits in one stretch of its own realm and asks its question */
   if (o.riddle) {
     const rx = Math.floor(W * 0.56);
@@ -1264,12 +1278,22 @@ function buildChapterRoom(o) {
       for (let y = gy + 1; y < H; y++) room.set(rx + i, y, ground); }
     room.decor.push({ kind: 'sphinx', x: rx * TILE + 8, y: gy * TILE, layer: 1 });
     room.riddle = { x: rx * TILE + 8, y: gy * TILE, seed: o.seed };
-    /* the gate it keeps: a wall you cannot pass until you answer */
-    const gx = rx + 10;
-    for (let y = gy - 7; y <= gy; y++) room.set(gx, y, T_TOMB);
-    room.gate = { tx: gx, y0: gy - 7, y1: gy };
+    /* The wall it keeps.  It runs from the ground to the roof of the room and
+       it is three courses thick, so there is no way over it and no way round
+       it.  The only way past is the answer. */
+    const gx = rx + 9;
+    for (let x = gx; x <= gx + 2; x++) {
+      for (let y = 1; y <= gy; y++) room.set(x, y, T_TOMB);
+      for (let y = gy + 1; y < H; y++) room.set(x, y, ground);
+    }
+    room.gate = { x0: gx, x1: gx + 2, y0: 1, y1: gy, doorX: gx + 1, doorY: gy };
+    /* level the ground either side of it, so the wall stands square */
+    for (let x = gx - 2; x <= gx + 4; x++) {
+      surf[x] = gy; room.set(x, gy, x >= gx && x <= gx + 2 ? T_TOMB : groundTop);
+      for (let y = gy + 1; y < H; y++) room.set(x, y, ground);
+    }
     for (let k = 0; k < 8; k++)
-      room.spawns.push({ type: 'coin', x: (gx + 3 + k) * TILE, y: (gy - 2) * TILE });
+      room.spawns.push({ type: 'coin', x: (gx + 5 + k) * TILE, y: (gy - 2) * TILE });
   }
   /* fresh snow lies over whatever is left standing */
   if (o.snow) laySnow(room, rng);
@@ -1470,6 +1494,135 @@ function buildVault(seed, kind, name) {
 }
 World.buildVault = buildVault;
 
+/* ============================================================
+   THE ISLANDS.  Cut on demand from the kind of island, which
+   one of the twenty it is, and which of its four levels.  The
+   twentieth island of a spoke is a harder place than the first.
+   ============================================================ */
+const ISLES_PER_TYPE = 20;
+const ISLE_LEVELS = 4;              /* three levels and the guardian's ground */
+const ISLE_THEME = {
+  snow:   { ground: T_SNOW, top: T_SNOWTOP, plat: T_ICE, bg: 'snow', music: 'tide',
+            walkers: ['wolf', 'yeti'], fliers: ['icewisp'], decor: ['pine', 'rock'], snow: true },
+  fire:   { ground: T_ASH, top: T_ASHTOP, plat: T_OBSID, bg: 'ash', music: 'ember',
+            walkers: ['emberling', 'golem'], fliers: ['cinderwing'], decor: ['pillar', 'rock'] },
+  desert: { ground: T_SAND, top: T_SANDTOP, plat: T_TOMB, bg: 'waste', music: 'ember',
+            walkers: ['scarab', 'mummy'], fliers: ['vulture'], decor: ['cactus', 'bone', 'rock'] },
+  forest: { ground: T_DIRT, top: T_GRASS, plat: T_WOOD, bg: 'forest', music: 'forest',
+            walkers: ['snake', 'bear', 'spider'], fliers: ['bird'], decor: ['tree', 'bush', 'tuft', 'fern'] },
+  /* the mesa: red rock, timber trestles, clapboard houses and tumbleweed */
+  mesa:   { ground: T_DIRT, top: T_ROCKTOP, plat: T_WOOD, bg: 'waste', music: 'ember',
+            walkers: ['bear', 'wolf', 'snake'], fliers: ['vulture'],
+            decor: ['cactus', 'rock', 'tumbleweed'], mesa: true }
+};
+function buildIsle(typeKey, index, level) {
+  const th = ISLE_THEME[typeKey] || ISLE_THEME.forest;
+  const seed = (typeKey.charCodeAt(0) * 7919 + index * 613 + level * 97) >>> 0;
+  const rng = new RNG(seed);
+  const boss = level === ISLE_LEVELS - 1;
+  const hard = index / (ISLES_PER_TYPE - 1);          /* 0 at the first, 1 at the last */
+  const W = boss ? 54 : 86 + Math.round(hard * 40) + level * 8;
+  const H = 30;
+  const room = new Room({ id: 'isle', name: '', mode: 'side', w: W, h: H,
+                          music: boss ? (typeKey === 'snow' ? 'bossDeep' : 'bossAsh') : th.music,
+                          bg: th.bg, ambient: 0.34, dark: typeKey === 'fire' ? 0.24 : 0.08 });
+  const surf = new Int16Array(W);
+  for (let x = 0; x < W; x++) {
+    const gy = 21 + Math.sin(x * 0.04 + seed) * 2.4 + Math.sin(x * 0.017 + seed * 0.3) * 3.2;
+    surf[x] = clamp(Math.round(gy), 12, H - 4);
+  }
+  for (let pass = 0; pass < 3; pass++)
+    for (let x = 1; x < W; x++) surf[x] = clamp(surf[x], surf[x - 1] - 1, surf[x - 1] + 1);
+  /* the island stands out of the sea, so both ends fall away into it */
+  for (let x = 0; x < W; x++) {
+    const edge = Math.min(x, W - 1 - x);
+    if (edge < 3) surf[x] = H - 1;
+    room.set(x, surf[x], th.top);
+    for (let y = surf[x] + 1; y < H; y++) room.set(x, y, th.ground);
+  }
+  room.surface = surf;
+
+  /* ledges to climb */
+  for (let x = 10; x < W - 10; x += rng.i(8, 15)) {
+    const py = surf[x] - rng.i(4, 9), pw = rng.i(4, 8);
+    for (let i = 0; i < pw; i++) { room.set(x + i, py, th.plat); if (!boss) room.set(x + i, py + 1, th.ground); }
+    if (rng.bool(0.6)) for (let k = 0; k < 3; k++)
+      room.spawns.push({ type: 'coin', x: (x + 1 + k) * TILE, y: (py - 1) * TILE });
+  }
+
+  /* the mesa carries timber trestles across its gorges, and houses on its flats */
+  if (th.mesa && !boss) {
+    for (let k = 0; k < 2 + Math.round(hard * 2); k++) {
+      const gx = rng.i(14, W - 26), gw = rng.i(9, 15);
+      for (let x = gx; x < gx + gw; x++) { for (let y = surf[x]; y < H; y++) room.set(x, y, T_EMPTY); surf[x] = H - 1; }
+      const by = Math.min(surf[gx - 1], surf[gx + gw]) - 1;
+      for (let x = gx - 1; x <= gx + gw; x++) room.set(x, by, T_WOOD);
+      room.decor.push({ kind: 'trestle', x: gx * TILE, y: by * TILE, w: (gw + 2) * TILE,
+                        h: (H - 2 - by) * TILE, layer: 0 });
+      for (let x = gx; x < gx + gw; x += 3)
+        room.spawns.push({ type: 'coin', x: x * TILE + 8, y: (by - 2) * TILE });
+    }
+    for (let k = 0; k < 2 + Math.round(hard * 2); k++) {
+      const hx = rng.i(8, W - 12);
+      let flat = surf[hx];
+      for (let i = -3; i <= 3; i++) { surf[hx + i] = flat; room.set(hx + i, flat, th.top);
+        for (let y = flat + 1; y < H; y++) room.set(hx + i, y, th.ground); }
+      room.decor.push({ kind: 'house', idx: rng.i(0, 2), x: hx * TILE + 8, y: flat * TILE, layer: 1 });
+    }
+  }
+
+  /* the guardian's ground is a plain arena */
+  if (boss) {
+    room.fillRect(3, 4, W - 6, H - 9, T_EMPTY);
+    for (let x = 3; x < W - 3; x++) { surf[x] = H - 5; room.set(x, H - 5, th.top);
+      for (let y = H - 4; y < H; y++) room.set(x, y, th.ground); }
+    for (const [lx, ly, lw] of [[9, H - 12, 7], [W - 16, H - 12, 7], [W / 2 - 4, H - 17, 8]])
+      for (let i = 0; i < lw; i++) room.set(Math.round(lx) + i, Math.round(ly), th.plat);
+    room.start = { x: 7 * TILE, y: (H - 5) * TILE };
+    room.spawns.push({ type: 'isleBoss', kind: typeKey, tier: index, x: (W - 14) * TILE, y: (H - 5) * TILE });
+  } else {
+    room.start = { x: 5 * TILE, y: (surf[5] - 3) * TILE };
+    const ex = W - 6;
+    let exX = ex;
+    while (exX > 8 && surf[exX] >= H - 2) exX--;
+    room.exits.push({ x: (exX - 1) * TILE, y: (surf[exX] - 4) * TILE, w: 3 * TILE, h: 5 * TILE,
+                      to: '@isleNext', label: 'ONWARD', kind: 'cave',
+                      door: { x: exX * TILE, y: surf[exX] * TILE } });
+    /* its people */
+    const n = 8 + Math.round(hard * 14) + level * 2;
+    for (let k = 0; k < n; k++) {
+      const x = rng.i(8, W - 8);
+      if (surf[x] >= H - 2) continue;
+      const air = rng.bool(0.4);
+      const type = air ? rng.pick(th.fliers) : rng.pick(th.walkers);
+      room.spawns.push({ type: type, x: x * TILE, y: (surf[x] - (air ? rng.i(3, 8) : 1)) * TILE });
+    }
+    for (let k = 0; k < 24; k++) {
+      const x = rng.i(6, W - 6);
+      if (surf[x] >= H - 2) continue;
+      room.spawns.push({ type: 'coin', x: x * TILE, y: (surf[x] - rng.i(1, 6)) * TILE });
+    }
+  }
+
+  /* dressing */
+  for (let x = 2; x < W - 2; x++) {
+    if (surf[x] >= H - 2) continue;
+    for (const k of th.decor) {
+      const p2 = k === 'tree' ? 0.28 : (k === 'tumbleweed' ? 0.04 : 0.10);
+      if (!rng.bool(p2)) continue;
+      room.decor.push({ kind: k, idx: rng.i(0, 2), x: x * TILE + rng.r(-4, 12),
+                        y: surf[x] * TILE + rng.r(0, 3),
+                        layer: rng.bool(0.5) ? 0 : (rng.bool(0.7) ? 1 : 2),
+                        sway: rng.r(0.6, 1.8), phase: rng.r(0, TAU),
+                        drift: rng.r(10, 26) });
+    }
+  }
+  if (th.snow) laySnow(room, rng);
+  room.isle = { type: typeKey, index: index, level: level, boss: boss };
+  return room;
+}
+World.buildIsle = buildIsle;
+
 function buildChapterArena(o) {
   const rng = new RNG(o.seed);
   const W = 52, H = 26;
@@ -1487,6 +1640,20 @@ function buildChapterArena(o) {
                       layer: rng.bool(0.5) ? 0 : 2, sway: rng.r(0.5, 1.2), phase: rng.r(0, TAU) });
   }
   room.start = { x: 7 * TILE, y: (H - 5) * TILE };
+  /* A pool of clear water at the near end, in the shade of two palms.  Stand
+     in it and it puts your hearts back before you go on. */
+  if (o.oasis) {
+    const ox = 6, ow = 7, bed = H - 5;
+    for (let x = ox; x < ox + ow; x++) {
+      room.set(x, bed, T_WATER);
+      room.set(x, bed + 1, T_WATERD);
+      room.set(x, bed + 2, o.groundTop);
+    }
+    room.oasis = { x: ox * TILE, y: bed * TILE, w: ow * TILE, h: 2 * TILE };
+    for (const px of [(ox - 1) * TILE, (ox + ow) * TILE])
+      room.decor.push({ kind: 'palm', x: px, y: bed * TILE, layer: 1, sway: 1.4, phase: rng.r(0, TAU) });
+    room.start = { x: (ox + 2) * TILE, y: (bed - 1) * TILE };
+  }
   room.spawns.push({ type: 'guardian', key: o.boss, x: (W - 14) * TILE, y: (H - 5) * TILE });
   return room;
 }
@@ -1676,7 +1843,7 @@ World.build = function () {
   const sandRooms = [
     { id: 'dune', name: 'THE DUNE SEA', seed: 4401, w: 162, hazards: 8, ambient: 0.4, dark: 0,
       parts: ['THE DUNE SEA', 'THE SHIFTING FLATS', 'THE BONE FIELD', 'THE SALT PAN', 'THE LAST WELL'],
-      quick: 3,
+      quick: 4,
       spawns: [{ type: 'scarab', n: 14 }, { type: 'vulture', n: 12, air: true }, { type: 'mummy', n: 4 }],
       to: 'duneEnd', toLabel: 'THE DUNE MAW', boss: 'duneMaw' },
     { id: 'sphinx', name: 'SPHINX HOLLOW', seed: 4402, w: 170, hazards: 10, ambient: 0.34, dark: 0.2,
@@ -1686,7 +1853,7 @@ World.build = function () {
       to: 'sphinxEnd', toLabel: 'THE SPHINX', boss: 'sphinx' },
     { id: 'suntomb', name: 'THE SUN TOMB', seed: 4403, w: 178, hazards: 12, ambient: 0.26, dark: 0.4,
       parts: ['THE SUN TOMB', 'THE PAINTED HALL', 'THE SHAFT OF KINGS', 'THE TREASURY', 'THE GOLDEN DOOR'],
-      quick: 5, tomb: true,
+      quick: 4, tomb: true,
       spawns: [{ type: 'scarab', n: 12 }, { type: 'vulture', n: 12, air: true }, { type: 'mummy', n: 10 },
                { type: 'soldier', n: 8 }],
       to: 'suntombEnd', toLabel: 'THE PHARAOH', boss: 'pharaoh' }
@@ -1694,7 +1861,7 @@ World.build = function () {
   for (const d of sandRooms) {
     buildRealmChain(Object.assign({ music: 'ember' }, d), {
       bg: d.tomb ? 'tomb' : 'waste', ground: d.tomb ? T_TOMB : T_SAND,
-      groundTop: d.tomb ? T_TOMBTOP : T_SANDTOP,
+      groundTop: d.tomb ? T_TOMBTOP : T_SANDTOP, oasis: true,
       plat: T_TOMB, decor: sandDecor, doorKind: 'cave', bossMusic: 'bossAsh'
     });
   }

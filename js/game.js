@@ -122,6 +122,7 @@ function packSave() {
     comboBest: G.comboBest || 0,
     buried: G.buried || null,
     vaultKey: G.vaultKey || null,
+    archipelago: G.archipelago || null,
     artifacts: { owned: Object.assign({}, (G.artifacts && G.artifacts.owned) || {}),
                  slots: ((G.artifacts && G.artifacts.slots) || [null, null, null]).slice() },
     wardrobe: Object.assign({}, (G.wardrobe && G.wardrobe.owned) || {}),
@@ -131,7 +132,8 @@ function packSave() {
 function readSlot(i) { return Store.read(SAVE_KEY + i, null); }
 function writeSlot(i, data) { Store.write(SAVE_KEY + i, data); }
 G.saveGame = function () {
-  if (G.state === 'load' || G.state === 'title' || G.state === 'wardrobe' || G.state === 'files') return;
+  if (G.state === 'load' || G.state === 'title' || G.state === 'wardrobe' ||
+      G.state === 'archipelago' || G.state === 'files') return;
   if (!G.player) return;
   saveLevelState();
   writeSlot(G.slot, packSave());
@@ -183,6 +185,19 @@ function applySave(d) {
   G.wardrobe = { owned: d.wardrobe || {} };
   G.buried = d.buried || null;
   G.vaultKey = d.vaultKey || null;
+  {
+    const a = newArchipelago(), sv = d.archipelago;
+    if (sv) {
+      a.open = !!sv.open;
+      for (const t of ISLE_TYPES) {
+        a.shards[t.shard] = (sv.shards && sv.shards[t.shard]) | 0;
+        a.parts[t.shard] = (sv.parts && sv.parts[t.shard]) | 0;
+        a.opened[t.key] = clamp((sv.opened && sv.opened[t.key]) || 1, 1, ISLES_PER_TYPE);
+      }
+      a.cleared = sv.cleared || {};
+    }
+    G.archipelago = a;
+  }
   G.surfacing = null;
   G.tut = Object.assign({ move: 0, fight: 0, swim: 0, dash: 0, pierce: 0, climb: 0, parry: 0 }, d.tut || {});
   G.stats = Object.assign({ coins: 0, kills: 0, time: 0, deaths: 0 }, d.stats || {});
@@ -245,7 +260,7 @@ G.goldAdmin = function () {
     p.up[it.key] = shopMax(it);
   }
   p.up.heart = shopMax(SHOP_ITEMS[0]);
-  p.maxHp = 6 + p.up.heart * 2 + (G.hasArtifact('ankh') ? 2 : 0);
+  p.maxHp = 6 + p.up.heart * 2 + (G.hasArtifact('ankh') ? 2 : 0) + (G.hasArtifact('sunheart') ? 8 : 0);
   p.hp = p.maxHp;
   G.codes.tickets += 99;
   try { Art.buildGold(); } catch (err) { console.error('gold avatar', err); }
@@ -267,6 +282,17 @@ G.redeem = function (raw) {
     Art.unlockHairColour('GINGER');
     G.codeMsg = 'GINGER HAIR UNLOCKED'; G.codeMsgOk = true; G.codeMsgT = 4;
     Snd.unlock(); G.flash(0.4);
+    G.saveGame();
+    return;
+  }
+  if (name === 'CHEESE') {
+    if (G.archipelago && G.archipelago.open) {
+      Snd.uiBad(); G.codeMsg = 'ALREADY OPEN'; G.codeMsgOk = false; G.codeMsgT = 2.6; return;
+    }
+    G.archipelago = G.archipelago || newArchipelago();
+    G.archipelago.open = true;
+    G.codeMsg = 'THE ARCHIPELAGO OPENS'; G.codeMsgOk = true; G.codeMsgT = 4;
+    Snd.unlock(); G.flash(0.6); G.shake(6);
     G.saveGame();
     return;
   }
@@ -333,7 +359,8 @@ G.comboMult = function () { return 1 + Math.min(2, Math.floor(G.combo / 4) * 0.5
 G.coinScale = function () {
   const lv = World.LEVELS[G.level];
   /* the scarab charm pays a quarter more on every kill */
-  return ((lv && lv.coinScale) || 1) * (G.hasArtifact('scarab') ? 1.25 : 1);
+  return ((lv && lv.coinScale) || 1) * (G.hasArtifact('scarab') ? 1.25 : 1)
+         * (G.hasArtifact('pharaohcrook') ? 2 : 1);
 };
 G.purse = function () { return G.codes.admin ? INF : String(G.player.coins); };
 G.spawnCoin = function (x, y, vx, vy, still, si, value) {
@@ -436,6 +463,33 @@ G.leaveSecret = function () {
               exit: b.x === null ? null : { spawnAt: { x: b.x, y: b.y } } };
 };
 const SURFACE_DUR = 2.6;
+/* The pool at the door of a guardian.  Stand in it and it gives your hearts
+   back, a little at a time, and it says so. */
+function updateOasis(dt) {
+  const o = G.room && G.room.oasis;
+  if (!o) return;
+  const p = G.player;
+  if (p.dead) return;
+  const inIt = rectsOverlap({ x: o.x, y: o.y - 6, w: o.w, h: o.h + 6 },
+                            { x: p.x, y: p.y, w: p.w, h: p.h });
+  if (!inIt) { G.oasisT = 0; return; }
+  if (p.burnT > 0) { p.burnT = 0; p.burnAcc = 0; }
+  if (p.hp >= p.maxHp) {
+    if (!G.oasisFull) { G.oasisFull = true; G.banner('THE OASIS HAS YOU WHOLE', 2); }
+    return;
+  }
+  G.oasisFull = false;
+  G.oasisT = (G.oasisT || 0) + dt;
+  if (G.oasisT >= 0.3) {
+    G.oasisT = 0;
+    p.hp = Math.min(p.maxHp, p.hp + 1);
+    Snd.drip();
+    for (let i = 0; i < 8; i++) G.particles.push(new Particle({
+      x: p.cx + rr(-8, 8), y: p.cy + rr(-8, 8), vx: rr(-0.5, 0.5), vy: rr(-1.6, -0.4),
+      life: rr(0.4, 0.9), col: '#cfeaff', col2: '#6fc4bc', size: rr(1, 2.2), grav: -0.03
+    }));
+  }
+}
 function updateSurfacing(dt) {
   const S = G.surfacing;
   if (!S) return;
@@ -581,6 +635,15 @@ G.enterRoom = function (id, spawn) {
       case 'idol': G.enemies.push(new Idol(sp.x, sp.y)); break;
       case 'relicChest': if (!G.flags['chest_' + (G.vaultKey || id)]) G.items.push(new RelicChest(sp.x, sp.y, sp.pool)); break;
       case 'guardian': { const gd = hardenBoss(new Guardian(sp.x, sp.y, sp.key)); G.enemies.push(gd); G.boss = gd; break; }
+      case 'isleBoss': {
+        const gd = new Guardian(sp.x, sp.y, isleBossKey(sp.kind, sp.tier));
+        /* the further out the island, the harder its keeper */
+        const scale = 6 + sp.tier * 2.4;
+        gd.hp = Math.round(gd.hp * scale); gd.maxHp = gd.hp;
+        gd.isleTier = sp.tier;
+        G.enemies.push(gd); G.boss = gd;
+        break;
+      }
       case 'sporeling': tough(new Sporeling(sp.x, sp.y)); break;
       case 'zeus': { const z = hardenBoss(new Zeus(sp.x, sp.y)); G.enemies.push(z); G.boss = z; break; }
       case 'mother': { const m = hardenBoss(new MotherSpore(sp.x, sp.y)); G.enemies.push(m); G.boss = m; break; }
@@ -598,9 +661,15 @@ G.enterRoom = function (id, spawn) {
   G.exitLock = true; G.nearExit = null;
   /* the throne room holds its breath: no music, no wind, and no dragon
      until the armour has had its say */
-  /* a gate the sphinx already opened stays open */
-  if (room.gate && G.flags.riddleDone)
-    for (let y = room.gate.y0; y <= room.gate.y1; y++) room.set(room.gate.tx, y, T_EMPTY);
+  /* a wall the sphinx already drew aside stays aside */
+  G.gateSlide = null;
+  G.riddlePick = 0;
+  G.oasisFull = false; G.oasisT = 0;
+  if (room.gate && G.flags.riddleDone) {
+    const saved = G.room; G.room = room;
+    G.openGate(true);
+    G.room = saved;
+  }
   G.throne = room.dragonDrop ? { t: 0, phase: 'hush', drop: room.dragonDrop } : null;
   G.acid = room.acid ? { y: room.acid.y } : null;
   G.acidBurnT = 0;
@@ -664,6 +733,14 @@ function updateTransition(dt) {
   tr.t += dt;
   if (tr.phase === 'out' && tr.t >= tr.dur) {
     if (tr.toProfile) { openProfile('map'); G.trans = null; return; }
+    if (tr.toArchi) { openArchipelago(tr.toArchi); G.trans = null; return; }
+    if (tr.isleStart) { const st = tr.isleStart; G.trans = null; G.enterIsle(st.key, st.index, 0); return; }
+    if (tr.isleNext) {
+      const w = G.isleRun;
+      G.trans = null;
+      G.enterIsle(w.key, w.index, w.level);
+      return;
+    }
     if (tr.toMap) { openMap(false); G.trans = null; return; }
     const room = World.rooms[tr.id];
     G.enterRoom(tr.id, resolveSpawn(room, tr.exit));
@@ -788,6 +865,7 @@ function frame(now) {
     if (G.state === 'load') updateLoad(dt);
     else if (G.state === 'title') updateTitle(dt);
     else if (G.state === 'wardrobe') updateWardrobe(dt);
+    else if (G.state === 'archipelago') updateArchipelago(dt);
     else if (G.state === 'files') updateFiles(dt);
     else if (G.state === 'profile') updateProfile(dt);
     else if (G.state === 'map') updateMap(dt);
@@ -864,6 +942,7 @@ function startGame(slot) {
   G.artifacts = { owned: {}, slots: [null, null, null] };
   G.pouchOpen = false; G.wardrobe = { owned: {} };
   G.buried = null; G.surfacing = null; G.vaultKey = null;
+  G.archipelago = newArchipelago(); G.isleRun = null;
   G.profile = { hair: 0, hairCol: 0, outfit: 0, tee: 0, cape: 'none', suit: 'none' };
   G.gulletVisits = 0;
   G.unlockedHair = {}; Art.lockExtraHair();
@@ -1167,6 +1246,8 @@ function updatePlay(dt) {
   updateThrone(dt);
   updateAcid(dt);
   updateSurfacing(dt);
+  updateGateSlide(dt);
+  updateOasis(dt);
   checkExits();
   if (!G.trans) updateCamera(dt);
 }
@@ -1428,6 +1509,12 @@ function checkExits() {
       G.leaveSecret();
       return;
     }
+    if (ex.to === '@isleNext') {
+      G.nearExit = ex; G.nearExitLocked = false;
+      if (!enterPressed(ex)) continue;
+      G.isleNext();
+      return;
+    }
     if (ex.to === 'tutorialDone') {
       const left = G.tutLeft();
       G.nearExit = ex; G.nearExitLocked = left.length > 0;
@@ -1469,12 +1556,22 @@ function respawn() {
   p.dead = false; p.hp = p.maxHp; p.invuln = 1.4; p.burnT = 0; p.burnAcc = 0;
   G.state = 'play';
   Snd.musicLevel(0.34, 0.6);
+  /* an island begins again at its first level, not where you fell */
+  if (G.isleRun) {
+    const w = G.isleRun;
+    if (lost > 0) G.texts.push(new FloatText(p.cx, p.cy - 20, '-' + lost + ' COINS', '#ff9a8a'));
+    G.enterIsle(w.key, w.index, 0);
+    G.flash(0.6);
+    return;
+  }
   G.enterRoom(G.roomId, null);
   G.flash(0.6);
   if (lost > 0) G.texts.push(new FloatText(p.cx, p.cy - 20, '-' + lost + ' COINS', '#ff9a8a'));
 }
 
 G.onBossDead = function () {
+  /* an island keeper is a thing apart: it pays in shards, not in realms */
+  if (G.isleRun) { G.onIsleBossDead(); G.state = 'victory'; G.victoryT = 0; return; }
   G.state = 'victory'; G.victoryT = 0;
   G.cleared[G.level] = true;
   delete G.levelState[G.level];      /* a cleared realm begins again from the start */
@@ -1506,7 +1603,420 @@ function updateVictory(dt) {
       col: col, col2: '#ffffff', size: rr(1, 2.5), grav: 0.06, drag: 0.94
     }));
   }
-  if (G.victoryT > 2 && (Input.hit('Enter') || Input.hit('Space') || Input.mhit)) openMap(false);
+  if (G.victoryT > 2 && (Input.hit('Enter') || Input.hit('Space') || Input.mhit)) {
+    if (G.isleRun) G.leaveIsle(); else openMap(false);
+  }
+}
+
+/* ============================================================
+   A RUN THROUGH AN ISLAND.  Three levels and then its keeper.
+   Each level is cut when you step into it, so an island costs
+   nothing until you go there.
+   ============================================================ */
+G.enterIsle = function (typeKey, index, level) {
+  const t = ISLE_TYPES.find(q => q.key === typeKey) || ISLE_TYPES[0];
+  G.isleRun = { type: ISLE_TYPES.indexOf(t), key: typeKey, shard: t.shard,
+                index: index, level: level | 0 };
+  World.rooms.isle = World.buildIsle(typeKey, index, G.isleRun.level);
+  World.rooms.isle.name = t.name.replace('THE ', '') + '  ' + (index + 1) +
+                          (G.isleRun.level === ISLE_LEVELS - 1 ? '  -  THE KEEPER'
+                                                               : '  -  ' + (G.isleRun.level + 1) + ' OF 3');
+  G.state = 'play';
+  G.trans = null;
+  G.player.hp = G.player.maxHp;
+  G.player.dead = false;
+  G.enterRoom('isle', null);
+};
+G.isleNext = function () {
+  const w = G.isleRun;
+  if (!w || G.trans) return;
+  if (w.level + 1 >= ISLE_LEVELS) { G.leaveIsle(); return; }
+  w.level++;
+  Snd.door();
+  G.trans = { t: 0, phase: 'out', dur: 0.42, isleNext: true };
+};
+G.leaveIsle = function () {
+  G.isleRun = null;
+  G.saveGame();
+  openArchipelago('chain');
+};
+/* the keeper of an island is down: the island is cleared and pays in shards */
+G.onIsleBossDead = function () {
+  const w = G.isleRun;
+  if (!w) return;
+  const a = archi();
+  const key = w.key + ':' + w.index;
+  const first = !a.cleared[key];
+  a.cleared[key] = true;
+  G.giveShards(ri(3, 5));
+  if (first) G.banner('THE ISLAND IS YOURS', 3);
+  G.saveGame();
+};
+
+/* ============================================================
+   THE ARCHIPELAGO.  Five kinds of island, twenty of each, laid
+   out as five spokes of a pentagon.  Each island holds three
+   levels and a guardian.  You buy your way outward with shards
+   of that island's own kind.
+   ============================================================ */
+const ISLE_TYPES = [
+  { key: 'snow',   name: 'THE FROZEN ISLES', shard: 'ice',      shardName: 'ICE',      col: '#8fd0e8', col2: '#3f7f9e' },
+  { key: 'fire',   name: 'THE BURNING ISLES', shard: 'ember',   shardName: 'EMBER',    col: '#ff7a2a', col2: '#8a2410' },
+  { key: 'desert', name: 'THE SAND ISLES',   shard: 'sand',     shardName: 'SAND',     col: '#e0b040', col2: '#9c7418' },
+  { key: 'forest', name: 'THE GREEN ISLES',  shard: 'amethyst', shardName: 'AMETHYST', col: '#a86fe0', col2: '#5d3a86' },
+  { key: 'mesa',   name: 'THE MESA ISLES',   shard: 'gold',     shardName: 'GOLD',     col: '#f6d878', col2: '#a4713f' }
+];
+const SHARD_PARTS = 3;              /* three parts make one shard */
+const FORGE_COST = 1000;            /* and the forge takes a thousand coins for it */
+/* the first island of a spoke is open; the rest cost two shards up to twenty */
+function isleCost(i) { return i === 0 ? 0 : Math.min(20, i + 1); }
+function isleTypeAt(k) { return ISLE_TYPES[clamp(k | 0, 0, ISLE_TYPES.length - 1)]; }
+function newArchipelago() {
+  const a = { open: false, type: 0, page: 0, isle: -1,
+              shards: {}, parts: {}, opened: {}, cleared: {} };
+  for (const t of ISLE_TYPES) { a.shards[t.shard] = 0; a.parts[t.shard] = 0; a.opened[t.key] = 1; }
+  return a;
+}
+function archi() {
+  if (!G.archipelago) G.archipelago = newArchipelago();
+  return G.archipelago;
+}
+G.shardsOf = function (shard) { return (archi().shards[shard] | 0); };
+G.partsOf = function (shard) { return (archi().parts[shard] | 0); };
+/* every creature on an island leaves a part or four of that island's shard */
+G.dropShardParts = function (n) {
+  const w = G.isleRun;
+  if (!w) return;
+  const a = archi();
+  a.parts[w.shard] = (a.parts[w.shard] | 0) + n;
+  G.texts.push(new FloatText(G.player.cx, G.player.cy - 16,
+    '+' + n + ' ' + isleTypeAt(w.type).shardName, isleTypeAt(w.type).col));
+};
+G.giveShards = function (n) {
+  const w = G.isleRun;
+  if (!w) return;
+  const a = archi();
+  a.shards[w.shard] = (a.shards[w.shard] | 0) + n;
+  G.texts.push(new FloatText(G.player.cx, G.player.cy - 24,
+    '+' + n + ' ' + isleTypeAt(w.type).shardName + ' SHARD', isleTypeAt(w.type).col));
+};
+/* how many whole shards the forge could make from the parts on hand */
+function forgeable(shard) {
+  const parts = Math.floor(G.partsOf(shard) / SHARD_PARTS);
+  const afford = G.codes.admin ? parts : Math.floor(G.player.coins / FORGE_COST);
+  return Math.min(parts, afford);
+}
+G.forgeShard = function (shard, n) {
+  const a = archi();
+  const can = forgeable(shard);
+  n = Math.min(n || 1, can);
+  if (n <= 0) return 0;
+  a.parts[shard] -= n * SHARD_PARTS;
+  a.shards[shard] = (a.shards[shard] | 0) + n;
+  if (!G.codes.admin) G.player.coins -= n * FORGE_COST;
+  Snd.buy(); G.flash(0.2);
+  G.saveGame();
+  return n;
+};
+function isleOpened(typeKey) { return archi().opened[typeKey] | 0; }
+function isleCleared(typeKey, i) { return !!archi().cleared[typeKey + ':' + i]; }
+
+/* ---------- the three screens ---------- */
+const ARCH_BACK = { x: 6, y: VH - 22, w: 54, h: 16 };
+const ARCH_FORGE = { x: VW - 92, y: VH - 22, w: 86, h: 16 };
+/* the five kinds, set out as a pentagon about the middle of the chart */
+function archNodeRect(k) {
+  const a = -Math.PI / 2 + k / 5 * TAU;
+  const cx = VW / 2 + Math.cos(a) * 100, cy = VH / 2 + 6 + Math.sin(a) * 48;
+  return { x: cx - 24, y: cy - 24, w: 48, h: 48, cx: cx, cy: cy };
+}
+/* five to a page, in one row, so nothing crowds anything */
+const ISLES_PER_PAGE = 5;
+function archIsleRect(i) {
+  const x = 34 + i * 66;
+  return { x: x, y: 74, w: 48, h: 48, cx: x + 24, cy: 98 };
+}
+function archPageRect(d) {
+  return { x: d < 0 ? 4 : VW - 28, y: 86, w: 24, h: 24 };
+}
+function openArchipelago(view) {
+  const a = archi();
+  G.archView = view || 'pentagon';
+  G.state = 'archipelago';
+  G.archT = 0; G.archSel = -1; G.archMsgT = 0;
+  G.particles.length = 0;
+  if (!G.forgeOpen) G.forgeOpen = false;
+  Snd.play('title');
+}
+function archClose() {
+  if (G.archView === 'chain') { G.archView = 'pentagon'; G.archSel = -1; Snd.ui(); return; }
+  G.state = 'map'; G.mapT = 0; G.mapSel = -1; G.finalSel = false;
+  Snd.ui(); Snd.play(World.rooms[World.LEVELS[G.level].start].music || 'forest');
+  openMap(false);
+}
+function updateArchipelago(dt) {
+  const a = archi();
+  G.archT += dt;
+  G.archMsgT = Math.max(0, G.archMsgT - dt);
+  G.flashAmt = Math.max(0, G.flashAmt - dt * 2.2);
+  for (const pa of G.particles) pa.update(dt);
+  G.particles = G.particles.filter(x => !x.dead);
+  if (Math.random() < dt * 4) G.particles.push(new Particle({
+    x: rr(0, VW), y: VH + 4, vx: rr(-0.2, 0.2), vy: rr(-0.6, -0.2),
+    life: rr(3, 6), col: rpick(['#cfeaff', '#8fd0e8', '#ffffff']), size: 1, grav: 0
+  }));
+
+  if (G.forgeOpen) { updateForge(dt); return; }
+  G.archBackHot = Input.over(ARCH_BACK);
+  G.archForgeHot = Input.over(ARCH_FORGE);
+  if (Input.tap(ARCH_BACK) || Input.hit('Escape')) { archClose(); return; }
+  if (Input.tap(ARCH_FORGE)) { G.forgeOpen = true; G.forgeSel = 0; Snd.ui(); return; }
+
+  if (G.archView === 'pentagon') {
+    G.archSel = -1;
+    let pick = -1;
+    for (let k = 0; k < ISLE_TYPES.length; k++) {
+      const r = archNodeRect(k);
+      if (Math.hypot(Input.mx - r.cx, Input.my - r.cy) < 26) G.archSel = k;
+      if (Input.tap(r)) pick = k;
+    }
+    if (pick >= 0) {
+      a.type = pick; a.page = 0;
+      G.archView = 'chain'; G.archSel = -1; Snd.buy();
+    }
+    return;
+  }
+  /* the chain of twenty, ten to a page */
+  const t = isleTypeAt(a.type);
+  const pages = Math.ceil(ISLES_PER_TYPE / ISLES_PER_PAGE);
+  for (const d of [-1, 1]) if (Input.tap(archPageRect(d))) {
+    a.page = clamp(a.page + d, 0, pages - 1); Snd.ui();
+  }
+  if (Input.hit('ArrowRight')) a.page = clamp(a.page + 1, 0, pages - 1);
+  if (Input.hit('ArrowLeft')) a.page = clamp(a.page - 1, 0, pages - 1);
+  G.archSel = -1;
+  let hitIsle = -1;
+  for (let i = 0; i < ISLES_PER_PAGE; i++) {
+    const idx = a.page * ISLES_PER_PAGE + i;
+    if (idx >= ISLES_PER_TYPE) break;
+    const r = archIsleRect(i);
+    if (Input.over(r)) G.archSel = i;
+    if (Input.tap(r)) hitIsle = i;
+  }
+  if (hitIsle >= 0) {
+    const idx = a.page * ISLES_PER_PAGE + hitIsle;
+    const open = isleOpened(t.key);
+    if (idx < open) {
+      Snd.buy();
+      G.trans = { t: 0, phase: 'out', dur: 0.42, isleStart: { key: t.key, index: idx } };
+      G.state = 'play';
+      return;
+    }
+    if (idx > open) { Snd.uiBad(); G.archMsg = 'TAKE THE ONE BEFORE IT FIRST'; G.archMsgT = 2; return; }
+    const cost = isleCost(idx);
+    if (G.shardsOf(t.shard) >= cost || G.codes.admin) {
+      if (!G.codes.admin) a.shards[t.shard] -= cost;
+      a.opened[t.key] = idx + 1;
+      G.archMsg = 'THE ISLAND OPENS'; G.archMsgT = 2;
+      Snd.unlock(); G.flash(0.35);
+      G.saveGame();
+    } else {
+      Snd.uiBad();
+      G.archMsg = 'IT ASKS ' + cost + ' ' + t.shardName + ' SHARDS';
+      G.archMsgT = 2.2;
+    }
+  }
+}
+/* ---------- the smithing table ---------- */
+const FORGE_BOX = { x: 20, y: 20, w: 344, h: 176 };
+function forgeRowRect(i) { return { x: FORGE_BOX.x + 10, y: FORGE_BOX.y + 32 + i * 25, w: FORGE_BOX.w - 20, h: 23 }; }
+function updateForge(dt) {
+  void dt;
+  const closeR = { x: FORGE_BOX.x + FORGE_BOX.w - 24, y: FORGE_BOX.y + 4, w: 20, h: 16 };
+  G.forgeClose = Input.over(closeR);
+  if (Input.tap(closeR) || Input.hit('Escape')) { G.forgeOpen = false; Snd.ui(); return; }
+  G.forgeSel = -1;
+  let hitRow = -1;
+  for (let i = 0; i < ISLE_TYPES.length; i++) {
+    const r = forgeRowRect(i);
+    if (Input.over(r)) G.forgeSel = i;
+    if (Input.tap(r)) hitRow = i;
+  }
+  if (hitRow >= 0) {
+    const t = ISLE_TYPES[hitRow];
+    const made = G.forgeShard(t.shard, 1);
+    if (made) { G.archMsg = 'ONE ' + t.shardName + ' SHARD FORGED'; G.archMsgT = 2; }
+    else {
+      Snd.uiBad();
+      G.archMsg = G.partsOf(t.shard) < SHARD_PARTS ? 'NOT ENOUGH PARTS' : 'NOT ENOUGH COINS';
+      G.archMsgT = 2;
+    }
+  }
+}
+function drawForge() {
+  const B = FORGE_BOX;
+  ctx.fillStyle = 'rgba(8,6,14,0.76)';
+  ctx.fillRect(0, 0, VW, VH);
+  panel(ctx, B.x, B.y, B.w, B.h);
+  drawText(ctx, 'THE SMITHING TABLE', B.x + 12, B.y + 7, '#f2e2b8', 1, 'left', '#000000');
+  drawText(ctx, SHARD_PARTS + ' PARTS AND ' + FORGE_COST + ' COINS MAKE ONE SHARD',
+           B.x + 12, B.y + 19, '#a9b3c9', 1, 'left');
+  const closeR = { x: B.x + B.w - 24, y: B.y + 4, w: 20, h: 16 };
+  ctx.fillStyle = G.forgeClose ? '#c9403a' : 'rgba(20,14,10,0.8)';
+  ctx.fillRect(closeR.x, closeR.y, closeR.w, closeR.h);
+  drawText(ctx, 'X', closeR.x + closeR.w / 2, closeR.y + 4, '#ffeec0', 1, 'center');
+  ISLE_TYPES.forEach((t, i) => {
+    const r = forgeRowRect(i), hot = G.forgeSel === i;
+    const parts = G.partsOf(t.shard), whole = G.shardsOf(t.shard);
+    const can = forgeable(t.shard) > 0;
+    ctx.fillStyle = hot ? 'rgba(74,56,34,0.96)' : 'rgba(24,18,12,0.86)';
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.fillStyle = can ? t.col : '#5b4a34';
+    ctx.fillRect(r.x, r.y, r.w, 1);
+    drawShard(ctx, r.x + 14, r.y + 11, 7, t, 1);
+    drawText(ctx, t.shardName + ' SHARD', r.x + 28, r.y + 3, '#ffeec0', 1, 'left');
+    drawText(ctx, 'YOU HOLD ' + whole, r.x + 28, r.y + 13, '#a9b3c9', 1, 'left');
+    drawText(ctx, parts + ' PARTS', r.x + r.w - 150, r.y + 8,
+             parts >= SHARD_PARTS ? '#9be89a' : '#8a94a6', 1, 'left');
+    drawText(ctx, can ? 'CLICK TO FORGE ONE' : (parts < SHARD_PARTS ? 'NEEDS PARTS' : 'NEEDS COINS'),
+             r.x + r.w - 6, r.y + 8, can ? '#ffe98a' : '#8a94a6', 1, 'right');
+  });
+  ctx.drawImage(Art.item.coin[Math.floor(G.archT / 0.09) % 8], B.x + 12, B.y + B.h - 18);
+  drawText(ctx, G.purse(), B.x + 26, B.y + B.h - 16, '#ffe98a', 1, 'left', '#000000');
+  if (G.archMsgT > 0) {
+    ctx.save(); ctx.globalAlpha = Math.min(1, G.archMsgT * 2);
+    drawText(ctx, G.archMsg, B.x + B.w / 2, B.y + B.h - 16, '#ffd04a', 1, 'center', '#2a1a10');
+    ctx.restore();
+  }
+}
+/* one shard, drawn as a cut gem of its own colour */
+function drawShard(c2, x, y, r, t, alpha) {
+  c2.save();
+  if (alpha !== undefined) c2.globalAlpha = alpha;
+  c2.fillStyle = t.col2;
+  c2.beginPath();
+  c2.moveTo(x, y - r); c2.lineTo(x + r * 0.72, y - r * 0.2);
+  c2.lineTo(x + r * 0.44, y + r * 0.86); c2.lineTo(x - r * 0.44, y + r * 0.86);
+  c2.lineTo(x - r * 0.72, y - r * 0.2);
+  c2.closePath(); c2.fill();
+  c2.fillStyle = t.col;
+  c2.beginPath();
+  c2.moveTo(x, y - r * 0.72); c2.lineTo(x + r * 0.5, y - r * 0.12);
+  c2.lineTo(x + r * 0.3, y + r * 0.6); c2.lineTo(x - r * 0.3, y + r * 0.6);
+  c2.lineTo(x - r * 0.5, y - r * 0.12);
+  c2.closePath(); c2.fill();
+  c2.fillStyle = '#ffffff';
+  c2.fillRect(Math.round(x - r * 0.3), Math.round(y - r * 0.4), 2, 2);
+  c2.restore();
+}
+function drawArchipelago() {
+  ctx.drawImage(makeSky('archi', [[0, '#0e2340'], [0.4, '#1d4a70'], [0.72, '#2f6fb0'], [1, '#66aade']]), 0, 0);
+  /* the sea it all stands in */
+  ctx.save();
+  ctx.globalAlpha = 0.10;
+  ctx.fillStyle = '#cfeaff';
+  for (let y = 20; y < VH; y += 7) {
+    const w = 40 + Math.sin(y * 0.2 + G.archT * 0.6) * 20;
+    for (let x = -20; x < VW + 20; x += 74) ctx.fillRect(Math.round(x + Math.sin((x + y) * 0.05 + G.archT) * 12), y, w, 2);
+  }
+  ctx.restore();
+  for (const pa of G.particles) pa.draw(ctx);
+  const a = archi();
+
+  if (G.archView === 'pentagon') {
+    drawText(ctx, 'THE ARCHIPELAGO', VW / 2, 6, '#ffeec0', 2, 'center', '#0a1420');
+    drawText(ctx, 'FIVE KINDS, TWENTY ISLANDS OF EACH', VW / 2, 22, '#8fd0e8', 1, 'center', '#0a1420');
+    /* the chains of the pentagon, drawn between the five */
+    for (let k = 0; k < 5; k++) {
+      const p1 = archNodeRect(k), p2 = archNodeRect((k + 1) % 5);
+      drawChainLine(p1.cx, p1.cy, p2.cx, p2.cy);
+    }
+    for (let k = 0; k < 5; k++) {
+      const t = ISLE_TYPES[k], r = archNodeRect(k), hot = G.archSel === k;
+      const bob = Math.sin(G.archT * 1.5 + k) * 1.6;
+      if (hot) {
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.18 + Math.sin(G.archT * 5) * 0.06;
+        ctx.fillStyle = t.col;
+        ctx.beginPath(); ctx.arc(r.cx, r.cy + bob, 30, 0, TAU); ctx.fill(); ctx.restore();
+      }
+      ctx.drawImage(Art.map.isle[k], Math.round(r.cx - 24), Math.round(r.cy - 24 + bob));
+      /* the name, and under it how far out you have bought */
+      const short = t.name.replace('THE ', '');
+      const w = Math.max(textWidth(short) + 8, 34);
+      ctx.fillStyle = 'rgba(10,20,32,0.9)';
+      ctx.fillRect(Math.round(r.cx - w / 2), Math.round(r.cy + 22 + bob), Math.round(w), 20);
+      drawText(ctx, short, r.cx, r.cy + 24 + bob, hot ? '#ffeec0' : t.col, 1, 'center');
+      drawText(ctx, isleOpened(t.key) + '/' + ISLES_PER_TYPE,
+               r.cx, r.cy + 33 + bob, '#a9b3c9', 1, 'center');
+    }
+  } else {
+    const t = isleTypeAt(a.type);
+    drawText(ctx, t.name, VW / 2, 8, '#ffeec0', 2, 'center', '#0a1420');
+    drawShard(ctx, 14, 30, 7, t, 1);
+    drawText(ctx, G.shardsOf(t.shard) + ' SHARDS   ' + G.partsOf(t.shard) + ' PARTS',
+             26, 26, t.col, 1, 'left', '#0a1420');
+    const pages = Math.ceil(ISLES_PER_TYPE / ISLES_PER_PAGE);
+    drawText(ctx, 'ISLANDS ' + (a.page * ISLES_PER_PAGE + 1) + ' TO ' +
+             Math.min(ISLES_PER_TYPE, (a.page + 1) * ISLES_PER_PAGE),
+             VW - 8, 26, '#a9b3c9', 1, 'right', '#0a1420');
+    const open = isleOpened(t.key);
+    for (let i = 0; i < ISLES_PER_PAGE; i++) {
+      const idx = a.page * ISLES_PER_PAGE + i;
+      if (idx >= ISLES_PER_TYPE) break;
+      const r = archIsleRect(i), hot = G.archSel === i;
+      const isOpen = idx < open, isNext = idx === open;
+      const done = isleCleared(t.key, idx);
+      /* the chain that links it to the one before */
+      if (i > 0) drawChainLine(r.x - 20, r.cy, r.x - 2, r.cy);
+      ctx.save();
+      if (!isOpen && !isNext) ctx.globalAlpha = 0.4;
+      ctx.drawImage(Art.map.isle[a.type], Math.round(r.x - 1), Math.round(r.y - 1));
+      ctx.restore();
+      if (!isOpen) ctx.drawImage(Art.map.lock, Math.round(r.cx - 8), Math.round(r.cy - 9));
+      if (done) drawText(ctx, 'CLEAR', r.cx, r.y + 54, '#9be89a', 1, 'center', '#0a1420');
+      if (hot) {
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.2; ctx.fillStyle = t.col;
+        ctx.beginPath(); ctx.arc(r.cx, r.cy, 26, 0, TAU); ctx.fill(); ctx.restore();
+      }
+      drawText(ctx, 'ISLAND ' + (idx + 1), r.cx, r.y - 12, isOpen ? '#ffeec0' : '#8a94a6', 1, 'center', '#0a1420');
+      if (isNext) {
+        const cost = isleCost(idx);
+        const can = G.shardsOf(t.shard) >= cost || G.codes.admin;
+        drawShard(ctx, r.cx - 12, r.y + 62, 5, t, 1);
+        drawText(ctx, String(cost) + ' TO OPEN', r.cx - 3, r.y + 58,
+                 can ? '#9be89a' : '#c9403a', 1, 'left', '#0a1420');
+      }
+    }
+    for (const d of [-1, 1]) {
+      const r = archPageRect(d);
+      const can = d < 0 ? a.page > 0 : a.page < pages - 1;
+      ctx.fillStyle = can ? 'rgba(20,40,60,0.9)' : 'rgba(14,26,38,0.6)';
+      ctx.fillRect(r.x, r.y, r.w, r.h);
+      drawText(ctx, d < 0 ? '<' : '>', r.x + r.w / 2, r.y + 8, can ? '#cfeaff' : '#3f5f7a', 1, 'center');
+    }
+  }
+
+  /* the two buttons at the foot */
+  for (const [r, label, hot] of [[ARCH_BACK, 'BACK', G.archBackHot],
+                                 [ARCH_FORGE, 'SMITHING TABLE', G.archForgeHot]]) {
+    ctx.fillStyle = hot ? 'rgba(74,56,34,0.96)' : 'rgba(10,20,32,0.88)';
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.fillStyle = hot ? '#ffd04a' : '#5f9fe0';
+    ctx.fillRect(r.x, r.y, r.w, 1);
+    drawText(ctx, label, r.x + r.w / 2, r.y + 5, '#ffeec0', 1, 'center');
+  }
+  if (G.archMsgT > 0 && !G.forgeOpen) {
+    ctx.save(); ctx.globalAlpha = Math.min(1, G.archMsgT * 2);
+    drawText(ctx, G.archMsg, VW / 2, VH - 20, '#ffd04a', 1, 'center', '#0a1420');
+    ctx.restore();
+  }
+  if (G.forgeOpen) drawForge();
+  if (G.flashAmt > 0) {
+    ctx.save(); ctx.globalAlpha = Math.min(1, G.flashAmt); ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, VW, VH); ctx.restore();
+  }
 }
 
 /* ============================================================
@@ -1568,8 +2078,10 @@ function updateWardrobe(dt) {
   const keys = SUIT_KEYS.slice(G.wardPage * WARD_PER_PAGE, (G.wardPage + 1) * WARD_PER_PAGE);
   G.wardSel = -1;
   for (let i = 0; i < keys.length; i++) if (Input.over(wardRowRect(i))) G.wardSel = i;
-  if (Input.mhit && G.wardSel >= 0) {
-    const key = keys[G.wardSel], suit = SUITS[key];
+  let wardTap = -1;
+  for (let i = 0; i < keys.length; i++) if (Input.tap(wardRowRect(i))) wardTap = i;
+  if (wardTap >= 0) {
+    const key = keys[wardTap], suit = SUITS[key];
     if (G.wardrobe.owned[key]) {
       /* owned, so the click wears it, or takes it off again */
       G.profile.suit = (G.profile.suit === key) ? 'none' : key;
@@ -1673,16 +2185,68 @@ function drawWardrobe() {
    THE SPHINX AND ITS QUESTION.  Answer it and the gate opens
    and the ring is yours.  Answer wrong and it costs a heart.
    ============================================================ */
+/* Fifty questions, all of them about this wood and these realms.  The sphinx
+   takes one at random and holds you to it. */
 const RIDDLES = [
-  { q: 'WHAT WALKS ON FOUR LEGS AT DAWN, TWO AT NOON, THREE AT DUSK',
-    a: ['A PERSON', 'A LION', 'THE RIVER'], right: 0 },
-  { q: 'THE MORE OF ME YOU TAKE, THE MORE YOU LEAVE BEHIND',
-    a: ['SAND', 'FOOTSTEPS', 'GOLD'], right: 1 },
-  { q: 'I HAVE CITIES BUT NO HOUSES, WATER BUT NO FISH',
-    a: ['A TOMB', 'A DREAM', 'A MAP'], right: 2 },
-  { q: 'I AM ALWAYS COMING BUT I NEVER ARRIVE',
-    a: ['TOMORROW', 'THE WIND', 'THE SEA'], right: 0 }
+  { q: 'WHICH GUARDIAN KEEPS THE FIRST REALM, EMBERWOOD', a: ['THE EMBER WYRM', 'THE KRAKEN MAW', 'THE FORGEFIEND'], right: 0 },
+  { q: 'WHAT DOES A SECOND TAP OF THE SWORD THROW', a: ['A FLURRY', 'A GALE', 'A ROLL CUT'], right: 0 },
+  { q: 'HOW MANY SLOTS DOES THE POUCH HOLD', a: ['THREE', 'FIVE', 'ONE'], right: 0 },
+  { q: 'WHICH RELIC LOOSES A BURNING WAVE ON EVERY SWING', a: ['THE EMBERHEART', 'THE RIPTIDE MANTLE', 'THE STORMFEATHER WINGS'], right: 0 },
+  { q: 'WHAT LIVES AT THE BOTTOM OF THE TRENCH', a: ['THE LEVIATHAN', 'THE TIDE WARDEN', 'THE ASHEN TITAN'], right: 0 },
+  { q: 'WHAT PUTS OUT A FIRE THAT HAS TAKEN HOLD OF YOU', a: ['WATER', 'A ROLL', 'A PARRY'], right: 0 },
+  { q: 'WHICH CHAPTER LIES UNDER THE SEA', a: ['CHAPTER TWO', 'CHAPTER FOUR', 'CHAPTER ONE'], right: 0 },
+  { q: 'HOW MANY REALMS DOES A CHAPTER HOLD', a: ['THREE', 'FIVE', 'TWO'], right: 0 },
+  { q: 'WHAT DOES THE LODESTONE CHANGE', a: ['THE REACH OF THE MAGNET', 'THE PULL OF THE MAGNET', 'THE PRICE OF COINS'], right: 0 },
+  { q: 'WHERE DO YOU WAKE WHEN THE LEVIATHAN SWALLOWS YOU', a: ['THE GULLET', 'THE VAULT', 'THE MAZE'], right: 0 },
+  { q: 'HOW MANY PAPERS ARE HIDDEN IN EACH REALM', a: ['TWO', 'FOUR', 'ONE'], right: 0 },
+  { q: 'WHAT DOES A BLOW COST YOU WHEN THE PHARAOH THROWS YOU AT A WALL', a: ['FIVE HEARTS', 'TWO HEARTS', 'ONE HEART'], right: 0 },
+  { q: 'WHICH CREATURE TURNS A BLOW STRUCK FROM THE FRONT', a: ['A CRAB', 'A JELLY', 'A BAT'], right: 0 },
+  { q: 'WHAT COLOUR DOES A STRUCK CREATURE TURN', a: ['WHITE', 'RED', 'GREEN'], right: 0 },
+  { q: 'HOW LONG DOES FIRE TAKE HALF A HEART', a: ['A SECOND', 'TEN SECONDS', 'AN INSTANT'], right: 0 },
+  { q: 'WHAT DOES THE WHETSTONE SHARPEN', a: ['THE BLADE', 'THE BOOTS', 'THE WARD'], right: 0 },
+  { q: 'WHICH WAY DOES THE CAPE STREAM WHEN YOU FALL', a: ['UPWARD', 'BEHIND YOU', 'IT HANGS STILL'], right: 0 },
+  { q: 'WHAT HOLDS THE LAST MAP SHUT', a: ['CHAINS', 'A RIDDLE', 'A KEY'], right: 0 },
+  { q: 'WHAT DOES A ROLL CUT PAY ON A KILL', a: ['DOUBLE COINS', 'DOUBLE DAMAGE', 'NOTHING EXTRA'], right: 0 },
+  { q: 'HOW MANY FILES CAN YOU KEEP AT ONCE', a: ['THREE', 'ONE', 'TEN'], right: 0 },
+  { q: 'WHAT WALKS THE CINDER FIELDS AND LEAVES CINDERS', a: ['AN EMBERLING', 'A SPORELING', 'A WISP'], right: 0 },
+  { q: 'WHICH REALM HOLDS THE HOLLOW MAZE', a: ['EMBERWOOD', 'SPOREWOOD', 'TIDEWRACK'], right: 0 },
+  { q: 'WHAT DOES A DRIFT OF POWDERED SNOW DO TO YOU', a: ['IT SWALLOWS YOU', 'IT SLOWS YOU', 'NOTHING'], right: 0 },
+  { q: 'WHAT LETS YOU FALL THROUGH QUICKSAND ALIVE', a: ['THE SANDSTEP', 'THE SALT VIAL', 'THE FEATHER TOKEN'], right: 0 },
+  { q: 'WHICH GUARDIAN CALLS DOWN A CROWN OF FIRE', a: ['IFRIT', 'THE SPHINX', 'ZEUS'], right: 0 },
+  { q: 'HOW MANY HEARTS DOES A LEVIATHAN TAKE AT A BITE', a: ['THREE', 'ONE', 'SIX'], right: 0 },
+  { q: 'WHAT DO YOU SPEND ON CLOTHES IN THE WARDROBE', a: ['COINS', 'TICKETS', 'PAPERS'], right: 0 },
+  { q: 'WHAT DOES THE SCARAB CHARM ADD', a: ['A QUARTER MORE COINS', 'A HEART', 'A LONGER DASH'], right: 0 },
+  { q: 'WHICH CREATURE HANGS IN THE DARK BEHIND ITS OWN LURE', a: ['AN ANGLER', 'A CRAB', 'A GOLEM'], right: 0 },
+  { q: 'WHAT STANDS IN THE FIRST BOSS ROOM BEFORE THE DRAGON', a: ['ARMOUR THAT MOVES', 'A SPHINX', 'A CHEST'], right: 0 },
+  { q: 'HOW MANY TILES OF WALL DOES A VAULT SHAFT RUN', a: ['TWENTY', 'TEN', 'FIFTY'], right: 0 },
+  { q: 'WHAT DOES A GALE CARRY THE EMBERHEART FIRE TO', a: ['SEVEN AND A HALF TILES', 'FIVE TILES', 'TWENTY TILES'], right: 0 },
+  { q: 'WHICH REALM DOES THE FROST WYRM KEEP', a: ['GLACIER HEART', 'FROSTFELL', 'AURORA CROWN'], right: 0 },
+  { q: 'WHAT COMES OUT OF THE GROUND WHEN YOU LEAVE A VAULT', a: ['A DOOR', 'A LADDER', 'A LIFT'], right: 0 },
+  { q: 'WHAT DOES THE WARD CHARM GIVE YOU', a: ['A CHANCE TO SHRUG OFF A BLOW', 'A SECOND JUMP', 'MORE COINS'], right: 0 },
+  { q: 'WHICH CODE UNLOCKS GINGER HAIR', a: ['DYLAN', 'BEAR50', 'ADMIN'], right: 0 },
+  { q: 'WHAT KIND OF GROUND GIVES NO GRIP AT ALL', a: ['ICE', 'SNOW', 'SAND'], right: 0 },
+  { q: 'HOW MANY BLOWS OF A BASE BLADE DOES A BEAR TAKE', a: ['FIVE', 'ONE', 'TWENTY'], right: 0 },
+  { q: 'WHAT DO YOU GET FOR PARRYING A SHOT', a: ['IT FLIES BACK AT TWICE THE DAMAGE', 'A COIN', 'A HEART'], right: 0 },
+  { q: 'WHICH CHAPTER IS THE WHITE SILENCE', a: ['CHAPTER FOUR', 'CHAPTER TWO', 'CHAPTER FIVE'], right: 0 },
+  { q: 'WHAT DOES THE STONE EYE SHOW YOU', a: ['HIDDEN GROUND', 'THE MAP', 'YOUR COINS'], right: 0 },
+  { q: 'WHAT SITS AT THE HEAD OF A VAULT CLIMB', a: ['A CHEST AND A DOOR', 'A GUARDIAN', 'NOTHING'], right: 0 },
+  { q: 'WHICH CREATURE CIRCLES THE WASTE AND THEN STOOPS', a: ['A VULTURE', 'A BAT', 'A JELLY'], right: 0 },
+  { q: 'WHAT DOES DYING COST YOU', a: ['A FIFTH OF YOUR COINS', 'A HEART', 'A REALM'], right: 0 },
+  { q: 'HOW DO YOU KICK OFF A WALL', a: ['HOLD INTO IT AND JUMP', 'DASH AT IT', 'CROUCH'], right: 0 },
+  { q: 'WHAT DOES THE COPPER ANKH ADD', a: ['ONE HEART', 'ONE COIN', 'ONE SLOT'], right: 0 },
+  { q: 'WHICH GUARDIAN LIFTS YOU AND SQUEEZES', a: ['THE KRAKEN MAW', 'THE DUNE MAW', 'THE RIME COLOSSUS'], right: 0 },
+  { q: 'WHAT BUILDS UP WHEN YOU HOLD THE SWORD DOWN', a: ['A GALE', 'A FLURRY', 'A ROLL'], right: 0 },
+  { q: 'WHERE DOES A BOOT LEAVE A TRACK BEHIND IT', a: ['IN FRESH SNOW', 'IN SAND', 'IN ASH'], right: 0 },
+  { q: 'WHAT AM I, WHO SITS HERE AND WILL NOT MOVE', a: ['THE SPHINX', 'A STATUE', 'A GUARDIAN'], right: 0 }
 ];
+/* the three answers are shuffled per question, so the first is not the one */
+function riddleFor(seed) {
+  const base = RIDDLES[seed % RIDDLES.length];
+  const r = new RNG(seed * 31 + 7);
+  const order = [0, 1, 2];
+  for (let i = 2; i > 0; i--) { const j = r.i(0, i); const t = order[i]; order[i] = order[j]; order[j] = t; }
+  return { q: base.q, a: order.map(i => base.a[i]), right: order.indexOf(base.right) };
+}
 const RIDDLE_BOX = { x: 34, y: 40, w: 316, h: 132 };
 function riddleAnswerRect(i) {
   return { x: RIDDLE_BOX.x + 16, y: RIDDLE_BOX.y + 54 + i * 22, w: RIDDLE_BOX.w - 32, h: 18 };
@@ -1690,19 +2254,80 @@ function riddleAnswerRect(i) {
 function currentRiddle() {
   const r = G.room && G.room.riddle;
   if (!r) return null;
-  return RIDDLES[r.seed % RIDDLES.length];
+  /* a fresh question every time you come to it, until you answer one */
+  if (!G.riddlePick) G.riddlePick = (r.seed + (Date.now() & 0xffff)) >>> 0;
+  return riddleFor(G.riddlePick);
 }
-G.openGate = function () {
+/* The wall does not fall.  It slides sideways along its own course, grinding,
+   and leaves a doorway standing where it stood. */
+const GATE_SLIDE = 2.4;
+G.openGate = function (quiet) {
   const room = G.room;
-  if (!room || !room.gate) return;
-  for (let y = room.gate.y0; y <= room.gate.y1; y++) room.set(room.gate.tx, y, T_EMPTY);
-  for (let k = 0; k < 40; k++) G.particles.push(new Particle({
-    x: room.gate.tx * TILE + 8 + rr(-6, 6), y: rr(room.gate.y0, room.gate.y1) * TILE,
-    vx: rr(-3, 3), vy: rr(-3, 1), life: rr(0.4, 1),
-    col: '#e0bd86', col2: '#8a6a3a', size: rr(1, 3), grav: 0.2
-  }));
-  Snd.boom(); G.shake(8);
+  const gt = room && room.gate;
+  if (!gt) return;
+  for (let x = gt.x0; x <= gt.x1; x++)
+    for (let y = gt.y0; y <= gt.y1; y++) room.set(x, y, T_EMPTY);
+  /* the ground the wall stood on comes back, so you can walk through */
+  for (let x = gt.x0; x <= gt.x1; x++) room.set(x, gt.y1, T_TOMBTOP);
+  if (quiet) return;
+  G.gateSlide = { t: 0, x0: gt.x0, x1: gt.x1, y0: gt.y0, y1: gt.y1 };
+  Snd.boom(); G.shake(9);
 };
+function updateGateSlide(dt) {
+  const g = G.gateSlide;
+  if (!g) return;
+  g.t += dt;
+  const k = clamp(g.t / GATE_SLIDE, 0, 1);
+  if (Math.random() < dt * 60) G.particles.push(new Particle({
+    x: (g.x0 + (g.x1 - g.x0 + 1) * (1 + k * 3)) * TILE + rr(-10, 10),
+    y: rr(g.y0, g.y1 + 1) * TILE, vx: rr(-1.4, 1.4), vy: rr(-1.6, 0.6),
+    life: rr(0.4, 1.1), col: '#e0bd86', col2: '#8a6a3a', size: rr(1, 3), grav: 0.16
+  }));
+  if (g.t < GATE_SLIDE && Math.floor(g.t * 4) !== Math.floor((g.t - dt) * 4)) G.shake(2.4);
+  if (g.t >= GATE_SLIDE + 0.6) G.gateSlide = null;
+}
+/* the slab on the move, and the arch it leaves behind */
+function drawGate(camX, camY) {
+  const room = G.room;
+  const gt = room && room.gate;
+  if (!gt) return;
+  const w = (gt.x1 - gt.x0 + 1) * TILE, h = (gt.y1 - gt.y0 + 1) * TILE;
+  const gx = gt.x0 * TILE, gy = gt.y0 * TILE;
+  if (G.gateSlide) {
+    const k = clamp(G.gateSlide.t / GATE_SLIDE, 0, 1);
+    const ease = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+    ctx.save();
+    ctx.globalAlpha = 1 - Math.max(0, (G.gateSlide.t - GATE_SLIDE) / 0.6);
+    ctx.translate(Math.round(ease * w * 3.2), 0);
+    for (let ty = gt.y0; ty <= gt.y1; ty++)
+      for (let tx = gt.x0; tx <= gt.x1; tx++)
+        ctx.drawImage(Art.tile.tomb[(tx * 7 + ty * 13) & 3], tx * TILE, ty * TILE);
+    /* the face of it, so the slab reads as one stone */
+    ctx.fillStyle = 'rgba(224,176,64,0.5)';
+    ctx.fillRect(gx, gy, w, 2);
+    ctx.restore();
+  }
+  /* the arch that stands once the wall has gone */
+  if (G.flags.riddleDone) {
+    const ax = gt.doorX * TILE + 8, ay = gt.doorY * TILE;
+    ctx.save();
+    ctx.fillStyle = '#7b6338';
+    ctx.fillRect(ax - 22, ay - 46, 6, 46);
+    ctx.fillRect(ax + 16, ay - 46, 6, 46);
+    ctx.fillRect(ax - 24, ay - 52, 48, 7);
+    ctx.fillStyle = '#b09563';
+    ctx.fillRect(ax - 21, ay - 45, 4, 45);
+    ctx.fillRect(ax + 17, ay - 45, 4, 45);
+    ctx.fillRect(ax - 23, ay - 51, 46, 5);
+    ctx.fillStyle = '#e0b040';
+    ctx.fillRect(ax - 24, ay - 53, 48, 2);
+    for (let k = 0; k < 5; k++) {
+      ctx.fillStyle = k % 2 ? '#2f5fb0' : '#e0b040';
+      ctx.fillRect(ax - 20 + k * 9, ay - 50, 6, 3);
+    }
+    ctx.restore();
+  }
+}
 function updateRiddle(dt) {
   G.riddleT = (G.riddleT || 0) + dt;
   const R = currentRiddle();
@@ -1712,10 +2337,14 @@ function updateRiddle(dt) {
   G.riddleClose = Input.over(closeR);
   if (Input.tap(closeR) || Input.hit('Escape')) { G.riddleOpen = false; Snd.ui(); return; }
   G.riddleSel = -1;
-  for (let i = 0; i < R.a.length; i++) if (Input.over(riddleAnswerRect(i))) G.riddleSel = i;
+  let tapped = -1;
+  for (let i = 0; i < R.a.length; i++) {
+    const r = riddleAnswerRect(i);
+    if (Input.over(r)) G.riddleSel = i;
+    if (Input.tap(r)) tapped = i;
+  }
   if (G.riddleMsgT > 0) return;
-  let pick = -1;
-  if (Input.mhit && G.riddleSel >= 0) pick = G.riddleSel;
+  let pick = tapped;
   if (Input.hit('Digit1')) pick = 0;
   if (Input.hit('Digit2')) pick = 1;
   if (Input.hit('Digit3')) pick = 2;
@@ -1778,6 +2407,13 @@ function drawRiddle() {
    works; whatever sits in the pouch does nothing.
    ============================================================ */
 const ARTIFACTS = [
+  /* the three mythical things, one from each guardian of the waste */
+  { key: 'sunheart', rank: 4, name: 'THE SUNHEART', short: 'SUNHEART',
+    desc: 'FOUR HEARTS MORE ON YOUR LIFE BAR' },
+  { key: 'riddlestone', rank: 4, name: 'THE RIDDLESTONE', short: 'RIDDLESTONE',
+    desc: 'EVERY SPECIAL CUT BITES HALF AGAIN AS HARD' },
+  { key: 'pharaohcrook', rank: 4, name: "THE PHARAOHS CROOK", short: 'THE CROOK',
+    desc: 'EVERY COIN COMES TO YOU DOUBLED' },
   { key: 'ring', rank: 3, name: "THE PHARAOHS RING", short: 'THE RING',
     desc: 'WALK THROUGH QUICKSAND AND POWDERED SNOW' },
   { key: 'ankh', rank: 2, name: 'COPPER ANKH', short: 'ANKH', desc: 'ONE HEART MORE' },
@@ -1796,8 +2432,8 @@ const ARTIFACTS = [
 ];
 const ARTIFACT_SLOTS = 3;
 function artifactBy(key) { for (const a of ARTIFACTS) if (a.key === key) return a; return null; }
-const RANK_COL = ['#a89270', '#c9a06a', '#b9c2d0', '#e0b040'];
-const RANK_NAME = ['', 'COMMON', 'RARE', 'ROYAL'];
+const RANK_COL = ['#a89270', '#c9a06a', '#b9c2d0', '#e0b040', '#ff8be0'];
+const RANK_NAME = ['', 'COMMON', 'RARE', 'ROYAL', 'MYTHIC'];
 
 G.hasArtifact = function (key) {
   const a = G.artifacts;
@@ -1821,7 +2457,8 @@ G.giveArtifact = function (key) {
 };
 /* a low ranked artifact the player has not found yet, or nothing */
 G.rollArtifact = function (rank) {
-  const pool = ARTIFACTS.filter(a => a.rank <= (rank || 1) && !G.artifacts.owned[a.key]);
+  /* a chest never gives up a mythical thing: those are won, not found */
+  const pool = ARTIFACTS.filter(a => a.rank <= (rank || 1) && a.rank < 4 && !G.artifacts.owned[a.key]);
   if (!pool.length) return null;
   return pool[Math.floor(Math.random() * pool.length)].key;
 };
@@ -1829,7 +2466,8 @@ G.applyArtifacts = function () {
   const p = G.player;
   if (!p) return;
   /* the ankh is the only one that changes a stored number */
-  const want = 6 + (p.up.heart || 0) * 2 + (G.hasArtifact('ankh') ? 2 : 0);
+  const want = 6 + (p.up.heart || 0) * 2 +
+               (G.hasArtifact('ankh') ? 2 : 0) + (G.hasArtifact('sunheart') ? 8 : 0);
   if (p.maxHp !== want) {
     const gain = want - p.maxHp;
     p.maxHp = want;
@@ -1855,14 +2493,19 @@ function updatePouch(dt) {
   for (let i = 0; i < ARTIFACT_SLOTS; i++) if (Input.over(pouchSlotRect(i))) G.pouchSlotSel = i;
   const own = ownedArtifacts();
   for (let i = 0; i < own.length; i++) if (Input.over(pouchListRect(i))) G.pouchSel = i;
-  if (Input.mhit && G.pouchSlotSel >= 0) {
+  let slotTap = -1, listTap = -1;
+  for (let i = 0; i < ARTIFACT_SLOTS; i++) if (Input.tap(pouchSlotRect(i))) slotTap = i;
+  for (let i = 0; i < own.length; i++) if (Input.tap(pouchListRect(i))) listTap = i;
+  if (slotTap >= 0) { G.pouchSlotSel = slotTap; }
+  if (listTap >= 0) { G.pouchSel = listTap; }
+  if (slotTap >= 0) {
     /* click a slot to empty it */
     if (G.artifacts.slots[G.pouchSlotSel]) {
       G.artifacts.slots[G.pouchSlotSel] = null;
       Snd.ui(); G.applyArtifacts(); G.saveGame();
     }
-  } else if (Input.mhit && G.pouchSel >= 0) {
-    const key = own[G.pouchSel].key;
+  } else if (listTap >= 0) {
+    const key = own[listTap].key;
     const at = G.artifacts.slots.indexOf(key);
     if (at >= 0) { G.artifacts.slots[at] = null; Snd.ui(); }
     else {
@@ -1998,8 +2641,10 @@ function drawFinalPage() {
   /* the chains cross the page.  Two pass behind the realm and two in front,
      so the chains look wrapped around it. */
   const sagOf = c => Math.sin(G.mapT * 0.9 + c[1] * 0.05) * 1.2;
+  /* the chains fall away once the word has been said */
+  const bound = !(G.archipelago && G.archipelago.open);
   ctx.save();
-  ctx.globalAlpha = 0.96;
+  ctx.globalAlpha = bound ? 0.96 : 0.16;
   for (let i = 0; i < 2; i++) {
     const c = FINAL_CHAINS[i], sag = sagOf(c);
     drawChainLine(ox + c[0], c[1] + sag, ox + c[2], c[3] + sag);
@@ -2015,7 +2660,7 @@ function drawFinalPage() {
   drawText(ctx, World.FINAL.name, r.cx, r.y + 53 + bob, '#cfeaff', 1, 'center');
 
   ctx.save();
-  ctx.globalAlpha = 0.96;
+  ctx.globalAlpha = bound ? 0.96 : 0.16;
   for (let i = 2; i < FINAL_CHAINS.length; i++) {
     const c = FINAL_CHAINS[i], sag = sagOf(c);
     drawChainLine(ox + c[0], c[1] + sag, ox + c[2], c[3] + sag);
@@ -2025,7 +2670,8 @@ function drawFinalPage() {
     ctx.drawImage(Art.map.ring, Math.round(ox + c[2] - 6), Math.round(c[3] - 6));
   }
   ctx.restore();
-  ctx.drawImage(Art.map.lock, Math.round(r.cx - 8), Math.round(r.cy - 9 + bob));
+  if (!(G.archipelago && G.archipelago.open))
+    ctx.drawImage(Art.map.lock, Math.round(r.cx - 8), Math.round(r.cy - 9 + bob));
 }
 function tutorialNodeRect() {
   const n = World.TUTORIAL.node;
@@ -2188,7 +2834,10 @@ function updateMap(dt) {
   if (Input.tap(backR) || Input.hit('Escape')) { G.saveGame(); Snd.ui(); openFiles(); return; }
 
   if (Input.mhit && G.overArrow && !G.unlockAnim) { gotoChapter(G.chapter + G.overArrow); Snd.ui(); }
-  else if (Input.mhit && G.finalSel) { Snd.uiBad(); G.banner('COMING SOON', 2.2); }
+  else if (Input.mhit && G.finalSel) {
+    if (G.archipelago && G.archipelago.open) { Snd.buy(); openArchipelago('pentagon'); return; }
+    Snd.uiBad(); G.banner('SEALED - A WORD OPENS IT', 2.2);
+  }
   else if (Input.mhit && G.mapSel >= 0) {
     if (G.mapSel < G.unlocked) { Snd.buy(); G.startLevel(G.mapSel); }
     else { Snd.uiBad(); G.banner('CLEAR THE REALM BEFORE IT', 1.8); }
@@ -2313,7 +2962,8 @@ function drawMap() {
   }
 
   const foot = G.finalSel
-    ? 'THE ARCHIPELAGO   -   COMING SOON'
+    ? (G.archipelago && G.archipelago.open ? 'THE ARCHIPELAGO   -   CLICK TO SAIL'
+                                           : 'THE ARCHIPELAGO   -   SEALED')
     : (G.mapSel >= 0
       ? (G.mapSel < G.unlocked ? World.LEVELS[G.mapSel].sub + '   -   CLICK TO ENTER'
                                : 'SEALED   -   CLEAR THE REALM BEFORE IT')
@@ -2940,6 +3590,50 @@ function drawDecor(layer, camX, camY) {
       case 'fern': { const s = Art.prop.fern[d.idx]; blitSway(ctx, s.c, d.x, d.y, d.sway, wind * 1.1 + d.phase, s.ax, s.ay, 6, 1, d.alpha); break; }
       case 'pine': { const s = Art.prop.pine[d.idx]; blitSway(ctx, s.c, d.x, d.y, d.sway * 0.6, wind * 0.5 + d.phase, s.ax, s.ay, 10, d.scale || 1, d.alpha); break; }
       case 'cactus': { const s = Art.prop.cactus[d.idx]; blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
+      case 'palm': { const s = Art.prop.palm[d.idx || 0]; blitSway(ctx, s.c, d.x, d.y, d.sway, wind * 0.5 + d.phase, s.ax, s.ay, 10); break; }
+      case 'house': { const s = Art.prop.house[d.idx]; blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
+      case 'tumbleweed': {
+        const s = Art.prop.tumbleweed[d.idx];
+        /* it rolls, and it turns as it rolls */
+        const span = 240;
+        const roll = ((G.t * (d.drift || 18) + d.phase * 40) % span);
+        const tx = d.x - span / 2 + roll;
+        const hop = Math.abs(Math.sin(roll * 0.09)) * 5;
+        ctx.save();
+        ctx.translate(Math.round(tx), Math.round(d.y - 10 - hop));
+        ctx.rotate(roll * 0.11);
+        ctx.drawImage(s.c, -10, -10);
+        ctx.restore();
+        break;
+      }
+      case 'trestle': {
+        /* the timber that carries a mesa bridge over its gorge */
+        const x0 = Math.round(d.x), y0 = Math.round(d.y), w = d.w, h = d.h;
+        ctx.save();
+        ctx.fillStyle = '#4a3220';
+        for (let bx = x0 + 6; bx < x0 + w - 4; bx += 22) {
+          ctx.fillRect(bx, y0, 4, h);
+          ctx.fillRect(bx + 14, y0, 4, h);
+          /* the cross bracing */
+          ctx.save();
+          ctx.strokeStyle = '#5c3c22';
+          ctx.lineWidth = 2;
+          for (let by = y0 + 10; by < y0 + h - 8; by += 22) {
+            ctx.beginPath();
+            ctx.moveTo(bx + 2, by); ctx.lineTo(bx + 16, by + 20);
+            ctx.moveTo(bx + 16, by); ctx.lineTo(bx + 2, by + 20);
+            ctx.stroke();
+            ctx.fillRect(bx, by + 20, 18, 3);
+          }
+          ctx.restore();
+        }
+        /* the handrail along the deck */
+        ctx.fillStyle = '#7a5230';
+        ctx.fillRect(x0, y0 - 13, w, 3);
+        for (let bx = x0; bx < x0 + w; bx += 12) ctx.fillRect(bx, y0 - 13, 3, 13);
+        ctx.restore();
+        break;
+      }
       case 'bone': { const s = Art.prop.bone[d.idx]; blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
       case 'sphinx': {
         const s = Art.prop.sphinx;
@@ -3297,6 +3991,7 @@ function drawWorld() {
   drawWindows(camX, camY);
   drawSnow(camX, camY);
   drawSurfacing(camX, camY);
+  drawGate(camX, camY);
   drawDecor(1, camX, camY);
   for (const L of G.lifts) L.draw(ctx);
   for (const hz of G.hazards) hz.draw(ctx);
@@ -5316,6 +6011,7 @@ function render() {
   if (G.state === 'load') { drawLoad(); drawCursor(); return; }
   else if (G.state === 'title') { drawTitle(); drawCursor(); }
   else if (G.state === 'wardrobe') { drawWardrobe(); drawCursor(); }
+  else if (G.state === 'archipelago') { drawArchipelago(); drawCursor(); }
   else if (G.state === 'files') { drawFiles(); drawCursor(); }
   else if (G.state === 'profile') { drawProfile(); drawCursor(); }
   else if (G.state === 'map') { drawMap(); drawCursor(); }

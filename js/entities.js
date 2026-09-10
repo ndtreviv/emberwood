@@ -391,7 +391,10 @@ class Player {
   }
   /* the sigil sharpens the moves that come out of a dive or a spin:
      the air pierce, the flip cut and the roll cut. A quarter a step. */
-  get specialMult() { return 1 + (this.up.special || 0) * 0.25; }
+  get specialMult() {
+    const stone = (G.hasArtifact && G.hasArtifact('riddlestone')) ? 0.5 : 0;
+    return 1 + (this.up.special || 0) * 0.25 + stone;
+  }
   /* and one special straight into the next builds on it: a flip into a dive,
      or a dive into a flip, up to half again by the third link */
   get chainMult() { return 1 + Math.min(3, this.chain) * 0.25; }
@@ -1686,6 +1689,8 @@ class Enemy {
     }));
     const n = Math.max(1, Math.round((this.coinDrop || 2) * (this.coinMult || 1) * G.coinScale() * G.comboMult())) + G.coinBonus();
     G.payOut(n, this.cx, this.cy);
+    /* on an island every creature leaves a part or four of its own shard */
+    if (G.isleRun && G.dropShardParts) G.dropShardParts(ri(1, 4));
   }
   physics(dt) {
     const room = G.room, s = dt * 60;
@@ -2945,16 +2950,22 @@ const GUARDIANS = {
     shots: 13, spread: 2.6, strikeCol: '#dff4ff', touch: 6, graspDmg: 8,
     proj: { col: '#8fd0e8', col2: '#3f7f9e', dmg: 6, grav: 0, home: 1.0, snd: 'fire' } },
   /* ---- the Golden Waste ---- */
-  duneMaw: { art: 'duneMaw', title: 'THE DUNE MAW', hp: 300, scale: 1.3,
-    attacks: ['bite', 'quake', 'volley', 'aimed'], shots: 9, spread: 2.2, touch: 6,
+  /* The three of the waste stand through five phases, each one worse than the
+     last, and the fifth calls up three of the guard.  They take a long time
+     to bring down, and each one leaves something no shop sells. */
+  duneMaw: { art: 'duneMaw', title: 'THE DUNE MAW', hp: 800, scale: 1.3,
+    attacks: ['bite', 'quake', 'volley', 'aimed', 'spear'], shots: 9, spread: 2.2, touch: 6,
+    phases: 5, stoneGuards: true, mythic: 'sunheart',
     proj: { col: '#e0bd86', col2: '#8a6a3a', dmg: 6, grav: 0.05, snd: 'gulp' } },
-  sphinx: { art: 'sphinx', title: 'THE SPHINX', hp: 340, scale: 1.3,
-    attacks: ['strike', 'nova', 'summon', 'charge'], minion: 'Scarab', brood: 4,
+  sphinx: { art: 'sphinx', title: 'THE SPHINX', hp: 800, scale: 1.3,
+    attacks: ['strike', 'nova', 'summon', 'charge', 'spear'], minion: 'Scarab', brood: 4,
     shots: 12, spread: 2.6, strikeCol: '#e0b040', touch: 6,
+    phases: 5, stoneGuards: true, mythic: 'riddlestone',
     proj: { col: '#f6d878', col2: '#9c7418', dmg: 6, grav: 0, home: 1.2, snd: 'fire' } },
-  pharaoh: { art: 'pharaoh', title: 'THE PHARAOH', hp: 420, scale: 1.4,
-    attacks: ['army', 'brand', 'nova', 'strike', 'grasp'], minion: 'Soldier', brood: 5,
+  pharaoh: { art: 'pharaoh', title: 'THE PHARAOH', hp: 850, scale: 1.4,
+    attacks: ['spear', 'army', 'brand', 'nova', 'strike', 'grasp'], minion: 'Soldier', brood: 5,
     shots: 15, spread: 2.9, strikeCol: '#f6d878', touch: 6, graspDmg: 10,
+    phases: 5, stoneGuards: true, mythic: 'pharaohcrook',
     proj: { col: '#f6d878', col2: '#9c7418', dmg: 6, grav: 0, home: 1.1, fiery: true, snd: 'fireball' } },
   ifrit: { art: 'ifrit', title: 'IFRIT, THE MOLTEN CROWN', hp: 504, scale: 1.9,
     attacks: ['volley', 'nova', 'charge', 'strike', 'brand', 'grasp'],
@@ -2962,6 +2973,19 @@ const GUARDIANS = {
     proj: { col: '#ffd06a', col2: '#8a2410', dmg: 4, grav: 0, home: 1.2, fiery: true, snd: 'fireball' } }
 };
 
+/* The keeper of an island.  It borrows the shape of a guardian whose realm
+   matches the island, and it hardens the further out the island lies. */
+const ISLE_BOSS_ART = {
+  snow: ['rimeColossus', 'frostWyrm', 'paleMonarch'],
+  fire: ['forgefiend', 'ashTitan', 'ifrit'],
+  desert: ['duneMaw', 'sphinx', 'pharaoh'],
+  forest: ['tideWarden', 'kraken', 'leviathan'],
+  mesa: ['ashTitan', 'duneMaw', 'rimeColossus']
+};
+function isleBossKey(kind, tier) {
+  const list = ISLE_BOSS_ART[kind] || ISLE_BOSS_ART.forest;
+  return list[Math.min(list.length - 1, Math.floor(tier / 7))];
+}
 class Guardian extends Enemy {
   constructor(x, y, key) {
     const cfg = GUARDIANS[key];
@@ -2986,8 +3010,32 @@ class Guardian extends Enemy {
     this.vx = 0; this.vy = 0;
     if (!this.dead) {
       const f = this.hp / this.maxHp;
-      if (f < 0.62 && this.phase === 1) { this.phase = 2; this.bellow(); }
-      else if (f < 0.3 && this.phase === 2) { this.phase = 3; this.bellow(); }
+      const n = this.cfg.phases || 3;
+      /* the health splits evenly between the phases, whatever their number */
+      const want = clamp(n - Math.floor(f * n), 1, n);
+      while (this.phase < want) { this.phase++; this.enterPhase(); }
+    }
+  }
+  /* Every phase is harder than the one before it.  The last one of a five
+     phase fight calls up the guard. */
+  enterPhase() {
+    this.bellow();
+    const n = this.cfg.phases || 3;
+    if (this.phase === n && this.cfg.stoneGuards) {
+      this.guardsUp = true;
+      G.texts.push(new FloatText(this.cx, this.y - 80, 'THE GUARD RISES', '#f6d878'));
+      Snd.boom(); G.shake(14); G.flash(0.45);
+      const each = Math.max(60, Math.round(this.maxHp / 6));
+      for (let k = 0; k < 3; k++) {
+        const gx = clamp(this.x + (k - 1) * 96 + rr(-14, 14), 60, G.room.pxW() - 60);
+        const gy = G.room.groundBelow(gx, this.y - 70);
+        const sg = new StoneGuard(gx, gy, each);
+        G.enemies.push(sg);
+        for (let i = 0; i < 26; i++) G.particles.push(new Particle({
+          x: gx + rr(-16, 16), y: gy, vx: rr(-3, 3), vy: rr(-4, -0.5), life: rr(0.4, 1),
+          col: '#c9a06a', col2: '#7b6338', size: rr(1.4, 3.4), grav: 0.2
+        }));
+      }
     }
   }
   bellow() { Snd.bellow(); G.shake(9); G.flash(0.2); this.mode = 'attack'; this.state = 'rest'; this.stateT = 0.9; }
@@ -3020,6 +3068,8 @@ class Guardian extends Enemy {
           col: this.cfg.proj.col, col2: this.cfg.proj.col2, size: rr(2, 5), grav: 0.07
         }));
         G.payOut(46, this.x, this.y - 20);
+        /* the three of the waste each leave a mythical thing */
+        if (this.cfg.mythic && G.giveArtifact) G.giveArtifact(this.cfg.mythic);
         G.onBossDead();
       }
       return;
@@ -3032,7 +3082,7 @@ class Guardian extends Enemy {
     this.bossRegen(dt, 0.007);
     this.stateT -= dt;
     this.face = p.cx > this.x ? 1 : -1;
-    const sp = this.phase === 3 ? 1.55 : (this.phase === 2 ? 1.26 : 1);
+    const sp = 1 + (this.phase - 1) * 0.22;
     this.frame = Math.floor(this.animT / 0.12) % 4;
     const cfg = this.cfg;
 
@@ -3187,6 +3237,21 @@ class Guardian extends Enemy {
           Snd.charge(); G.shake(4);
         }
         if (this.stateT <= 0) this.grasped = false;
+        break;
+      }
+      /* the spear goes out, and it comes back to the hand that threw it */
+      case 'spear': {
+        this.mode = 'attack';
+        if (!this.speared && this.stateT < 1.45) {
+          this.speared = true;
+          const n = this.phase >= 4 ? 2 : 1;
+          for (let k = 0; k < n; k++) {
+            const tx = p.cx + (k ? rr(-60, 60) : 0), ty = p.cy + (k ? rr(-20, 20) : 0);
+            G.waves.push(new Spear(this, tx, ty, 6, 4));
+          }
+          G.shake(5);
+        }
+        if (this.stateT <= 0) this.speared = false;
         break;
       }
       /* the Pharaoh calls up a rank of the household guard */
@@ -3519,6 +3584,59 @@ class RelicChest {
       c2.restore();
     }
     blit(c2, img, this.x, this.y + bob, 13, 22);
+  }
+}
+
+/* One of the three that rise when a Pharaoh runs out of patience.  It carries
+   a guardian's health and it hits like one. */
+class StoneGuard extends Golem {
+  constructor(x, y, hp) {
+    super(x, y);
+    this.w = 40; this.h = 56;
+    this.hp = hp || 300; this.maxHp = this.hp;
+    this.damage = 8; this.coinDrop = ri(60, 90);
+    this.blood = '#c9a06a'; this.speed = 0.36;
+    this.kbScale = 0.15;
+    this.spawnT = 0;
+  }
+  box() { return { x: this.x - 20, y: this.y - 56, w: 40, h: 56 }; }
+  update(dt) {
+    this.spawnT += dt;
+    /* it heaves itself out of the ground before it does anything */
+    if (this.spawnT < 1.0) {
+      this.flash = Math.max(0, this.flash - dt);
+      this.animT += dt;
+      this.frame = 0;
+      if (Math.random() < dt * 40) G.particles.push(new Particle({
+        x: this.x + rr(-20, 20), y: this.y, vx: rr(-2, 2), vy: rr(-3, -0.4),
+        life: rr(0.3, 0.8), col: '#c9a06a', col2: '#7b6338', size: rr(1, 3), grav: 0.2
+      }));
+      return;
+    }
+    super.update(dt);
+  }
+  draw(c2) {
+    const a = Art.stoneGuard.anchor;
+    const set = (this.state === 'slam' || this.state === 'wind') ? Art.stoneGuard.slam : Art.stoneGuard.walk;
+    const img = set[this.frame % set.length];
+    const rise = clamp(this.spawnT / 1.0, 0, 1);
+    c2.save();
+    if (rise < 1) {
+      /* clipped to the ground it is climbing out of */
+      c2.beginPath();
+      c2.rect(this.x - 30, this.y - 60 * rise, 60, 60 * rise + 2);
+      c2.clip();
+    }
+    this.drawFlash(c2, img, this.x, this.y, a.x, a.y, this.face < 0);
+    c2.restore();
+    /* a bar over its head, because it is a guardian in all but name */
+    if (this.spawnT > 1 && !this.dead) {
+      const w = 44, f = clamp(this.hp / this.maxHp, 0, 1);
+      const bx = Math.round(this.x - w / 2), by = Math.round(this.y - this.h - 12);
+      c2.fillStyle = '#12101c'; c2.fillRect(bx - 1, by - 1, w + 2, 5);
+      c2.fillStyle = '#3a2c1c'; c2.fillRect(bx, by, w, 3);
+      c2.fillStyle = '#e0b040'; c2.fillRect(bx, by, Math.round(w * f), 3);
+    }
   }
 }
 
@@ -4006,6 +4124,111 @@ class FireLash {
       c2.fillStyle = i % 3 === 0 ? '#8a2410' : (i % 3 === 1 ? '#ff7a2a' : '#ffd06a');
       c2.fillRect(Math.round(pt.x - w / 2), Math.round(pt.y - w / 2), w, w);
     }
+    c2.restore();
+  }
+}
+
+/* The Pharaoh's spear.  It goes out hard, and it comes back to the hand that
+   threw it, and it bites on both legs of the journey. */
+class Spear {
+  constructor(owner, tx, ty, outDmg, backDmg) {
+    this.owner = owner;
+    this.x = owner.x + owner.face * 20 * (owner.scale || 1);
+    this.y = owner.y - 46 * (owner.scale || 1);
+    this.hx = this.x; this.hy = this.y;
+    const dx = tx - this.x, dy = ty - this.y, l = Math.hypot(dx, dy) || 1;
+    this.dx = dx / l; this.dy = dy / l;
+    this.reach = clamp(l + 40, 90, 260);
+    this.outDmg = outDmg || 6;                 /* three hearts on the way out */
+    this.backDmg = backDmg || 4;               /* two on the way home */
+    this.ang = Math.atan2(dy, dx);
+    this.t = 0; this.dead = false;
+    this.phase = 'out'; this.hitOut = false; this.hitBack = false;
+    this.outT = 0.5; this.holdT = 0.25; this.backT = 0.7;
+    Snd.swing();
+  }
+  box() { return { x: this.hx - 13, y: this.hy - 8, w: 26, h: 16 }; }
+  bite(dmg, which) {
+    const p = G.player;
+    if (p.dead) return false;
+    if (!rectsOverlap(this.box(), { x: p.x, y: p.y, w: p.w, h: p.h })) return false;
+    if (p.hurt(dmg, this.hx - this.dx * 20, this.hy)) {
+      p.vx = this.dx * (which === 'out' ? 7 : -5.4);
+      p.vy = -3.6; p.hurtT = 0.34;
+      G.shake(which === 'out' ? 9 : 7); G.hitStop(0.07);
+    }
+    return true;
+  }
+  update(dt) {
+    this.t += dt;
+    const own = this.owner;
+    if (this.phase === 'out') {
+      const k = clamp(this.t / this.outT, 0, 1);
+      const ease = 1 - Math.pow(1 - k, 2);
+      this.hx = this.x + this.dx * this.reach * ease;
+      this.hy = this.y + this.dy * this.reach * ease;
+      if (!this.hitOut && this.bite(this.outDmg, 'out')) this.hitOut = true;
+      if (k >= 1) { this.phase = 'hold'; this.t = 0; }
+    } else if (this.phase === 'hold') {
+      /* it hangs a moment at the end of its flight, quivering */
+      this.hy += Math.sin(this.t * 30) * 0.4;
+      if (this.t >= this.holdT) { this.phase = 'back'; this.t = 0;
+        this.bx = this.hx; this.by = this.hy;
+        Snd.charge();
+      }
+    } else {
+      const k = clamp(this.t / this.backT, 0, 1);
+      const ease = k * k;
+      /* home to whatever hand threw it, wherever that hand is now */
+      const hx = (own && !own.dead) ? own.x + own.face * 20 * (own.scale || 1) : this.x;
+      const hy = (own && !own.dead) ? own.y - 46 * (own.scale || 1) : this.y;
+      this.hx = lerp(this.bx, hx, ease);
+      this.hy = lerp(this.by, hy, ease);
+      this.ang = Math.atan2(hy - this.by, hx - this.bx);
+      if (!this.hitBack && this.bite(this.backDmg, 'back')) this.hitBack = true;
+      if (k >= 1) {
+        this.dead = true;
+        Snd.parry(); G.shake(3);
+        for (let i = 0; i < 12; i++) G.particles.push(new Particle({
+          x: hx, y: hy, vx: rr(-2, 2), vy: rr(-2, 1), life: rr(0.2, 0.5),
+          col: '#f6d878', col2: '#9c7418', size: rr(1, 2.4), grav: 0.1
+        }));
+      }
+    }
+    if (Math.random() < 0.6) G.particles.push(new Particle({
+      x: this.hx + rr(-6, 6), y: this.hy + rr(-4, 4), vx: rr(-0.6, 0.6), vy: rr(-0.8, 0.2),
+      life: rr(0.12, 0.32), col: '#f6d878', col2: '#9c7418', size: rr(1, 2.2), grav: 0
+    }));
+  }
+  draw(c2) {
+    c2.save();
+    c2.translate(Math.round(this.hx), Math.round(this.hy));
+    c2.rotate(this.ang);
+    /* the shaft */
+    c2.fillStyle = '#7a5230';
+    c2.fillRect(-18, -1, 30, 3);
+    c2.fillStyle = '#9c6c41';
+    c2.fillRect(-18, -1, 30, 1);
+    /* the binding */
+    c2.fillStyle = '#e0b040';
+    c2.fillRect(-2, -2, 3, 5);
+    c2.fillRect(-12, -2, 2, 5);
+    /* the head */
+    c2.fillStyle = '#b8c2d0';
+    c2.beginPath();
+    c2.moveTo(12, -5); c2.lineTo(24, 0); c2.lineTo(12, 5);
+    c2.closePath(); c2.fill();
+    c2.fillStyle = '#e8eef8';
+    c2.beginPath();
+    c2.moveTo(12, -3); c2.lineTo(21, 0); c2.lineTo(12, 1);
+    c2.closePath(); c2.fill();
+    /* the tail feather */
+    c2.fillStyle = '#c9403a';
+    c2.fillRect(-20, -3, 4, 7);
+    c2.globalCompositeOperation = 'lighter';
+    c2.globalAlpha = 0.22;
+    c2.fillStyle = '#ffd06a';
+    c2.beginPath(); c2.arc(16, 0, 12, 0, TAU); c2.fill();
     c2.restore();
   }
 }

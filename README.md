@@ -427,12 +427,39 @@ a blow struck from the front, **vultures** circle and stoop, and **mummies** are
 hard to put down. In the Sun Tomb the Pharaoh's **household guard** hold the line behind their
 shields and drive a spear at you.
 
-A **sphinx** sits beside the road in Sphinx Hollow, and a wall it keeps stands across the way.
-Walk up to it and it asks you a question. Answer right and the wall comes down and the
-sphinx gives you **the Pharaoh's Ring**. Answer wrong and it takes two hearts for the trouble.
+A **sphinx** sits beside the road in Sphinx Hollow. Behind it stands a wall three courses
+thick that runs from the ground to the roof of the sky — there is no way over it and no way
+round it. Walk up to the sphinx and it asks you a question, one of **fifty**, all of them
+about this game, with the three answers shuffled every time.
 
-The Pharaoh holds three times the health of an ordinary guardian, calls up rank after rank of
-guards, lashes fire that sets you alight, and reaches for you with a burning hand.
+Answer right and the wall **grinds sideways along its own course** and leaves a gilded arch
+standing where it stood, and the sphinx gives you **the Pharaoh's Ring**. Answer wrong and it
+takes two hearts for the trouble and asks again.
+
+### The three of the waste
+
+The guardians of Chapter Five are a different order of fight. Each one stands through **five
+phases**, and every phase is faster than the one before it. A full run takes between five and
+ten minutes.
+
+All three throw a **spear**: it costs three hearts going out, hangs quivering at the end of
+its flight, and then comes back to the hand that threw it, taking two more hearts on the way
+home if you are still standing in its line.
+
+At the fifth phase the ground opens and **three stone guards** rise, each carrying a sixth of
+its master's health and a bar of its own over its head.
+
+Bring one down and it leaves a **mythical** thing, which no shop sells and no chest holds:
+
+| Guardian | What it leaves | What it does |
+| --- | --- | --- |
+| The Dune Maw | The Sunheart | Four hearts more |
+| The Sphinx | The Riddlestone | Every special cut bites half again as hard |
+| The Pharaoh | The Pharaoh's Crook | Every coin comes to you doubled |
+
+A **healing oasis** lies at the near end of each of the three arenas, two palms over a pool of
+clear water. Stand in it and it puts your hearts back and puts out any fire on you, before
+you go on.
 
 ## Ground that is not ground
 
@@ -445,6 +472,10 @@ you clear the Dune Sea. The **Pharaoh's Ring**, which the sphinx gives you, does
 for nothing. With either one you fall straight through instead of sinking.
 
 ## The vaults
+
+Quicksand lies in **pits dug into the ground**, four to every level of the waste, with the top
+row of the pool level with the ground on either side of it and every row under that one
+buried. What you see is a surface. What is under it is not.
 
 Under every patch of quicksand and every drift of powdered snow lies a vault, and **each patch
 has its own**. The patch's seed cuts the room, so no two are laid out the same: the gallery you
@@ -479,6 +510,42 @@ nothing. Click a find to wear it, click a slot to take it off.
 | Salt Vial | Common | The dash returns a third sooner |
 
 The ring comes from the sphinx. The rest come out of the chest at the head of a vault's climb.
+
+## The Archipelago
+
+The last page of the chart is sealed until you type **`cheese`** into the codes box. Then the
+chains fall slack and the page opens.
+
+Beyond it lie five kinds of island, set out as a **pentagon** and chained one to the next:
+
+| Islands | Shard |
+| --- | --- |
+| The Frozen Isles | Ice |
+| The Burning Isles | Ember |
+| The Sand Isles | Sand |
+| The Green Isles | Amethyst |
+| The Mesa Isles | Gold |
+
+There are **twenty islands of each kind**, and each island holds **three levels and its
+keeper** — four hundred levels in all. Nothing is cut until you sail there, so the islands
+cost nothing until you go.
+
+The **Mesa Isles** carry great timber trestles over their gorges, clapboard houses with
+porches on their flats, and tumbleweed rolling across them, and they are walked by bears,
+wolves, rattlesnakes and vultures.
+
+### Shards
+
+You buy your way outward with shards of that spoke's own kind. The first island of every
+spoke is open. After that the price climbs: **two shards for the second, and twenty for the
+twentieth**.
+
+- Every creature you kill on an island leaves **one to four shard parts**.
+- **Three parts** make one whole shard at the **smithing table**, and the forge takes
+  **1,000 coins** for each one it makes.
+- An island's keeper pays **three to five whole shards** outright.
+
+The smithing table opens from either archipelago screen.
 
 ## The wardrobe
 

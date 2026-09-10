@@ -3572,6 +3572,99 @@ function pineSprite(seed) {
   g.outline(C('#12241c'));
   return g;
 }
+/* a date palm, for the oasis at the door of a guardian */
+function palmSprite(seed) {
+  const g = new Pix(44, 58), r = new RNG(seed);
+  const cx = 22;
+  const bark = C('#7a5230'), barkD = C('#4a3220'), barkL = C('#9c6c41');
+  /* the trunk, leaning */
+  for (let y = 57; y > 16; y--) {
+    const t = (57 - y) / 41;
+    const x = cx + Math.sin(t * 1.1) * 6;
+    g.rect(x - 3, y, 6, 1, bark);
+    g.set(x - 3, y, barkD); g.set(x + 2, y, barkD);
+    if ((57 - y) % 4 === 0) g.rect(x - 3, y, 6, 1, barkL);
+  }
+  const tx = cx + Math.sin(1.1) * 6, ty = 17;
+  /* the crown of fronds */
+  for (let k = 0; k < 9; k++) {
+    const a = -Math.PI + k / 8 * Math.PI;
+    const len = 15 + r.r(0, 5);
+    for (let i = 0; i <= len; i++) {
+      const u = i / len;
+      const px = tx + Math.cos(a) * u * len;
+      const py = ty + Math.sin(a) * u * len * 0.7 + u * u * 7;
+      g.set(px, py, k % 2 ? C('#2f6b46') : C('#3f8a58'));
+      const fin = Math.round((1 - u) * 3);
+      for (let f2 = 1; f2 <= fin; f2++) {
+        g.set(px, py - f2, C('#4f9a3f'));
+        g.set(px, py + f2, C('#2f6b46'));
+      }
+    }
+  }
+  /* dates under the crown */
+  for (let k = 0; k < 5; k++) g.disc(tx + r.r(-5, 5), ty + r.r(3, 8), 1.4, C('#a4441f'));
+  g.shade({ top: 0.10, bot: 0.16 });
+  g.outline(C('#14301f'));
+  return g;
+}
+/* ---------- what stands on a mesa ---------- */
+function tumbleweedSprite(seed) {
+  const g = new Pix(20, 20), r = new RNG(seed);
+  const dry = C('#a4884f'), dryD = C('#6d5a2a'), dryL = C('#c9ad72');
+  for (let k = 0; k < 22; k++) {
+    const a1 = r.r(0, TAU), a2 = a1 + r.r(1.4, 2.6);
+    const r1 = r.r(3, 9), r2 = r.r(3, 9);
+    g.line(10 + Math.cos(a1) * r1, 10 + Math.sin(a1) * r1,
+           10 + Math.cos(a2) * r2, 10 + Math.sin(a2) * r2,
+           k % 3 === 0 ? dryL : (k % 3 === 1 ? dry : dryD));
+  }
+  for (let k = 0; k < 8; k++) {
+    const a = r.r(0, TAU);
+    g.set(10 + Math.cos(a) * 9, 10 + Math.sin(a) * 9, dryL);
+  }
+  return g;
+}
+/* a clapboard house with a porch, of the kind the mesa country is full of */
+function mesaHouseSprite(seed) {
+  const g = new Pix(58, 46), r = new RNG(seed);
+  const wall = [C('#c9c2b4'), C('#b48b6a'), C('#8fa0b8')][seed % 3];
+  const wallD = sh(wall, -0.28), wallL = sh(wall, 0.22);
+  const roof = C('#5c4535'), roofD = C('#3a2b20');
+  const wood = C('#7a5230'), woodD = C('#4a3220');
+  const glass = C('#ffe6a8');
+  const by = 44;
+  /* the body */
+  g.rect(8, by - 22, 40, 22, wall);
+  g.rect(8, by - 22, 40, 1, wallL);
+  for (let x = 9; x < 48; x += 3) g.rect(x, by - 21, 1, 21, wallD);
+  for (let y = by - 19; y < by; y += 4) g.rect(8, y, 40, 1, wallD);
+  /* the gable roof */
+  g.poly([[4, by - 22], [28, by - 36], [52, by - 22]], roofD);
+  g.poly([[7, by - 22], [28, by - 34], [49, by - 22]], roof);
+  for (let x = 8; x < 48; x += 4) g.line(x, by - 22, 28, by - 34, roofD);
+  /* the chimney, smoking */
+  g.rect(38, by - 40, 6, 10, C('#8a6a5a'));
+  g.rect(38, by - 41, 6, 2, C('#5c4535'));
+  /* the porch */
+  g.rect(6, by - 4, 46, 2, wood);
+  for (const px of [8, 26, 46]) g.rect(px, by - 12, 2, 10, wood);
+  g.rect(6, by - 13, 46, 2, woodD);
+  /* door and windows */
+  g.rect(25, by - 14, 8, 14, woodD);
+  g.rect(26, by - 13, 6, 13, wood);
+  g.set(31, by - 7, C('#e0b040'));
+  for (const wx of [13, 39]) {
+    g.rect(wx, by - 18, 8, 8, woodD);
+    g.rect(wx + 1, by - 17, 6, 6, glass);
+    g.rect(wx + 4, by - 17, 1, 6, woodD);
+    g.rect(wx + 1, by - 14, 6, 1, woodD);
+  }
+  for (let k = 0; k < 10; k++) g.set(r.i(9, 47), r.i(by - 20, by - 2), wallD);
+  g.shade({ top: 0.08, bot: 0.14 });
+  g.outline(C('#241708'));
+  return g;
+}
 function cactusSprite(seed) {
   const g = new Pix(26, 46), r = new RNG(seed);
   const cx = 13, body = C('#3f7f5a'), bodyD = C('#255239'), bodyL = C('#6fb98a');
@@ -3774,6 +3867,32 @@ function artifactIcon(key) {
     g.ell(8, 4, 3, 3.4, C('#d18f4a'));
     g.ell(8, 4, 1.4, 1.8, [0, 0, 0, 0]);
     g.set(6, 3, C('#e8b070')); g.set(5, 8, C('#e8b070'));
+  } else if (key === 'sunheart') {
+    /* a heart of gold inside a sun disc */
+    for (let k = 0; k < 12; k++) {
+      const a = k / 12 * TAU;
+      g.set(8 + Math.cos(a) * 7, 8 + Math.sin(a) * 7, goldL);
+    }
+    g.disc(8, 8, 6, goldD);
+    g.disc(8, 8, 5, gold);
+    g.poly([[8, 12], [3.4, 7], [4, 5], [6, 4.6], [8, 6], [10, 4.6], [12, 5], [12.6, 7]], C('#e8433f'));
+    g.poly([[8, 10.6], [5.4, 7.4], [6.4, 6.4], [8, 7.6], [9.6, 6.4], [10.6, 7.4]], C('#ff8b7a'));
+  } else if (key === 'riddlestone') {
+    /* a cut stone with a question turning inside it */
+    g.poly([[8, 1], [14, 6], [11, 15], [5, 15], [2, 6]], C('#5d3a86'));
+    g.poly([[8, 3], [12, 6.6], [10, 13], [6, 13], [4, 6.6]], C('#8f5fc0'));
+    g.poly([[8, 4], [10.6, 7], [8, 9]], C('#c39ae8'));
+    g.set(8, 11, C('#f2e8ff')); g.set(8, 12, C('#f2e8ff'));
+    g.set(7, 6, C('#ffffff'));
+  } else if (key === 'pharaohcrook') {
+    /* the crook, with a coin caught on it */
+    g.rect(7, 5, 3, 10, goldD);
+    g.rect(7, 5, 1, 10, goldL);
+    g.thick(8, 5, 12, 2, 3, gold);
+    g.thick(12, 2, 13, 6, 3, goldD);
+    g.disc(5, 11, 3, gold);
+    g.disc(5, 11, 1.8, goldL);
+    g.set(4, 10, C('#ffffff'));
   } else {
     /* the stone eye */
     g.ell(8, 8, 7, 5, C('#8a8474'));
@@ -3808,6 +3927,63 @@ function relicChestSprite(open) {
     g.rect(2, 9, 22, 2, gold);
   }
   g.outline(C('#241708'));
+  return g;
+}
+/* one of the three that rise for a Pharaoh: a slab of a man, cut in stone */
+function stoneGuardFrame(mode, i, n) {
+  const g = new Pix(56, 62), r = new RNG(2200 + i);
+  const t = i / n * TAU;
+  const stone = C('#c9a06a'), stoneD = C('#8a6a3a'), stoneL = C('#e0bd86'), crack = C('#5f4a26');
+  const gold = C('#e0b040'), lapis = C('#2f5fb0'), eye = C('#ffd06a');
+  const slam = mode === 'slam';
+  const wind = slam ? clamp(i / Math.max(1, n - 1), 0, 1) : 0;
+  const step = mode === 'walk' ? Math.sin(t) * 4 : 0;
+  const bob = mode === 'walk' ? Math.abs(Math.cos(t)) * 1.4 : 0;
+  const cx = 28, foot = 60, hip = foot - 18 - bob, sho = hip - 20;
+  /* legs, thick as columns */
+  for (const s2 of [-1, 1]) {
+    g.rect(cx + s2 * 8 - 5 + (s2 > 0 ? step : -step), hip, 10, foot - hip, s2 < 0 ? stoneD : stone);
+    g.rect(cx + s2 * 8 - 6 + (s2 > 0 ? step : -step), foot - 3, 12, 4, stoneD);
+  }
+  /* the body, a block */
+  g.rect(cx - 15, sho, 30, hip - sho + 3, stone);
+  g.rect(cx - 15, sho, 12, hip - sho + 3, stoneL);
+  g.rect(cx + 8, sho, 7, hip - sho + 3, stoneD);
+  /* the courses, so it reads as cut stone */
+  for (let y = sho + 4; y < hip; y += 6) g.rect(cx - 15, y, 30, 1, stoneD);
+  for (let k = 0; k < 7; k++) {
+    const x = r.i(cx - 14, cx + 13), y = r.i(sho + 2, hip);
+    g.rect(x, y, r.i(1, 3), 1, crack);
+  }
+  /* the broad collar */
+  for (let k = 0; k < 3; k++) g.rect(cx - 15 + k, sho + k, 30 - k * 2, 2, k % 2 ? lapis : gold);
+  /* the arms: raised over the head to bring them down */
+  for (const s2 of [-1, 1]) {
+    const up = slam ? -16 - wind * 10 : 2;
+    g.rect(cx + s2 * 15 - 4, sho + 2 + up * 0.2, 9, 20, s2 < 0 ? stoneD : stone);
+    g.rect(cx + s2 * 17 - 5, sho + up + 16, 11, 12, stone);
+    g.rect(cx + s2 * 17 - 5, sho + up + 16, 11, 2, stoneL);
+  }
+  /* the head, under a nemes cloth */
+  const hy = sho - 11;
+  g.poly([[cx - 12, hy - 8], [cx + 12, hy - 8], [cx + 13, hy + 10], [cx + 7, hy + 10],
+          [cx + 7, hy + 2], [cx - 7, hy + 2], [cx - 7, hy + 10], [cx - 13, hy + 10]], lapis);
+  for (let k = 0; k < 5; k++) {
+    g.rect(cx - 13, hy - 7 + k * 3, 6, 1, gold);
+    g.rect(cx + 7, hy - 7 + k * 3, 6, 1, gold);
+  }
+  g.ell(cx, hy, 7, 8, stone);
+  g.ell(cx, hy - 2, 6, 5, stoneL);
+  g.rect(cx - 5, hy - 2, 4, 2, C('#1c1408'));
+  g.rect(cx + 2, hy - 2, 4, 2, C('#1c1408'));
+  g.set(cx - 4, hy - 2, eye); g.set(cx + 3, hy - 2, eye);
+  g.rect(cx - 2, hy + 5, 4, 7, lapis);
+  g.rect(cx - 2, hy + 5, 4, 1, gold);
+  /* the cobra on the brow */
+  g.poly([[cx - 2, hy - 9], [cx + 2, hy - 9], [cx + 2, hy - 15], [cx - 2, hy - 15]], gold);
+  g.disc(cx, hy - 16, 2.4, C('#3f7f5a'));
+  g.shade({ top: 0.10, bot: 0.18, right: 0.08 });
+  g.outline(C('#1c1408'));
   return g;
 }
 function coralSprite(size, seed) {
@@ -4159,6 +4335,63 @@ function mapNodeSprite(theme) {
       g.disc(cx, cy + 4, 2.4, C('#e0b040'));
     }
     for (let k = 0; k < 10; k++) g.disc(cx + r.r(-R * 0.9, R * 0.9), cy + r.r(-R * 0.9, R * 0.9), r.r(0.6, 1.2), C('#f6dca0'));
+  } else if (theme === 'isle-snow' || theme === 'isle-fire' || theme === 'isle-desert' ||
+             theme === 'isle-forest' || theme === 'isle-mesa') {
+    /* one island of its kind, standing in the sea */
+    const kind = theme.slice(5);
+    const sea = C('#2f6fb0'), seaL = C('#5fa3dc');
+    g.disc(cx, cy, R, sea);
+    for (let k = 0; k < 5; k++) {
+      const y = cy + 6 + k * 4;
+      for (let x = cx - R; x < cx + R; x++)
+        if (Math.hypot(x - cx, y - cy) <= R - 1 && ((x + k) % 6) < 3)
+          g.set(x, y + Math.sin(x * 0.4 + k) * 1.1, seaL);
+    }
+    const pal = {
+      snow: ['#c3cfe2', '#f2f7fd', '#8fa8c4'], fire: ['#4a3a44', '#ff7a2a', '#241c2c'],
+      desert: ['#c08c4e', '#f0dca8', '#8a6a3a'], forest: ['#4f9a3f', '#7ec44f', '#367030'],
+      mesa: ['#a4713f', '#dcb06a', '#6d4526']
+    }[kind];
+    /* the island itself, a dome standing out of the water */
+    for (let x = cx - 20; x <= cx + 20; x++) {
+      const h = Math.round(Math.sqrt(Math.max(0, 400 - (x - cx) * (x - cx))) * 0.62);
+      for (let y = cy + 8 - h; y <= cy + 9; y++)
+        if (Math.hypot(x - cx, y - cy) <= R - 1)
+          g.set(x, y, y < cy + 10 - h + 3 ? C(pal[1]) : C(pal[0]));
+    }
+    g.ell(cx, cy + 10, 21, 3, C('#e0d3a8'));
+    if (kind === 'snow') {
+      for (let k = 0; k < 3; k++) {
+        const x = cx - 8 + k * 8;
+        for (let t2 = 0; t2 < 3; t2++)
+          g.poly([[x, cy - 6 + t2 * 4], [x - 4 + t2, cy - 1 + t2 * 4], [x + 4 - t2, cy - 1 + t2 * 4]], C('#2f6b46'));
+        g.set(x, cy - 7, C('#ffffff'));
+      }
+    } else if (kind === 'fire') {
+      g.poly([[cx, cy - 14], [cx - 12, cy + 6], [cx + 12, cy + 6]], C('#241c2c'));
+      g.poly([[cx, cy - 14], [cx - 4, cy - 6], [cx + 4, cy - 6]], C('#ff7a2a'));
+      for (let k = 0; k < 8; k++) g.set(cx + r.r(-9, 9), cy + r.r(-10, 4), C('#ffd06a'));
+    } else if (kind === 'desert') {
+      for (const [px, ph] of [[cx - 7, 12], [cx + 7, 9]]) {
+        g.poly([[px, cy + 6 - ph], [px - ph * 0.8, cy + 6], [px + ph * 0.8, cy + 6]], C('#8a5f38'));
+        g.poly([[px, cy + 6 - ph], [px, cy + 6], [px + ph * 0.8, cy + 6]], C('#a4713f'));
+      }
+    } else if (kind === 'forest') {
+      for (let k = 0; k < 5; k++) {
+        const x = cx - 12 + k * 6;
+        g.rect(x, cy - 1, 1, 6, C('#54371f'));
+        g.disc(x, cy - 4, 4, C('#2f5636'));
+        g.disc(x - 1, cy - 5, 2.4, C('#54924a'));
+      }
+    } else {
+      /* the mesa: a flat topped butte and a trestle running off it */
+      g.rect(cx - 12, cy - 10, 22, 18, C('#a4713f'));
+      g.rect(cx - 12, cy - 10, 22, 3, C('#dcb06a'));
+      for (let y = cy - 6; y < cy + 8; y += 4) g.rect(cx - 12, y, 22, 1, C('#6d4526'));
+      for (let k = 0; k < 3; k++) { g.rect(cx + 11 + k * 4, cy - 2, 2, 10, C('#4a3220')); }
+      g.rect(cx + 9, cy - 4, 14, 2, C('#7a5230'));
+    }
+    for (let k = 0; k < 8; k++) g.disc(cx + r.r(-R * 0.8, R * 0.8), cy + r.r(-R * 0.8, R * 0.8), r.r(0.6, 1.2), C('#cfeaff'));
   } else if (theme === 'archipelago') {
     /* a ring of green islands in a bright sea, seen from far off */
     g.disc(cx, cy, R, C('#2f6fb0'));
@@ -4702,11 +4935,18 @@ Art.steps = function () {
     Art.ui.pouch = pouchIconSprite().canvas();
     Art.item.sandstep = sandstepSprite().canvas();
     Art.item.artifact = {};
-    for (const k of ['ring', 'scarab', 'frostbead', 'emberchip', 'feather', 'saltvial', 'ankh', 'eye'])
+    for (const k of ['ring', 'scarab', 'frostbead', 'emberchip', 'feather', 'saltvial', 'ankh', 'eye',
+                     'sunheart', 'riddlestone', 'pharaohcrook'])
       Art.item.artifact[k] = artifactIcon(k).canvas();
     Art.item.chest = [relicChestSprite(false).canvas(), relicChestSprite(true).canvas()];
     Art.prop.pine = [];
     for (let i = 0; i < 3; i++) { const q = pineSprite(1301 + i); Art.prop.pine.push(prop(q, q.w / 2, q.h)); }
+    Art.prop.tumbleweed = [];
+    for (let i = 0; i < 3; i++) { const q = tumbleweedSprite(1351 + i); Art.prop.tumbleweed.push(prop(q, q.w / 2, q.h)); }
+    Art.prop.house = [];
+    for (let i = 0; i < 3; i++) { const q = mesaHouseSprite(1361 + i); Art.prop.house.push(prop(q, q.w / 2, q.h)); }
+    Art.prop.palm = [];
+    for (let i = 0; i < 2; i++) { const q = palmSprite(1341 + i); Art.prop.palm.push(prop(q, q.w / 2, q.h)); }
     Art.prop.cactus = [];
     for (let i = 0; i < 3; i++) { const q = cactusSprite(1311 + i); Art.prop.cactus.push(prop(q, q.w / 2, q.h)); }
     Art.prop.bone = [];
@@ -4791,6 +5031,9 @@ Art.steps = function () {
     Art.mummy = { anchor: { x: 14, y: 35 },
                   walk: frames(6, (i, n) => mummyFrame('walk', i, n)),
                   grab: frames(4, (i, n) => mummyFrame('grab', i, n)) };
+    Art.stoneGuard = { anchor: { x: 28, y: 60 },
+                       walk: frames(6, (i, n) => stoneGuardFrame('walk', i, n)),
+                       slam: frames(4, (i, n) => stoneGuardFrame('slam', i, n)) };
     Art.soldier = { anchor: { x: 12, y: 33 },
                     walk: frames(6, (i, n) => soldierFrame('walk', i, n)),
                     thrust: frames(4, (i, n) => soldierFrame('thrust', i, n)) };
@@ -4805,6 +5048,8 @@ Art.steps = function () {
       .map(t => mapNodeSprite(t).canvas());
     Art.map.lock = lockSprite().canvas();
     Art.map.archipelago = mapNodeSprite('archipelago').canvas();
+    Art.map.isle = ['isle-snow', 'isle-fire', 'isle-desert', 'isle-forest', 'isle-mesa']
+      .map(t => mapNodeSprite(t).canvas());
     Art.map.chain = [chainLinkSprite(false).canvas(), chainLinkSprite(true).canvas()];
     Art.map.ring = chainRingSprite().canvas();
     Art.ui.map = mapIconSprite().canvas();
