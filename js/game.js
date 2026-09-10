@@ -121,6 +121,7 @@ function packSave() {
               daily: (G.quests && G.quests.daily) || null },
     comboBest: G.comboBest || 0,
     buried: G.buried || null,
+    vaultKey: G.vaultKey || null,
     artifacts: { owned: Object.assign({}, (G.artifacts && G.artifacts.owned) || {}),
                  slots: ((G.artifacts && G.artifacts.slots) || [null, null, null]).slice() },
     wardrobe: Object.assign({}, (G.wardrobe && G.wardrobe.owned) || {}),
@@ -151,7 +152,7 @@ function applySave(d) {
                         roomFlags: unpackFlags(st.roomFlags), flags: st.flags || {} };
   }
   p.coins = d.coins || 0;
-  p.up = Object.assign({ sword: 0, speed: 0, dash: 0, magnet: 0, armour: 0, special: 0, wings: 0, mantle: 0, emberheart: 0, heart: 0 }, d.up || {});
+  p.up = Object.assign({ sword: 0, speed: 0, dash: 0, magnet: 0, armour: 0, special: 0, wings: 0, mantle: 0, emberheart: 0, sandstep: 0, heart: 0 }, d.up || {});
   p.maxHp = d.maxHp || 6;
   p.hp = clamp(d.hp || p.maxHp, 1, p.maxHp);
   p.hasKey = !!d.hasKey;
@@ -181,6 +182,7 @@ function applySave(d) {
   }
   G.wardrobe = { owned: d.wardrobe || {} };
   G.buried = d.buried || null;
+  G.vaultKey = d.vaultKey || null;
   G.surfacing = null;
   G.tut = Object.assign({ move: 0, fight: 0, swim: 0, dash: 0, pierce: 0, climb: 0, parry: 0 }, d.tut || {});
   G.stats = Object.assign({ coins: 0, kills: 0, time: 0, deaths: 0 }, d.stats || {});
@@ -387,17 +389,37 @@ G.needsBubble = function () {
    let a ring bearer through.  What is under them is a room of
    its own, and a door at its end puts you back on the surface.
    ============================================================ */
-G.dropThroughPhase = function (quick) {
+/* The ring, or the Sandstep bought in the waste: either one carries you
+   through ground that would otherwise swallow you. */
+G.canPhase = function () {
+  if (G.hasArtifact && G.hasArtifact('ring')) return true;
+  return !!(G.player && G.player.up && G.player.up.sandstep > 0);
+};
+/* which patch of phase ground a point stands over */
+function phasePoolAt(room, px) {
+  const pools = room && room.phasePools;
+  if (!pools) return null;
+  const tx = Math.floor(px / TILE);
+  for (const q of pools) if (tx >= q.x - 1 && tx <= q.x + q.w) return q;
+  return pools[0];
+}
+G.dropThroughPhase = function (quick, atX) {
   if (G.trans || G.buried) return;
   const p = G.player;
-  G.buried = { roomId: G.roomId, level: G.level, x: p.x, y: p.y - 20 };
+  const pool = phasePoolAt(G.room, atX === undefined ? p.cx : atX);
+  const seed = pool ? pool.seed : 5501;
+  /* every patch has a vault of its own, cut from that patch's seed */
+  G.vaultKey = G.roomId + ':' + seed;
+  World.rooms.vault = World.buildVault(seed, quick ? 'sand' : 'snow',
+                                       quick ? 'THE BURIED VAULT' : 'THE HOLLOW UNDER THE DRIFT');
+  G.buried = { roomId: G.roomId, level: G.level, x: p.x, y: p.y - 20, key: G.vaultKey };
   Snd.door(); G.flash(0.4); G.shake(5);
   for (let i = 0; i < 30; i++) G.particles.push(new Particle({
     x: p.cx + rr(-12, 12), y: p.y + p.h, vx: rr(-2, 2), vy: rr(-3, -0.4), life: rr(0.3, 0.8),
     col: quick ? '#cfb87c' : '#ffffff', col2: quick ? '#7d6636' : '#c3cfe2',
     size: rr(1, 2.8), grav: 0.16
   }));
-  G.enterRoom(quick ? 'secretSand' : 'secretSnow', null);
+  G.enterRoom('vault', null);
   G.banner(quick ? 'THE SAND GIVES WAY' : 'THE DRIFT GIVES WAY', 2.6);
 };
 /* The way back up.  The door heaves itself out of the ground, the hero
@@ -557,7 +579,7 @@ G.enterRoom = function (id, spawn) {
       case 'mummy': tough(new Mummy(sp.x, sp.y)); break;
       case 'soldier': tough(new Soldier(sp.x, sp.y)); break;
       case 'idol': G.enemies.push(new Idol(sp.x, sp.y)); break;
-      case 'relicChest': if (!G.flags['chest_' + id]) G.items.push(new RelicChest(sp.x, sp.y, sp.pool)); break;
+      case 'relicChest': if (!G.flags['chest_' + (G.vaultKey || id)]) G.items.push(new RelicChest(sp.x, sp.y, sp.pool)); break;
       case 'guardian': { const gd = hardenBoss(new Guardian(sp.x, sp.y, sp.key)); G.enemies.push(gd); G.boss = gd; break; }
       case 'sporeling': tough(new Sporeling(sp.x, sp.y)); break;
       case 'zeus': { const z = hardenBoss(new Zeus(sp.x, sp.y)); G.enemies.push(z); G.boss = z; break; }
@@ -841,7 +863,7 @@ function startGame(slot) {
   G.quests = { claimed: {}, daily: null }; G.comboBest = 0; G.questsOpen = false;
   G.artifacts = { owned: {}, slots: [null, null, null] };
   G.pouchOpen = false; G.wardrobe = { owned: {} };
-  G.buried = null; G.surfacing = null;
+  G.buried = null; G.surfacing = null; G.vaultKey = null;
   G.profile = { hair: 0, hairCol: 0, outfit: 0, tee: 0, cape: 'none', suit: 'none' };
   G.gulletVisits = 0;
   G.unlockedHair = {}; Art.lockExtraHair();
@@ -1053,7 +1075,8 @@ function updatePlay(dt) {
   }
   if (G.pouchOpen) { updatePouch(dt); return; }
   /* the sphinx: stand at it and ask to be asked */
-  if (G.room.riddle && !G.flags.riddleDone && !G.riddleOpen && G.state === 'play' && !G.trans) {
+  if (G.room && G.room.riddle && !G.flags.riddleDone && !G.riddleOpen &&
+      G.state === 'play' && !G.trans) {
     const rq = G.room.riddle;
     const near = Math.abs(G.player.cx - rq.x) < 42 && Math.abs(G.player.cy - rq.y) < 54;
     G.nearSphinx = near;
@@ -1789,7 +1812,8 @@ G.giveArtifact = function (key) {
   /* a free slot takes it at once, so a find is felt straight away */
   const free = G.artifacts.slots.indexOf(null);
   if (free >= 0) G.artifacts.slots[free] = key;
-  G.relicShow = { t: 0, name: it.name, sub: it.desc, art: Art.item.artifact[key] };
+  G.relicShow = { key: key, name: it.name, desc: it.desc, t: 0, dur: 3.4,
+                  icon: () => Art.item.artifact[key] };
   Snd.unlock(); G.flash(0.5);
   G.applyArtifacts();
   G.saveGame();
@@ -4769,7 +4793,9 @@ function drawRelicShow() {
    SHOP
    ============================================================ */
 const SHOP_ITEMS = [
-  { key: 'heart', name: 'HEART VESSEL', desc: 'ONE MORE HEART ON YOUR LIFE BAR', base: 20, mul: 1.52, max: 3, icon: () => Art.item.heart.full },
+  /* seventeen steps, so a full life bar runs to twenty hearts */
+  { key: 'heart', name: 'HEART VESSEL', desc: 'ONE MORE HEART ON YOUR LIFE BAR',
+    base: 20, mul: 1.42, max: 17, fixed: true, icon: () => Art.item.heart.full },
   { key: 'sword', name: 'WHETSTONE', desc: 'THE BLADE BITES DEEPER AND REACHES FURTHER', base: 17, mul: 1.48, max: 4, icon: () => Art.item.sword },
   { key: 'speed', name: 'SWIFT BOOTS', desc: 'RUN FASTER THROUGH WOOD AND MAZE', base: 22, mul: 1.48, max: 3, icon: () => Art.item.boot },
   { key: 'dash', name: 'WINDSTEP CHARM', desc: 'THE DASH CARRIES YOU FURTHER', base: 26, mul: 1.5, max: 3, icon: () => Art.item.ring },
@@ -4782,6 +4808,8 @@ const SHOP_ITEMS = [
   { key: 'wings', name: 'STORMFEATHER WINGS', desc: 'A SECOND JUMP IN MID AIR', base: 850, mul: 1, max: 1, relic: true, unlockAt: 1, icon: () => Art.item.wings },
   { key: 'mantle', name: 'RIPTIDE MANTLE', desc: 'YOUR DASH CUTS CLEAN THROUGH ANYTHING IT TOUCHES', base: 3600, mul: 1, max: 1, relic: true, unlockAt: 3, icon: () => Art.item.mantle },
   { key: 'emberheart', name: 'THE EMBERHEART', desc: 'EVERY SWORD SWING LOOSES A BURNING WAVE', base: 9000, mul: 1, max: 1, relic: true, unlockAt: 6, icon: () => Art.item.emberheart },
+  { key: 'sandstep', name: 'THE SANDSTEP', desc: 'WALK INTO QUICKSAND AND FALL THROUGH TO THE VAULT BELOW',
+    base: 50000, mul: 1, max: 1, relic: true, unlockAt: 12, icon: () => Art.item.sandstep },
   { key: 'tonic', name: 'FOREST TONIC', desc: 'DRINK NOW AND REFILL EVERY HEART', base: 8, mul: 1.0, max: 99, icon: () => Art.item.potion }
 ];
 function shopLevel(it) { const p = G.player; return it.key === 'tonic' ? 0 : (p.up[it.key] || 0); }
@@ -4797,7 +4825,8 @@ function shopVisible(it) { return it.unlockAt === undefined || G.unlocked > it.u
 function shopRows() { return SHOP_ITEMS.filter(shopVisible); }
 function shopPrice(it) { return Math.round(it.base * Math.pow(it.mul, shopLevel(it))); }
 const SHOP_BOX = { x: 34, y: 6, w: 316, h: 206 };
-function shopRowRect(i) { return { x: SHOP_BOX.x + 8, y: SHOP_BOX.y + 26 + i * 15, w: SHOP_BOX.w - 16, h: 14 }; }
+/* twelve rows and a line at the foot, all inside the panel */
+function shopRowRect(i) { return { x: SHOP_BOX.x + 8, y: SHOP_BOX.y + 23 + i * 14, w: SHOP_BOX.w - 16, h: 13 }; }
 function shopGearRect() { return { x: SHOP_BOX.x + SHOP_BOX.w - 36, y: SHOP_BOX.y + 5, w: 13, h: 13 }; }
 function updateShop(dt) {
   void dt;
@@ -4894,7 +4923,9 @@ function drawShop() {
   const d = G.shopSel >= 0 ? rows[G.shopSel].desc
     : (G.codes.tickets > 0 ? G.codes.tickets + ' FREE UPGRADE TICKETS - SPEND ONE ON ANY ROW'
                            : 'CLICK AN ITEM TO BUY IT  -  ESC TO LEAVE');
-  drawText(ctx, d, SHOP_BOX.x + SHOP_BOX.w / 2, SHOP_BOX.y + SHOP_BOX.h - 14, '#a9b3c9', 1, 'center', '#000000');
+  ctx.fillStyle = 'rgba(20,14,10,0.92)';
+  ctx.fillRect(SHOP_BOX.x + 1, SHOP_BOX.y + SHOP_BOX.h - 14, SHOP_BOX.w - 2, 13);
+  drawText(ctx, d, SHOP_BOX.x + SHOP_BOX.w / 2, SHOP_BOX.y + SHOP_BOX.h - 11, '#a9b3c9', 1, 'center', '#000000');
   ctx.restore();
 }
 

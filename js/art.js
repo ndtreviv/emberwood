@@ -3696,6 +3696,30 @@ function pouchIconSprite() {
   g.outline(C('#2a1a0e'));
   return g;
 }
+/* the Sandstep: an ankle band with an hourglass hung from it */
+function sandstepSprite() {
+  const g = new Pix(20, 20);
+  const gold = C('#e0b040'), goldD = C('#9c7418'), goldL = C('#f6d878');
+  const sand = C('#e0d3a8'), sandD = C('#a8894f'), glass = C('#a8cbd6');
+  /* the band */
+  g.ell(10, 5, 7, 3.4, goldD);
+  g.ell(10, 5, 5.4, 2.2, [0, 0, 0, 0]);
+  g.ell(10, 4, 6.6, 3, gold);
+  g.ell(10, 5, 5, 2, [0, 0, 0, 0]);
+  g.set(7, 3, goldL); g.set(8, 2, goldL);
+  /* the glass, hanging under it */
+  g.rect(6, 8, 8, 1, goldD);
+  g.rect(6, 17, 8, 1, goldD);
+  g.poly([[7, 9], [13, 9], [10.5, 13]], glass);
+  g.poly([[7, 17], [13, 17], [10.5, 13]], glass);
+  /* the sand running through */
+  g.poly([[8, 10], [12, 10], [10.5, 12.4]], sand);
+  g.set(10, 13, sandD); g.set(10, 14, sandD);
+  g.poly([[9, 16], [12, 16], [10.5, 14.4]], sand);
+  g.set(9, 11, C('#f6efdc'));
+  g.outline(C('#241708'));
+  return g;
+}
 function artifactIcon(key) {
   const g = new Pix(16, 16);
   const gold = C('#e0b040'), goldD = C('#9c7418'), goldL = C('#f6d878');
@@ -4676,6 +4700,7 @@ Art.steps = function () {
   });
   push('THE ASHEN REACH', () => {
     Art.ui.pouch = pouchIconSprite().canvas();
+    Art.item.sandstep = sandstepSprite().canvas();
     Art.item.artifact = {};
     for (const k of ['ring', 'scarab', 'frostbead', 'emberchip', 'feather', 'saltvial', 'ankh', 'eye'])
       Art.item.artifact[k] = artifactIcon(k).canvas();

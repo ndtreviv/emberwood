@@ -121,7 +121,7 @@ class Player {
     this.cape = null;
     this.stepT = 0; this.wasGrounded = false; this.inWater = false;
     this.topDir = 0;
-    this.up = { sword: 0, speed: 0, dash: 0, magnet: 0, armour: 0, special: 0, wings: 0, mantle: 0, emberheart: 0 };
+    this.up = { sword: 0, speed: 0, dash: 0, magnet: 0, armour: 0, special: 0, wings: 0, mantle: 0, emberheart: 0, sandstep: 0 };
     this.airJumps = 0;
     this.dead = false; this.deadT = 0;
     this.spawnFlash = 0;
@@ -514,7 +514,7 @@ class Player {
       if (this.sinkT > 0) this.sinkT = Math.max(0, this.sinkT - dt * 2.4);
       return;
     }
-    const ring = G.hasArtifact && G.hasArtifact('ring');
+    const ring = G.canPhase && G.canPhase();
     this.sinkT += dt;
     const quick = room.get(Math.floor(this.cx / TILE),
                            Math.floor((this.y + this.h - 2) / TILE)) === T_QUICK;
@@ -528,7 +528,7 @@ class Player {
       /* the ring carries you down through it, into whatever is below */
       this.vy = Math.max(this.vy, 3.4);
       this.vx *= 0.7;
-      if (this.sinkT > 0.55 && G.dropThroughPhase) { this.sinkT = 0; G.dropThroughPhase(quick); }
+      if (this.sinkT > 0.55 && G.dropThroughPhase) { this.sinkT = 0; G.dropThroughPhase(quick, this.cx); }
       return;
     }
     /* without it the ground holds you, and it does not let go */
@@ -3497,7 +3497,7 @@ class RelicChest {
     if (p.dead) return;
     if (!rectsOverlap(this.box(), { x: p.x, y: p.y, w: p.w, h: p.h })) return;
     this.open = true;
-    G.flags['chest_' + G.roomId] = 1;
+    G.flags['chest_' + (G.vaultKey || G.roomId)] = 1;
     const key = G.rollArtifact ? G.rollArtifact(2) : null;
     if (key) G.giveArtifact(key);
     else { G.payOut(400, this.x, this.y - 14); G.texts.push(new FloatText(this.x, this.y - 26, 'NOTHING NEW', '#a89270')); }

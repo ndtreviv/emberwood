@@ -1193,7 +1193,8 @@ function buildChapterRoom(o) {
         for (let y = bed + 1; y < bed + 3; y++) room.set(x, y, ground);
         surf[x] = top;
       }
-      room.phasePools.push({ x: px, w: pw, y: top });
+      room.phasePools.push({ x: px, w: pw, y: top,
+                             seed: (o.seed * 1013 + k * 7919 + px * 31) >>> 0 });
     }
   }
 
@@ -1316,74 +1317,159 @@ function laySnow(room, rng) {
   room.snowFill = 0;
 }
 /* ============================================================
-   THE ROOMS UNDER THE WORLD.  You reach one by falling through
-   quicksand or powdered snow, which only the Pharaoh's Ring
-   lets you do.  A door at the end puts you back on the surface.
+   THE VAULTS UNDER THE WORLD.  Every patch of quicksand and
+   every drift of powdered snow has its own.  The seed of the
+   patch shapes it, so no two are the same.
+
+   Every vault ends the same way: a shaft twenty tiles tall and
+   four tiles wide, which only a wall climb gets you up.  The
+   prize sits at the top of it.
    ============================================================ */
-function buildSecretRoom(id, name, seed, kind) {
+const VAULT_SHAFT_H = 20;      /* tiles of climb */
+const VAULT_SHAFT_W = 4;       /* tiles across, inside the walls */
+function buildVault(seed, kind, name) {
   const rng = new RNG(seed);
-  const W = 68, H = 26;
-  const sandy = kind === 'sand';
+  const sandy = kind !== 'snow';
+  const W = 52, H = 34;
+  const FY = H - 5;                                  /* the floor of the gallery */
   const ground = sandy ? T_TOMB : T_ROCK;
   const groundTop = sandy ? T_TOMBTOP : T_ROCKTOP;
-  const room = new Room({ id: id, name: name, mode: 'side', w: W, h: H,
+  const plat = sandy ? T_SANDTOP : T_ICE;
+  const room = new Room({ id: 'vault', name: name || (sandy ? 'THE BURIED VAULT' : 'THE HOLLOW UNDER THE DRIFT'),
+                          mode: 'side', w: W, h: H,
                           music: 'cave', bg: sandy ? 'tomb' : 'cave',
-                          ambient: 0.14, dark: 0.6 });
+                          ambient: 0.14, dark: 0.58 });
   room.fillRect(0, 0, W, H, ground);
-  /* one long gallery, with a floor to walk and a roof overhead */
-  const FY = H - 5;
-  room.fillRect(2, 5, W - 4, FY - 5, T_EMPTY);
-  for (let x = 2; x < W - 2; x++) room.set(x, FY, groundTop);
-  /* the drop you arrive through, at the near end */
-  room.fillRect(3, 1, 7, 5, T_EMPTY);
-  room.start = { x: 6 * TILE, y: FY * TILE };
-  /* a climb of ledges and a couple of gaps, so it is a level and not a corridor */
-  let x = 12;
-  for (let k = 0; k < 7 && x < W - 14; k++) {
-    if (k % 3 === 2) {
-      /* a gap in the floor with spikes under it */
-      const gw = rng.i(4, 6);
-      for (let i = 0; i < gw; i++) for (let y = FY; y < H - 1; y++) room.set(x + i, y, T_EMPTY);
-      room.spawns.push({ type: 'spikes', x: x * TILE, y: (H - 1) * TILE - 10, w: gw * TILE, dmg: 3 });
-      x += gw + rng.i(3, 5);
+
+  /* --- the shaft, on the right, and the chamber over it --- */
+  const sx0 = W - 9, sx1 = sx0 + VAULT_SHAFT_W - 1;  /* 43..46 inside the walls */
+  const topRow = FY - VAULT_SHAFT_H;                 /* 9 */
+  room.fillRect(sx0, topRow, VAULT_SHAFT_W, FY - topRow, T_EMPTY);
+  /* the chamber at the head of it, reached by stepping right off the climb */
+  room.fillRect(sx0, topRow - 5, W - 2 - sx0, 5, T_EMPTY);
+  for (let x = sx1 + 1; x < W - 2; x++) room.set(x, topRow, groundTop);
+  /* the way in at the foot of the shaft */
+  room.set(sx0 - 1, FY - 1, T_EMPTY);
+  room.set(sx0 - 1, FY - 2, T_EMPTY);
+
+  /* --- the gallery you land in --- */
+  const gy0 = 13;
+  room.fillRect(2, gy0, sx0 - 3, FY - gy0, T_EMPTY);
+  for (let x = 2; x < sx0 - 1; x++) room.set(x, FY, groundTop);
+  room.start = { x: 5 * TILE, y: FY * TILE };
+
+  /* --- what the gallery holds, drawn from the seed --- */
+  const kinds = ['pit', 'ledge', 'spikes', 'crusher', 'lift', 'pillars'];
+  /* shuffle, so each patch lays its gallery out differently */
+  for (let i = kinds.length - 1; i > 0; i--) { const j = rng.i(0, i); const t = kinds[i]; kinds[i] = kinds[j]; kinds[j] = t; }
+  let fx = 11;
+  const feats = rng.i(4, 6);
+  for (let n = 0; n < feats && fx < sx0 - 10; n++) {
+    const k = kinds[n % kinds.length];
+    if (k === 'pit') {
+      /* Four tiles across at the most, so a plain jump clears it, and three
+         deep, so a jump also gets you out of it again. */
+      const pw = rng.i(3, 4), bottom = FY + 2;
+      for (let x = fx; x < fx + pw; x++) {
+        for (let y = FY; y <= bottom; y++) room.set(x, y, T_EMPTY);
+        for (let y = bottom + 1; y < H; y++) room.set(x, y, ground);
+        room.set(x, bottom + 1, groundTop);
+      }
+      room.spawns.push({ type: 'spikes', x: fx * TILE, y: (bottom + 1) * TILE - 10, w: pw * TILE, dmg: 3 });
+      fx += pw + rng.i(5, 8);
+    } else if (k === 'ledge') {
+      const py = FY - rng.i(4, 7), pw = rng.i(4, 7);
+      for (let i2 = 0; i2 < pw; i2++) room.set(fx + i2, py, T_WOOD);
+      for (let i2 = 0; i2 < pw; i2++) room.spawns.push({ type: 'coin', x: (fx + i2) * TILE + 8, y: (py - 1) * TILE });
+      fx += pw + rng.i(4, 6);
+    } else if (k === 'spikes') {
+      const sw = rng.i(3, 5);
+      room.spawns.push({ type: 'spikes', x: fx * TILE, y: FY * TILE - 10, w: sw * TILE, dmg: 3 });
+      fx += sw + rng.i(5, 8);
+    } else if (k === 'crusher') {
+      room.spawns.push({ type: 'crusher', x: fx * TILE + 8, y: (FY - 8) * TILE,
+                         bx: fx * TILE + 8, by: (FY - 2) * TILE, w: 24, h: 24,
+                         speed: 70, dmg: 3, phase: rng.r(0, 1) });
+      fx += rng.i(6, 9);
+    } else if (k === 'lift') {
+      const ly = (FY - rng.i(4, 6)) * TILE;
+      room.spawns.push({ type: 'lift', x: fx * TILE, y: ly, w: 40,
+                         bx: (fx + rng.i(3, 5)) * TILE, by: ly, speed: 38, wait: 0.6 });
+      fx += rng.i(7, 10);
     } else {
-      const py = FY - rng.i(4, 8), pw = rng.i(4, 7);
-      for (let i = 0; i < pw; i++) room.set(x + i, py, T_WOOD);
-      for (let i = 0; i < pw; i++) room.spawns.push({ type: 'coin', x: (x + i) * TILE + 8, y: (py - 1) * TILE });
-      x += pw + rng.i(4, 7);
+      /* Two screens of stone.  The gap in each one stands on the floor, so it
+         is a doorway you walk through.  Their heights vary, not their gaps. */
+      for (let i2 = 0; i2 < 2; i2++) {
+        const px = fx + i2 * 5;
+        const top = gy0 + 1 + rng.i(0, 5);
+        for (let y = top; y < FY - 2; y++) room.set(px, y, plat);
+      }
+      fx += rng.i(9, 12);
     }
   }
-  /* its keepers */
-  for (let k = 0; k < 6; k++) {
-    const sx = rng.i(16, W - 8);
-    room.spawns.push({ type: sandy ? 'mummy' : 'icewisp', x: sx * TILE, y: (FY - (sandy ? 1 : 5)) * TILE });
+
+  /* Nothing laid in the gallery may seal it.  Any run of missing floor wider
+     than three tiles gets a plank across the middle of it. */
+  {
+    let run = 0;
+    for (let x = 3; x < sx0 - 1; x++) {
+      let floor = false;
+      for (let y = FY; y < H; y++) if (room.solid(x, y) || room.oneway(x, y)) { floor = true; break; }
+      if (!floor) run++;
+      else {
+        if (run > 3) for (let i2 = x - run; i2 < x; i2++) room.set(i2, FY, T_WOOD);
+        run = 0;
+      }
+    }
+    if (run > 3) for (let i2 = sx0 - 1 - run; i2 < sx0 - 1; i2++) room.set(i2, FY, T_WOOD);
   }
-  for (let k = 0; k < 4; k++) {
-    const sx = rng.i(14, W - 8);
-    room.spawns.push({ type: sandy ? 'scarab' : 'wolf', x: sx * TILE, y: (FY - 1) * TILE });
+
+  /* --- its keepers, and what they guard --- */
+  const walker = sandy ? (rng.bool(0.5) ? 'mummy' : 'scarab') : (rng.bool(0.5) ? 'wolf' : 'yeti');
+  const flier = sandy ? 'vulture' : 'icewisp';
+  for (let k = 0; k < rng.i(4, 7); k++) {
+    const x = rng.i(12, sx0 - 4);
+    room.spawns.push({ type: walker, x: x * TILE, y: (FY - 1) * TILE });
   }
-  for (let k = 0; k < 24; k++) {
-    const sx = rng.i(8, W - 6);
-    room.spawns.push({ type: 'coin', x: sx * TILE, y: (FY - rng.i(1, 6)) * TILE });
+  for (let k = 0; k < rng.i(4, 8); k++) {
+    const x = rng.i(10, sx0 - 4);
+    room.spawns.push({ type: flier, x: x * TILE, y: (FY - rng.i(3, 8)) * TILE });
   }
-  /* the prize, on a plinth at the far end */
-  const px = W - 9;
-  for (let i = -3; i <= 3; i++) room.set(px + i, FY - 1, groundTop);
-  for (let i = -3; i <= 3; i++) room.set(px + i, FY, ground);
-  room.spawns.push({ type: 'relicChest', x: px * TILE + 8, y: (FY - 1) * TILE, pool: sandy ? 'sand' : 'snow' });
-  /* and the door home, standing beside it */
-  room.exits.push({ x: (W - 6) * TILE - 14, y: (FY - 1) * TILE - 44, w: 30, h: 44,
+  /* a pair of them waiting at the head of the climb */
+  for (let k = 0; k < 2; k++)
+    room.spawns.push({ type: flier, x: (sx1 + 2 + k) * TILE, y: (topRow - 3) * TILE });
+  for (let k = 0; k < rng.i(18, 28); k++) {
+    const x = rng.i(6, sx0 - 4);
+    room.spawns.push({ type: 'coin', x: x * TILE, y: (FY - rng.i(1, 7)) * TILE });
+  }
+  /* coins up the shaft, to say which way is out */
+  for (let k = 0; k < 6; k++)
+    room.spawns.push({ type: 'coin', x: (sx0 + (k % 2 ? 0 : 3)) * TILE + 8,
+                       y: (FY - 3 - k * 3) * TILE });
+
+  /* the prize, at the head of the climb */
+  const cx = sx1 + 3;
+  room.spawns.push({ type: 'relicChest', x: cx * TILE + 8, y: topRow * TILE, pool: sandy ? 'sand' : 'snow' });
+  room.exits.push({ x: (W - 4) * TILE - 14, y: topRow * TILE - 44, w: 30, h: 44,
                     to: '@surface', label: 'BACK TO THE SURFACE', kind: 'cave',
-                    door: { x: (W - 6) * TILE, y: (FY - 1) * TILE } });
-  /* torches, so it reads as a place someone once used */
-  for (let tx = 6; tx < W - 4; tx += 7)
-    room.decor.push({ kind: 'torch', x: tx * TILE + 8, y: (FY - 5) * TILE, layer: 1 });
-  for (let k = 0; k < 26; k++)
+                    door: { x: (W - 4) * TILE, y: topRow * TILE } });
+
+  /* --- dressing --- */
+  for (let tx = 6; tx < sx0 - 2; tx += 7)
+    room.decor.push({ kind: 'torch', x: tx * TILE + 8, y: (gy0 + 1) * TILE, layer: 1 });
+  /* a torch every few tiles up the shaft, so the climb is lit */
+  for (let ty = FY - 3; ty > topRow; ty -= 4)
+    room.decor.push({ kind: 'torch', x: (ty % 8 < 4 ? sx0 : sx1) * TILE + 8, y: ty * TILE, layer: 1 });
+  room.decor.push({ kind: 'torch', x: (sx1 + 1) * TILE + 8, y: (topRow - 1) * TILE, layer: 1 });
+  for (let k = 0; k < 22; k++)
     room.decor.push({ kind: sandy ? 'column' : 'stal', idx: rng.i(0, sandy ? 1 : 3),
-                      x: rng.i(4, W - 4) * TILE, y: (rng.bool(0.5) ? FY : 6) * TILE,
+                      x: rng.i(4, sx0 - 3) * TILE, y: (rng.bool(0.5) ? FY : gy0 + 1) * TILE,
                       layer: rng.bool(0.5) ? 0 : 2 });
+  room.vaultShaft = { x0: sx0, x1: sx1, top: topRow, bottom: FY };
   return room;
 }
+World.buildVault = buildVault;
+
 function buildChapterArena(o) {
   const rng = new RNG(o.seed);
   const W = 52, H = 26;
@@ -1613,9 +1699,9 @@ World.build = function () {
     });
   }
 
-  /* the two rooms under the world, reached by falling through phase ground */
-  World.rooms.secretSand = buildSecretRoom('secretSand', 'THE BURIED VAULT', 5501, 'sand');
-  World.rooms.secretSnow = buildSecretRoom('secretSnow', 'THE HOLLOW UNDER THE DRIFT', 5502, 'snow');
+  /* One vault is kept ready.  Falling through a patch rebuilds it from that
+     patch's own seed, so every patch has a vault of its own. */
+  World.rooms.vault = buildVault(5501, 'sand');
 
   /* hide the code papers: two per realm, out in its first area */
   World.LEVELS.forEach((lv, li) => {
