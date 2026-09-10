@@ -2917,16 +2917,18 @@ class Shot {
 }
 
 const GUARDIANS = {
+  /* the three of the Sunken Depths land every blow three times as hard */
   tideWarden: { art: 'tideWarden', title: 'THE TIDE WARDEN', hp: 70, scale: 1.8,
-    attacks: ['volley', 'shock', 'aimed'], shots: 7, spread: 1.5,
+    attacks: ['volley', 'shock', 'aimed'], shots: 7, spread: 1.5, dmgMul: 3,
     proj: { col: '#a8cbd6', col2: '#2f6fb0', dmg: 2, grav: 0.02, snd: 'splash' } },
   kraken: { art: 'kraken', title: 'THE KRAKEN MAW', hp: 88, scale: 2.1,
     attacks: ['volley', 'sweep', 'summon', 'grab'], shots: 9, spread: 2.4, minion: 'Jelly', brood: 3,
+    dmgMul: 3,
     proj: { col: '#c9a8ff', col2: '#4a1f6b', dmg: 3, grav: 0.01, snd: 'gulp' } },
   /* three hearts a hit, from the jaws, the body and the spit alike */
   leviathan: { art: 'leviathan', title: 'THE LEVIATHAN', hp: 104, scale: 2.4,
     attacks: ['charge', 'aimed', 'swallow', 'strike', 'bite'], shots: 3, spread: 0.5,
-    strikeCol: '#8fd0c0', touch: 6,
+    strikeCol: '#8fd0c0', touch: 6, dmgMul: 3,
     proj: { col: '#8fd0c0', col2: '#1d5a5a', dmg: 6, grav: 0, home: 1.6, snd: 'gulp' } },
   forgefiend: { art: 'forgefiend', title: 'THE FORGEFIEND', hp: 120, scale: 1.5,
     attacks: ['slam', 'forge', 'aimed'], shots: 3, spread: 0.34,
@@ -2988,16 +2990,30 @@ function isleBossKey(kind, tier) {
 }
 class Guardian extends Enemy {
   constructor(x, y, key) {
-    const cfg = GUARDIANS[key];
+    let cfg = GUARDIANS[key];
+    /* A guardian may hit harder than its plain numbers say.  The multiplier
+       is folded in once, here, so every blow it lands carries it. */
+    const mul = cfg.dmgMul || 1;
+    if (mul !== 1) {
+      const up = n => Math.max(1, Math.round(n * mul));
+      cfg = Object.assign({}, cfg, {
+        touch: up(cfg.touch || 2),
+        graspDmg: cfg.graspDmg === undefined ? undefined : up(cfg.graspDmg),
+        proj: Object.assign({}, cfg.proj, { dmg: up(cfg.proj.dmg) })
+      });
+    }
     super({ x: x, y: y, w: 48, h: 60, hp: cfg.hp, damage: 2, coinDrop: 0, blood: cfg.proj.col });
     this.kbScale = 0;                 /* a guardian holds its ground */
     this.cfg = cfg; this.key = key; this.title = cfg.title;
+    this.dmgMul = mul;
     this.maxHp = cfg.hp; this.homeY = y; this.homeX = x;
     this.face = -1; this.state = 'sleep'; this.stateT = 0; this.phase = 1;
     this.awake = false; this.dying = false; this.deathT = 0; this.mode = 'idle';
     this.turn = 0;
   }
   get scale() { return this.cfg.scale || 1; }
+  /* what a blow of n points comes to, for this guardian */
+  dm(n) { return Math.max(1, Math.round(n * (this.dmgMul || 1))); }
   box() {
     const s = this.scale;
     return { x: this.x - 24 * s, y: this.y - 62 * s, w: 48 * s, h: 62 * s };
@@ -3124,7 +3140,7 @@ class Guardian extends Enemy {
           const n = this.phase >= 3 ? 3 : (this.phase === 2 ? 2 : 1);
           for (let k = 0; k < n; k++) {
             const tx = clamp(p.cx + (k - (n - 1) / 2) * 44 + rr(-8, 8), 40, G.room.pxW() - 40);
-            const st = new LightningStrike(tx, G.room.groundBelow(tx, 40) - 1, 8, 2);
+            const st = new LightningStrike(tx, G.room.groundBelow(tx, 40) - 1, 8, this.dm(2));
             st.col = cfg.strikeCol || '#9fe8ff';
             G.projectiles.push(st);
           }
@@ -3138,7 +3154,7 @@ class Guardian extends Enemy {
         if (!this.shocked && this.stateT < 1.25) {
           this.shocked = true;
           const gy = this.y;
-          G.waves.push(new Shockwave(this.x, gy, 4, cfg.proj.col, cfg.proj.col2));
+          G.waves.push(new Shockwave(this.x, gy, this.dm(4), cfg.proj.col, cfg.proj.col2));
           Snd.boom(); G.shake(10); G.flash(0.16);
           for (let i = 0; i < 30; i++) G.particles.push(new Particle({
             x: this.x + rr(-24, 24), y: gy, vx: rr(-4, 4), vy: rr(-4, -0.5), life: rr(0.3, 0.8),
@@ -3154,7 +3170,7 @@ class Guardian extends Enemy {
         if (!this.swept && this.stateT < 1.4) {
           this.swept = true;
           const dir = p.cx > this.x ? 1 : -1;
-          G.waves.push(new Tentacle(this.x + dir * 10, this.y - 34 * this.scale, dir, 4, 150));
+          G.waves.push(new Tentacle(this.x + dir * 10, this.y - 34 * this.scale, dir, this.dm(4), 150));
           Snd.gulp(); G.shake(5);
         }
         if (this.stateT <= 0) this.swept = false;
@@ -3167,12 +3183,12 @@ class Guardian extends Enemy {
           this.grabbed = true;
           const near = Math.abs(p.cx - this.x) < 120 * this.scale && Math.abs(p.cy - this.y) < 110 * this.scale;
           if (near && !p.dead && p.heldBy === null) {
-            p.seize(this, 1.35, 6);       /* three hearts, over the squeeze */
+            p.seize(this, 1.35, this.dm(6));   /* three hearts, over the squeeze */
             Snd.gulp(); G.shake(6);
           } else {
             /* out of reach, so it lashes instead of leaving you alone */
             const dir = p.cx > this.x ? 1 : -1;
-            G.waves.push(new Tentacle(this.x + dir * 10, this.y - 34 * this.scale, dir, 4, 170));
+            G.waves.push(new Tentacle(this.x + dir * 10, this.y - 34 * this.scale, dir, this.dm(4), 170));
             Snd.gulp();
           }
         }
@@ -3190,7 +3206,7 @@ class Guardian extends Enemy {
             G.swallowInto(this);
           } else {
             const dir = p.cx > this.x ? 1 : -1;
-            G.waves.push(new Tentacle(this.x + dir * 10, this.y - 30 * this.scale, dir, 4, 180));
+            G.waves.push(new Tentacle(this.x + dir * 10, this.y - 30 * this.scale, dir, this.dm(4), 180));
             Snd.gulp();
           }
         }
@@ -3221,7 +3237,7 @@ class Guardian extends Enemy {
           const dir = p.cx > this.x ? 1 : -1;
           /* the lash runs at the height you stand at, so it can be jumped */
           const ly = clamp(p.cy, this.y - 80 * this.scale, this.y - 6);
-          G.waves.push(new FireLash(this.x + dir * 16, ly, dir, 3, 190, 4 + this.phase));
+          G.waves.push(new FireLash(this.x + dir * 16, ly, dir, this.dm(3), 190, 4 + this.phase));
           Snd.fire(); G.shake(5);
         }
         if (this.stateT <= 0) this.branded = false;
@@ -3247,7 +3263,7 @@ class Guardian extends Enemy {
           const n = this.phase >= 4 ? 2 : 1;
           for (let k = 0; k < n; k++) {
             const tx = p.cx + (k ? rr(-60, 60) : 0), ty = p.cy + (k ? rr(-20, 20) : 0);
-            G.waves.push(new Spear(this, tx, ty, 6, 4));
+            G.waves.push(new Spear(this, tx, ty, this.dm(6), this.dm(4)));
           }
           G.shake(5);
         }
@@ -3282,7 +3298,7 @@ class Guardian extends Enemy {
           this.shotT = 0.13;
           const dir = p.cx > this.x ? 1 : -1;
           const px = this.x + dir * (34 + this.brood * 34);
-          G.waves.push(new FirePillar(px, this.y, 5, cfg.proj.col, cfg.proj.col2));
+          G.waves.push(new FirePillar(px, this.y, this.dm(5), cfg.proj.col, cfg.proj.col2));
           this.brood++;
           Snd.fire(); G.shake(2);
         }
@@ -3296,7 +3312,7 @@ class Guardian extends Enemy {
           this.shotT = 0.16;
           const px = G.cam.x + rr(20, VW - 20);
           const gy = G.room.groundBelow(px, G.cam.y + 10);
-          G.waves.push(new FirePillar(px, gy, 5, '#c9a89a', '#4a3a44'));
+          G.waves.push(new FirePillar(px, gy, this.dm(5), '#c9a89a', '#4a3a44'));
           this.brood++;
           if (this.brood === 1) { Snd.boom(); G.shake(9); }
         }
@@ -3352,7 +3368,7 @@ class Guardian extends Enemy {
           if (Math.abs(this.y - this.homeY) < 2 && !this.slammed) {
             this.slammed = true;
             Snd.slam(); G.shake(10); G.flash(0.14);
-            if (!p.dead && p.grounded && Math.abs(p.cx - this.x) < 130) p.hurt(2, this.x, this.y);
+            if (!p.dead && p.grounded && Math.abs(p.cx - this.x) < 130) p.hurt(this.dm(2), this.x, this.y);
             for (let k = 0; k < 30; k++) G.particles.push(new Particle({
               x: this.x + rr(-60, 60), y: this.y, vx: rr(-4, 4), vy: rr(-4, -0.4), life: rr(0.3, 0.8),
               col: cfg.proj.col, col2: cfg.proj.col2, size: rr(1, 3.4), grav: 0.22

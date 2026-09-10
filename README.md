@@ -381,6 +381,10 @@ The three of the Sunken Depths carry **ten times** the health they once did: the
 6,300, the Kraken Maw 9,680 and the Leviathan 13,520. That is two and a half to five minutes
 of steady hitting apiece.
 
+They also hit **three times as hard**, in everything they do — the spit, the touch, the
+shockwave, the arms and the squeeze alike. The Warden's shockwave costs six hearts, the
+Kraken's squeeze nine, and every part of the Leviathan nine.
+
 The **Leviathan** costs three hearts a hit, from its body, its spit and its jaws alike. Its
 jaws open where you stand, hang there a moment, and snap. Step out of them in time and they
 close on nothing.
