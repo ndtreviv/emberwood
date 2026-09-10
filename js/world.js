@@ -1911,16 +1911,17 @@ World.LEVELS = [
     enemyHp: 2, enemyDmg: 2,
     node: { x: 310, y: 148 } },
 
-  /* the deep and the ash: guardians many times hardier, and kills that pay
-     for the deeper shop stock */
+  /* The deep and the ash: guardians many times hardier, and kills that pay
+     for the deeper shop stock.  The three of the Sunken Depths carry ten
+     times what they used to. */
   { name: 'TIDEWRACK', taker: 'THE TIDE TAKES', sub: 'THE TIDE WARDEN', theme: 'shore', enemyHp: 4,
-    coinScale: 7, coinBonus: 2, bossHp: 9,
+    coinScale: 7, coinBonus: 2, bossHp: 90,
     rooms: ['shore', 'shore2', 'shore3', 'shoreEnd'], start: 'shore', boss: 'shoreEnd', node: { x: 76, y: 152 } },
   { name: 'DROWNED HALL', taker: 'THE DEEP TAKES', sub: 'THE KRAKEN MAW', theme: 'drowned', enemyHp: 5,
-    coinScale: 9, coinBonus: 3, bossHp: 11,
+    coinScale: 9, coinBonus: 3, bossHp: 110,
     rooms: ['drowned', 'drowned2', 'drowned3', 'drownedEnd'], start: 'drowned', boss: 'drownedEnd', node: { x: 194, y: 74 } },
   { name: 'THE TRENCH', taker: 'THE TRENCH TAKES', sub: 'THE LEVIATHAN', theme: 'abyss', enemyHp: 6,
-    coinScale: 12, coinBonus: 4, bossHp: 13,
+    coinScale: 12, coinBonus: 4, bossHp: 130,
     rooms: ['abyss', 'abyss2', 'abyss3', 'abyssEnd'], start: 'abyss', boss: 'abyssEnd', node: { x: 310, y: 148 } },
 
   { name: 'CINDER FIELDS', taker: 'THE ASH TAKES', sub: 'THE FORGEFIEND', theme: 'cinder', enemyHp: 8,
