@@ -745,6 +745,12 @@ Every price is written short: **1K** for a thousand, **250K** for a quarter of a
 | **CLOTHES** | Every suit the wardrobe sells, the three prestige regalia included |
 | **SHARDS** | Arrows, rubies and boosters, paid for in the shards of the Archipelago |
 
+**Every row carries a picture of the thing itself**, drawn at sixteen square: a single arrow
+with its steel head and two feathers, a sheaf of three, a full quiver, a stoppered bottle
+with the draught showing through the glass, three caskets that grow richer by tier, a cut
+ruby, and every suit hanging on its own hanger in its own colours. An artifact shows **its
+own icon on a plate of its rank**, so the tier reads before the words do.
+
 ### What the artifacts cost
 
 | Rank | Price | How many |

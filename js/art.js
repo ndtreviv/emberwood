@@ -3990,6 +3990,134 @@ function artifactIcon(key) {
   g.outline(C('#1c1408'));
   return g;
 }
+/* ============================================================
+   THE SHOP SHELF.  A picture for every row the item shop sells,
+   drawn at sixteen square like the artifacts beside them.
+   ============================================================ */
+/* one arrow, laid on the slant, with a steel head and two feathers */
+function arrowSprite(n) {
+  const g = new Pix(16, 16);
+  const shaft = C('#8a6a3a'), shaftL = C('#a88a52'), steel = C('#cfd8e6'), steelD = C('#7f8a9c');
+  const feath = C('#e8dcc0'), feathD = C('#c9403a');
+  const draw = (ox, oy) => {
+    /* the shaft runs from the low left to the high right */
+    g.thick(2 + ox, 13 + oy, 11 + ox, 4 + oy, 1, shaft);
+    g.set(5 + ox, 10 + oy, shaftL); g.set(8 + ox, 7 + oy, shaftL);
+    /* the head */
+    g.poly([[14 + ox, 1 + oy], [12 + ox, 6 + oy], [9 + ox, 3 + oy]], steelD);
+    g.poly([[13.4 + ox, 2 + oy], [11.6 + ox, 5 + oy], [10 + ox, 3.4 + oy]], steel);
+    /* the fletching */
+    g.poly([[2 + ox, 13 + oy], [1 + ox, 9 + oy], [4 + ox, 11 + oy]], feath);
+    g.poly([[2 + ox, 13 + oy], [6 + ox, 14 + oy], [4 + ox, 11 + oy]], feathD);
+  };
+  if (n <= 1) draw(0, 0);
+  else if (n === 2) { draw(-2, 2); draw(2, -2); }
+  else { draw(-3, 3); draw(0, 0); draw(3, -3); }
+  g.outline(C('#1c1408'));
+  return g;
+}
+/* a quiver with a sheaf standing in it */
+function quiverFullSprite() {
+  const g = new Pix(16, 16);
+  g.rect(4, 6, 8, 9, C('#5a3a1e'));
+  g.rect(4, 6, 8, 1, C('#8a6a3a'));
+  g.rect(4, 14, 8, 1, C('#3a2410'));
+  g.rect(3, 9, 10, 1, C('#3a2410'));
+  g.rect(3, 11, 10, 1, C('#3a2410'));
+  for (let k = 0; k < 4; k++) {
+    g.rect(4 + k * 2, 1, 1, 6, C('#8a6a3a'));
+    g.rect(3 + k * 2, 1, 3, 1, C('#e8dcc0'));
+    g.set(4 + k * 2, 2, C('#c9403a'));
+  }
+  g.outline(C('#1c1408'));
+  return g;
+}
+/* a stoppered bottle, the liquid inside it whatever colour is given */
+function vialSprite(base, light, dark) {
+  const g = new Pix(16, 16);
+  const glass = C('#cfe6f2');
+  g.rect(6, 1, 4, 3, C('#7a5230'));          /* the cork */
+  g.rect(6, 1, 4, 1, C('#a0703c'));
+  g.rect(6, 4, 4, 2, glass);                  /* the neck */
+  /* the bottle, then the liquid filling nearly all of it, so the colour of
+     the draught is what the eye reads and not the glass */
+  g.poly([[6, 6], [10, 6], [13, 10], [13, 14], [3, 14], [3, 10]], glass);
+  g.poly([[6, 6], [10, 6], [12, 9.6], [12, 13.4], [4, 13.4], [4, 9.6]], C(dark));
+  g.poly([[6, 7], [10, 7], [11.4, 10], [11.4, 13], [4.6, 13], [4.6, 10]], C(base));
+  g.poly([[6.4, 7], [9.6, 7], [10.6, 9.6], [5.4, 9.6]], C(light));
+  g.rect(5, 11, 6, 1, C(light));              /* the surface catching a light */
+  g.rect(4, 8, 1, 5, C('#ffffff'));           /* the shine down the glass */
+  g.set(5, 6, C('#ffffff'));
+  g.outline(C('#1c1408'));
+  return g;
+}
+/* the three caskets: worn wood, banded iron, and gold with a stone in it */
+function casketSprite(tier) {
+  const g = new Pix(16, 16);
+  const wood = [C('#6b5030'), C('#8a94a6'), C('#c6a23f')][tier];
+  const woodD = [C('#3f2c17'), C('#4a5160'), C('#7d5620')][tier];
+  const woodL = [C('#8f6d43'), C('#cfd8e6'), C('#f0c93a')][tier];
+  const band = [C('#5a4326'), C('#2a3040'), C('#fff4c0')][tier];
+  /* the lid, then the body */
+  g.rect(2, 5, 12, 4, woodD);
+  g.poly([[2, 5], [4, 3], [12, 3], [14, 5]], wood);
+  g.poly([[3, 5], [4.6, 4], [11.4, 4], [13, 5]], woodL);
+  g.rect(2, 9, 12, 5, wood);
+  g.rect(2, 13, 12, 1, woodD);
+  /* the bands across it */
+  g.rect(2, 8, 12, 1, band);
+  g.rect(4, 3, 1, 11, band);
+  g.rect(11, 3, 1, 11, band);
+  /* the lock */
+  g.rect(7, 8, 2, 3, band);
+  g.set(7, 9, C('#1c1408')); g.set(8, 9, C('#1c1408'));
+  /* the better the casket, the more it is dressed */
+  if (tier >= 1) { g.set(3, 6, woodL); g.set(12, 6, woodL); }
+  if (tier >= 2) {
+    g.disc(7.5, 4, 1.6, C('#ff5ad0'));
+    g.set(7, 3, C('#ffffff'));
+    for (const x of [2, 13]) { g.set(x, 10, C('#fff4c0')); g.set(x, 12, C('#fff4c0')); }
+  }
+  g.outline(C('#1c1408'));
+  return g;
+}
+/* a cut ruby, for the rows that ask for them */
+function rubySprite() {
+  const g = new Pix(16, 16);
+  g.poly([[8, 1], [14, 6], [8, 15], [2, 6]], C('#8f1028'));
+  g.poly([[8, 3], [12, 6.4], [8, 13], [4, 6.4]], C('#ff2a5a'));
+  g.poly([[8, 3], [12, 6.4], [8, 7]], C('#ff8ba8'));
+  g.poly([[8, 7], [12, 6.4], [8, 13]], C('#d01840'));
+  g.set(6, 5, C('#ffffff')); g.set(7, 4, C('#ffffff'));
+  g.outline(C('#1c1408'));
+  return g;
+}
+/* a shard of the archipelago, for the page that is kept for them */
+function shardMarkSprite() {
+  const g = new Pix(16, 16);
+  g.poly([[8, 1], [13, 6], [11, 14], [5, 14], [3, 6]], C('#2f6fb0'));
+  g.poly([[8, 3], [11.4, 6.6], [10, 12.4], [6, 12.4], [4.6, 6.6]], C('#8fd0e8'));
+  g.poly([[8, 3], [11.4, 6.6], [8, 8]], C('#dff4ff'));
+  g.set(6, 6, C('#ffffff'));
+  g.outline(C('#1c1408'));
+  return g;
+}
+/* a garment on a hanger, painted in whatever suit it stands for */
+function suitSprite(base, dark, light, legs, trim) {
+  const g = new Pix(16, 16);
+  g.rect(7, 0, 2, 2, C('#8a94a6'));           /* the hook */
+  g.thick(4, 3, 12, 3, 1, C('#8a94a6'));
+  /* the shoulders and the body, cut wide so the cloth is what you see */
+  g.poly([[8, 3], [14, 6], [13, 9], [11, 8], [11, 15], [5, 15], [5, 8], [3, 9], [2, 6]], C(dark));
+  g.poly([[8, 4], [13, 6.4], [12.4, 8], [10.2, 7], [10.2, 14], [5.8, 14], [5.8, 7], [3.6, 8], [3, 6.4]], C(base));
+  g.rect(7, 5, 3, 9, C(light));               /* the light down the front */
+  g.rect(5, 9, 6, 2, C(trim));                /* the belt */
+  g.rect(5, 13, 6, 2, C(legs));               /* what goes under it */
+  g.set(7, 5, C('#ffffff')); g.set(12, 7, C('#ffffff'));
+  g.outline(C('#1c1408'));
+  return g;
+}
+
 /* the chest a secret room keeps its prize in */
 function relicChestSprite(open) {
   const g = new Pix(26, 22);
@@ -5181,6 +5309,22 @@ Art.steps = function () {
          'sunheart', 'riddlestone', 'pharaohcrook'];
     for (const a of artKeys) Art.item.artifact[a] = artifactIcon(a).canvas();
     Art.item.chest = [relicChestSprite(false).canvas(), relicChestSprite(true).canvas()];
+    /* the shop shelf */
+    Art.item.shop = {
+      arrow1: arrowSprite(1).canvas(),
+      arrow10: arrowSprite(3).canvas(),
+      arrow50: quiverFullSprite().canvas(),
+      xpVial: vialSprite('#5fa3dc', '#cfeaff', '#2a4a9a').canvas(),
+      coinVial: vialSprite('#e0b040', '#ffeec0', '#9c7418').canvas(),
+      ruby: rubySprite().canvas(),
+      shard: shardMarkSprite().canvas(),
+      casket: [casketSprite(0).canvas(), casketSprite(1).canvas(), casketSprite(2).canvas()]
+    };
+    Art.suitIcon = {};
+    for (const k of SUIT_KEYS) {
+      const su = SUITS[k];
+      Art.suitIcon[k] = suitSprite(su.base, su.dark, su.light, su.legs, su.trim).canvas();
+    }
     Art.prop.pine = [];
     for (let i = 0; i < 3; i++) { const q = pineSprite(1301 + i); Art.prop.pine.push(prop(q, q.w / 2, q.h)); }
     Art.prop.tumbleweed = [];

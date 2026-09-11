@@ -2298,23 +2298,23 @@ function updateBoosts(dt) {
 /* ---------- what each page holds ---------- */
 function storeItemRows() {
   return [
-    { name: 'AN ARROW', desc: 'ONE ARROW FOR THE LONGBOW', coins: 1000,
+    { name: 'AN ARROW', desc: 'ONE ARROW FOR THE LONGBOW', coins: 1000, pic: 'arrow1',
       buy: () => { G.arrows = (G.arrows | 0) + 1; } },
-    { name: 'TEN ARROWS', desc: 'A SHEAF OF TEN, AT THE SAME PRICE EACH', coins: 10000,
+    { name: 'TEN ARROWS', desc: 'A SHEAF OF TEN, AT THE SAME PRICE EACH', coins: 10000, pic: 'arrow10',
       buy: () => { G.arrows = (G.arrows | 0) + 10; } },
-    { name: 'FIFTY ARROWS', desc: 'A QUIVER OF FIFTY, AT THE SAME PRICE EACH', coins: 50000,
+    { name: 'FIFTY ARROWS', desc: 'A QUIVER OF FIFTY, AT THE SAME PRICE EACH', coins: 50000, pic: 'arrow50',
       buy: () => { G.arrows = (G.arrows | 0) + 50; } },
-    { name: '2X EXPERIENCE', desc: 'TWICE THE EXPERIENCE FOR TEN MINUTES', coins: 5000,
+    { name: '2X EXPERIENCE', desc: 'TWICE THE EXPERIENCE FOR TEN MINUTES', coins: 5000, pic: 'xpVial',
       buy: () => { G.addBoost('xp', BOOST_SECS); } },
-    { name: '2X COINS', desc: 'TWICE THE COINS FOR TEN MINUTES', coins: 5000,
+    { name: '2X COINS', desc: 'TWICE THE COINS FOR TEN MINUTES', coins: 5000, pic: 'coinVial',
       buy: () => { G.addBoost('coin', BOOST_SECS); } }
   ];
 }
 /* the artifacts, dearest first, with the three caskets at the head */
 function storeArtifactRows() {
-  const rows = BOXES.map(b => ({
+  const rows = BOXES.map((b, i) => ({
     name: b.name, desc: 'ONE ARTIFACT, THE BETTER BOX THE BETTER ODDS',
-    rubies: b.rubies, box: b.key,
+    rubies: b.rubies, box: b.key, casket: i,
     buy: () => G.openBox(b.key)
   }));
   const order = ARTIFACTS.slice().sort((a, b) => b.rank - a.rank);
@@ -2339,15 +2339,15 @@ function storeClothRows() {
 /* the page kept for shards: what an islander comes back with */
 function storeShardRows() {
   return [
-    { name: 'TWENTY ARROWS', desc: 'PAID FOR IN SHARDS OF ANY KIND', shards: 4,
+    { name: 'TWENTY ARROWS', desc: 'PAID FOR IN SHARDS OF ANY KIND', shards: 4, pic: 'arrow10',
       buy: () => { G.arrows = (G.arrows | 0) + 20; } },
-    { name: 'TEN RUBIES', desc: 'THE ISLANDS TRADE THEM FOR SHARDS', shards: 12,
+    { name: 'TEN RUBIES', desc: 'THE ISLANDS TRADE THEM FOR SHARDS', shards: 12, pic: 'ruby',
       buy: () => { G.rubies = (G.rubies | 0) + 10; } },
-    { name: '2X EXPERIENCE', desc: 'TWICE THE EXPERIENCE FOR TEN MINUTES', shards: 3,
+    { name: '2X EXPERIENCE', desc: 'TWICE THE EXPERIENCE FOR TEN MINUTES', shards: 3, pic: 'xpVial',
       buy: () => { G.addBoost('xp', BOOST_SECS); } },
-    { name: 'A WORN CASKET', desc: 'ONE ARTIFACT, PAID FOR IN SHARDS', shards: 20,
+    { name: 'A WORN CASKET', desc: 'ONE ARTIFACT, PAID FOR IN SHARDS', shards: 20, casket: 0,
       buy: () => G.openBox('box1') },
-    { name: 'FIFTY ARROWS', desc: 'PAID FOR IN SHARDS OF ANY KIND', shards: 9,
+    { name: 'FIFTY ARROWS', desc: 'PAID FOR IN SHARDS OF ANY KIND', shards: 9, pic: 'arrow50',
       buy: () => { G.arrows = (G.arrows | 0) + 50; } }
   ];
 }
@@ -2428,6 +2428,15 @@ G.openBox = function (key) {
   return true;
 };
 
+/* the picture a shop row shows */
+function storeRowPic(row) {
+  const shelf = Art.item.shop || {};
+  if (row.art) return Art.item.artifact[row.art] || null;
+  if (row.suit) return (Art.suitIcon && Art.suitIcon[row.suit]) || null;
+  if (row.casket !== undefined) return (shelf.casket && shelf.casket[row.casket]) || null;
+  if (row.pic) return shelf[row.pic] || null;
+  return shelf.shard || null;
+}
 function openStore(from) {
   G.state = 'store';
   G.storeFrom = from || 'map';
@@ -2529,28 +2538,18 @@ function drawStore() {
     ctx.fillRect(r.x, r.y, r.w, r.h);
     ctx.fillStyle = owned ? '#6fc46a' : (row.rank ? RANK_COL[row.rank] : (can ? '#8a6a3a' : '#5b4a34'));
     ctx.fillRect(r.x, r.y, r.w, 1);
-    /* a swatch: the cloth for a suit, a gem for an artifact, a box for a box */
-    if (row.suit) {
-      const su = SUITS[row.suit];
-      ctx.fillStyle = su.dark; ctx.fillRect(r.x + 4, r.y + 4, 16, 16);
-      ctx.fillStyle = su.base; ctx.fillRect(r.x + 5, r.y + 5, 14, 10);
-      ctx.fillStyle = su.light; ctx.fillRect(r.x + 5, r.y + 5, 14, 3);
-      ctx.fillStyle = su.trim; ctx.fillRect(r.x + 5, r.y + 15, 14, 2);
-    } else if (row.box) {
-      const k = BOXES.findIndex(b => b.key === row.box);
-      const col = ['#6b5030', '#8a7a5c', '#c6a23f'][k] || '#6b5030';
-      ctx.fillStyle = '#2a1f12'; ctx.fillRect(r.x + 4, r.y + 6, 16, 13);
-      ctx.fillStyle = col; ctx.fillRect(r.x + 5, r.y + 7, 14, 11);
-      ctx.fillStyle = '#ffeec0'; ctx.fillRect(r.x + 11, r.y + 7, 2, 11);
-    } else if (row.rank) {
-      ctx.fillStyle = RANK_COL[row.rank];
-      ctx.beginPath();
-      ctx.moveTo(r.x + 12, r.y + 4); ctx.lineTo(r.x + 19, r.y + 12);
-      ctx.lineTo(r.x + 12, r.y + 20); ctx.lineTo(r.x + 5, r.y + 12);
-      ctx.closePath(); ctx.fill();
-    } else {
-      ctx.fillStyle = '#8a6a3a'; ctx.fillRect(r.x + 6, r.y + 6, 12, 12);
-      ctx.fillStyle = '#e8dcc0'; ctx.fillRect(r.x + 8, r.y + 8, 8, 8);
+    /* the picture of the thing itself: the artifact's own icon, the suit on
+       its hanger, the casket, or whatever the row names */
+    const pic = storeRowPic(row);
+    if (pic) {
+      /* an artifact stands on a plate of its rank, so the tier reads at a glance */
+      if (row.rank) {
+        ctx.fillStyle = RANK_COL[row.rank];
+        ctx.fillRect(r.x + 3, r.y + 3, 18, 18);
+        ctx.fillStyle = 'rgba(12,8,20,0.72)';
+        ctx.fillRect(r.x + 4, r.y + 4, 16, 16);
+      }
+      ctx.drawImage(pic, r.x + 4, r.y + 4);
     }
     /* the line is cut to the room before the price, so the two never meet */
     const room = r.w - 90;
