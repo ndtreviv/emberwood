@@ -366,6 +366,7 @@ reads as a button rather than as a block of colour.
 | Mark | Colour | What it opens |
 | --- | --- | --- |
 | **I** | bronze | bronze hair, the Bronze Regalia, a bronze border, the Bronze Mantle |
+| | | Bronze is drawn **brown**, so it is never taken for the gold beside it |
 | **II** | silver | silver hair, the Silver Regalia, a silver border, the Silver Mantle |
 | **III** | gold | gold hair, the Gold Regalia, a gold border, the Gold Mantle |
 

@@ -23,7 +23,7 @@ const HAIR_COLS = [
   { name: 'ROSE',     base: '#e0688a', dark: '#a13c5c', light: '#f7a2bb' },
   /* Three that no shop sells.  A prestige opens each of them, and each one
      carries a shine the plain colours do not. */
-  { name: 'BRONZE',   base: '#c68e3f', dark: '#7d5620', light: '#f0c07a', need: 1, shine: true },
+  { name: 'BRONZE',   base: '#a66a28', dark: '#5e3a10', light: '#d4a05c', need: 1, shine: true },
   { name: 'SILVER',   base: '#cfd8e6', dark: '#8a95a8', light: '#ffffff', need: 2, shine: true },
   { name: 'GOLD',     base: '#f0c93a', dark: '#a8862a', light: '#fff4c0', need: 3, shine: true }
 ];
@@ -88,7 +88,7 @@ const SUITS = {
   /* Three suits no realm holds.  Each one waits on a prestige, and no purse
      buys it before then.  All three shine. */
   pBronze:  { name: 'BRONZE REGALIA', realm: 'PRESTIGE I', cost: 20000, need: 1, shine: true,
-              base: '#c68e3f', dark: '#7d5620', light: '#f0c07a', legs: '#8a5f26', trim: '#ffe0a8' },
+              base: '#a66a28', dark: '#5e3a10', light: '#d4a05c', legs: '#6b4014', trim: '#dfb87a' },
   pSilver:  { name: 'SILVER REGALIA', realm: 'PRESTIGE II', cost: 40000, need: 2, shine: true,
               base: '#cfd8e6', dark: '#8a95a8', light: '#ffffff', legs: '#93a0b4', trim: '#eef4ff' },
   pGold:    { name: 'GOLD REGALIA', realm: 'PRESTIGE III', cost: 60000, need: 3, shine: true,
@@ -4633,8 +4633,8 @@ const CAPES = {
   /* Three that a prestige gives outright.  Beaten metal, shining. */
   pBronze: {
     name: 'BRONZE MANTLE', short: 'BRONZE', hint: 'PRESTIGE I', prestige: 1, shine: true,
-    band: ['#ffe0a8', '#f0c07a', '#c68e3f', '#a8762e', '#7d5620', '#5e3f17', '#432d10', '#2c1d0a'],
-    edge: '#ffe0a8'
+    band: ['#dfb87a', '#c4924e', '#a66a28', '#8a5520', '#6b4014', '#4e2e0d', '#372009', '#241505'],
+    edge: '#dfb87a'
   },
   pSilver: {
     name: 'SILVER MANTLE', short: 'SILVER', hint: 'PRESTIGE II', prestige: 2, shine: true,
@@ -4688,7 +4688,9 @@ function capeCell(design, along, across, n, w) {
    run has taken are shown this way.
    ============================================================ */
 const METAL = [null,
-  { dark: '#4a3010', mid: '#c68e3f', light: '#ffe0a8' },
+  /* bronze is brown, not gold: a deep burnt brown through to a warm tan.
+     It is kept dark enough to stand off the sand of the chart. */
+  { dark: '#241404', mid: '#8a5620', light: '#c58e48' },
   { dark: '#4a5160', mid: '#cfd8e6', light: '#ffffff' },
   { dark: '#5c4708', mid: '#f0c93a', light: '#fffbe0' }];
 function tintMetal(src, m) {

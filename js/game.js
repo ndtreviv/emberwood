@@ -5488,7 +5488,7 @@ const BORDERS = [
   { name: 'GREY STONE', base: '#6b6760', dark: '#454340', light: '#8f8a80', need: 0 },
   { name: 'DARK STONE', base: '#4a4744', dark: '#2c2b2a', light: '#6a6660', need: 0 },
   { name: 'BLACK STONE', base: '#2e2d2c', dark: '#1a1a19', light: '#484644', need: 0 },
-  { name: 'BRONZE', base: '#c68e3f', dark: '#7d5620', light: '#f0c07a', need: 1, shine: true },
+  { name: 'BRONZE', base: '#a66a28', dark: '#5e3a10', light: '#d4a05c', need: 1, shine: true },
   { name: 'SILVER', base: '#cfd8e6', dark: '#8a95a8', light: '#ffffff', need: 2, shine: true },
   { name: 'GOLD', base: '#f0c93a', dark: '#a8862a', light: '#fff4c0', need: 3, shine: true }
 ];
@@ -5541,7 +5541,8 @@ function buffBar(tier, level) {
 /* what each of the three level codes hands over */
 const XP_CODES = { XP10: 10, XP50: 50, XP100: 100 };
 const PRESTIGE_MARK = ['', 'I', 'II', 'III'];
-const PRESTIGE_COL = ['', '#c68e3f', '#cfd8e6', '#f0c93a'];
+/* bronze reads brown, so it is never taken for the gold beside it */
+const PRESTIGE_COL = ['', '#b07536', '#cfd8e6', '#f0c93a'];
 const PRESTIGE_NAME = ['', 'BRONZE', 'SILVER', 'GOLD'];
 /* the mark and the number, written together, as they go everywhere */
 /* The mark of a prestige, on a small plate of its own metal.  The corners
