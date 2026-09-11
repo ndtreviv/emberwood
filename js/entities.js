@@ -1536,10 +1536,11 @@ class Player {
    trails behind a run, streams up through a jump or a fall, and
    settles when you stand still.
    ============================================================ */
-/* A mantle is a short one: six links of two pixels.  The hero stands sixteen
-   pixels tall and the cloth hangs from five below the head, so ten pixels of
-   rope brings the hem to the boots and no further. */
-const CAPE_N = 6, CAPE_SEG = 2.0;
+/* A mantle of eleven links, nineteen pixels of rope, so the hem falls well
+   below the boots.  The links are short and many, which is what lets the
+   cloth ripple rather than swing as one board. */
+const CAPE_N = 11, CAPE_SEG = 1.9;
+const CAPE_DAMP = 0.88;              /* how much of its swing a link keeps */
 Player.prototype.capeAnchor = function () {
   const top = G.room && G.room.mode === 'top';
   if (top) {
@@ -1577,22 +1578,41 @@ Player.prototype.updateCape = function (dt) {
     const air = !this.grounded && !this.onLadder && !this.swimming;
     up = air ? -(5.0 + Math.min(9, Math.abs(this.vy) * 1.2)) : 3.4;
   }
-  const wob = Math.sin(G.t * 9) * 0.6;
   const s = Math.min(2, dt * 60);
-  for (let i = 0; i < CAPE_N; i++) {
+  /* The faster you go, the harder the air works on the cloth. */
+  const speed = top ? Math.hypot(this.vx, this.vy) : Math.abs(this.vx);
+  const lively = 1.15 + Math.min(3.2, speed * 0.9);
+  /* Every link reads the wind for itself, and reads it a little later than
+     the link above it.  So a gust does not shake the whole mantle at once:
+     it runs down the cloth from the shoulders to the hem.  A link near the
+     hem also catches more of the wind than one at the collar. */
+  for (let i = 1; i < CAPE_N; i++) {
     const pt = this.cape[i];
-    if (i === 0) { pt.x = a.x; pt.y = a.y; pt.px = a.x; pt.py = a.y; continue; }
     const t = i / (CAPE_N - 1);
-    let vx = (pt.x - pt.px) * 0.74, vy = (pt.y - pt.py) * 0.74;
+    const ph = G.t * 7.5 - i * 0.62;
+    const gust = (Math.sin(ph) * 0.72 + Math.sin(ph * 0.41 + i * 1.3) * 0.5) * lively;
+    const carry = 0.3 + t * 1.25;
+    const vx = (pt.x - pt.px) * CAPE_DAMP, vy = (pt.y - pt.py) * CAPE_DAMP;
     pt.px = pt.x; pt.py = pt.y;
-    pt.x += vx + (back * (0.35 + t) + wob * t) * 0.34 * s;
-    pt.y += vy + (up * (0.35 + t)) * 0.34 * s;
-    /* hold each link a fixed distance from the one before it */
-    const q = this.cape[i - 1];
-    const dx = pt.x - q.x, dy = pt.y - q.y;
-    const d = Math.hypot(dx, dy) || 1;
-    pt.x = q.x + dx / d * CAPE_SEG;
-    pt.y = q.y + dy / d * CAPE_SEG;
+    /* the hem catches far more than the collar, so the cloth whips at the
+       bottom and stays put at the shoulders */
+    const flap = 0.2 + t * t * 4.6;
+    pt.x += vx + (back * carry + gust * flap) * 0.34 * s;
+    pt.y += vy + (up * carry + gust * t * t * 1.6) * 0.34 * s;
+  }
+  /* Hold the links together afterwards, twice over.  Doing it apart from the
+     wind, and doing it twice, lets the cloth swing wide and still hang as
+     one piece. */
+  for (let pass = 0; pass < 2; pass++) {
+    const head = this.cape[0];
+    head.x = a.x; head.y = a.y; head.px = a.x; head.py = a.y;
+    for (let i = 1; i < CAPE_N; i++) {
+      const pt = this.cape[i], q = this.cape[i - 1];
+      const dx = pt.x - q.x, dy = pt.y - q.y;
+      const d = Math.hypot(dx, dy) || 1;
+      pt.x = q.x + dx / d * CAPE_SEG;
+      pt.y = q.y + dy / d * CAPE_SEG;
+    }
   }
 };
 Player.prototype.drawCape = function (c2) {

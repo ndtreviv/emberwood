@@ -265,9 +265,15 @@ on the same screen from the start, named and greyed, so you can see what is comi
 | **Silver Mantle** | Prestige II | beaten silver, with a light running down it |
 | **Gold Mantle** | Prestige III | beaten gold, with a light running down it |
 
-A mantle is a short rope of seven links hung from the shoulders. It falls to about the hip.
-It **trails behind a run**, **streams upward through a jump or a fall**, and settles when you
-stand still.
+A mantle is a rope of eleven short links hung from the shoulders, nineteen pixels of it, so
+the hem falls below the boots. It **trails behind a run**, **streams upward through a jump or
+a fall**, and never quite settles.
+
+**Every link reads the wind for itself, and reads it a little later than the link above it**,
+so a gust runs down the cloth from the shoulders to the hem rather than shaking all of it at
+once. A link near the hem catches far more wind than one at the collar: the hem swings about
+five pixels standing still and six at a run, while the collar holds fast. The faster you go,
+the harder the air works on it.
 
 ## Levels and prestige
 
@@ -760,11 +766,23 @@ In mobile mode the box fills the screen and carries **a keyboard of its own**, d
 game's own pixel font: the digits, a QWERTY block, **DEL** and **ENTER**. Tap the keys, then
 tap ENTER. The papers you carry sit above it as chips — tap one to fill the field.
 
-The code `DYLAN` is the exception: it needs no paper and unlocks **ginger hair** for the
-look screen. The save file keeps it.
+A few codes need no paper at all:
 
-A code only works while you are carrying its paper — knowing the word is not enough. The
-hidden code `admin` is the exception.
+| Code | What it does |
+| --- | --- |
+| `DYLAN` | Unlocks **ginger hair** for the look page. The save file keeps it |
+| `CHEESE` | Opens **the Archipelago**, the last page of the chart |
+| `XP10` | Hands you **ten levels** |
+| `XP50` | Hands you **fifty levels** |
+| `XP100` | Hands you **a hundred levels**, so you stand at the top |
+| `ADMIN` | Opens everything |
+
+The three level codes may be used **again and again** until the hundredth level, and then
+they say so rather than doing nothing. `XP100` leaves you one point of experience past the
+hundredth, so the **PRESTIGE** button is showing when you close the box.
+
+Every other code only works while you are carrying its paper — knowing the word is not
+enough.
 
 Each code works once. Rewards climb sharply with the realm:
 

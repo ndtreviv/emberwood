@@ -308,6 +308,27 @@ G.redeem = function (raw) {
     G.saveGame();
     return;
   }
+  /* Three codes that hand over levels outright.  Each one may be used again
+     and again, until the hundredth level. */
+  if (XP_CODES[name] !== undefined) {
+    const was = G.level0();
+    if (was >= LEVEL_MAX) {
+      Snd.uiBad(); G.codeMsg = 'ALREADY AT LEVEL ' + LEVEL_MAX;
+      G.codeMsgOk = false; G.codeMsgT = 2.6; return;
+    }
+    const want = clamp(was + XP_CODES[name], 1, LEVEL_MAX);
+    /* one point over the top at the hundredth, so the prestige button shows */
+    G.xp = want >= LEVEL_MAX ? XP_TABLE[LEVEL_MAX - 1] + 1 : XP_TABLE[want - 1];
+    G.codeMsg = 'LEVEL ' + was + ' TO ' + want;
+    G.codeMsgOk = true; G.codeMsgT = 4;
+    Snd.unlock(); G.flash(0.5); G.shake(4);
+    if (G.state === 'play' && G.player) for (let i = 0; i < 70; i++) G.particles.push(new Particle({
+      x: G.player.cx, y: G.player.cy, vx: rr(-4, 4), vy: rr(-4, 1.5), life: rr(0.5, 1.3),
+      col: rankColour(want), col2: '#ffffff', size: rr(1, 3), grav: 0.05, drag: 0.94
+    }));
+    G.saveGame();
+    return;
+  }
   if (name === 'ADMIN') {
     G.goldAdmin();
     G.codeMsg = 'ADMIN - ALL YOURS'; G.codeMsgOk = true; G.codeMsgT = 4;
@@ -5419,6 +5440,8 @@ function buffBar(tier, level) {
   if (!buffCleared(tier - 1, level)) return 'TAKE THE ' + PRESTIGE_NAME[tier - 1] + ' RUN FIRST';
   return '';
 }
+/* what each of the three level codes hands over */
+const XP_CODES = { XP10: 10, XP50: 50, XP100: 100 };
 const PRESTIGE_MARK = ['', 'I', 'II', 'III'];
 const PRESTIGE_COL = ['', '#c68e3f', '#cfd8e6', '#f0c93a'];
 const PRESTIGE_NAME = ['', 'BRONZE', 'SILVER', 'GOLD'];
