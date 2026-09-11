@@ -232,8 +232,8 @@ cut, which carries straight through a hit.
 
 | What | How |
 | --- | --- |
-| **Your picture** | Ten small landscapes, one from each kind of country the game holds |
-| **Your border** | Four darknesses of stone brick, and three of beaten metal a prestige opens |
+| **Your picture** | Ten small landscapes, one from each kind of country the game holds. It hangs in a round frame |
+| **Your border** | A ring of brick round the picture: four darknesses of stone, and three of beaten metal a prestige opens |
 | **Your name** | Up to twelve letters. Type it, or tap it out on the built-in keyboard |
 | **Your rank** | The mark of a prestige, the level, and a bar that fills as you fight |
 | **THE WARDROBE** | The way into the shop of clothes |
@@ -265,8 +265,9 @@ on the same screen from the start, named and greyed, so you can see what is comi
 | **Silver Mantle** | Prestige II | beaten silver, with a light running down it |
 | **Gold Mantle** | Prestige III | beaten gold, with a light running down it |
 
-A mantle is a rope of nine links hung from the shoulders. It **trails behind a run**,
-**streams upward through a jump or a fall**, and settles when you stand still.
+A mantle is a short rope of seven links hung from the shoulders. It falls to about the hip.
+It **trails behind a run**, **streams upward through a jump or a fall**, and settles when you
+stand still.
 
 ## Levels and prestige
 
@@ -468,13 +469,21 @@ with a ruined city standing in the murk beyond. Its own creatures: **crabs** who
 turn a blow struck from the front, drifting **jellies** that pulse toward you, and
 **anglers** that hang in the dark behind their lure and lunge.
 
-The three of the Sunken Depths carry **ten times** the health they once did: the Tide Warden
-6,300, the Kraken Maw 9,680 and the Leviathan 13,520. That is two and a half to five minutes
-of steady hitting apiece.
+The three of the Sunken Depths stand **two and a half times weaker** than they were: the Tide
+Warden 2,520, the Kraken Maw 1,936 and the Leviathan 5,408. That is about one, one and two
+minutes of steady hitting, so the chapter keeps its climb without holding anyone up.
 
-They also hit **three times as hard**, in everything they do — the spit, the touch, the
-shockwave, the arms and the squeeze alike. The Warden's shockwave costs six hearts, the
-Kraken's squeeze nine, and every part of the Leviathan nine.
+The Warden and the Leviathan still hit **three times as hard**, in everything they do — the
+spit, the touch, the shockwave and the arms alike. The Warden's shockwave costs six hearts
+and every part of the Leviathan nine.
+
+The **Kraken Maw** is the exception, and it asks for skill rather than hearts:
+
+- **Nothing it does takes more than one heart**, whichever of its four attacks it uses.
+- It knits itself back together at **a quarter** of the rate every other guardian does.
+
+A **parry** is worth double, two and a half times, and triple across the three realms. See
+**Parrying** below.
 
 The **Leviathan** costs three hearts a hit, from its body, its spit and its jaws alike. Its
 jaws open where you stand, hang there a moment, and snap. Step out of them in time and they
@@ -665,9 +674,8 @@ The smithing table opens from either archipelago screen.
 ## The wardrobe
 
 **THE WARDROBE** on the profile page opens a shop of clothes, one suit cut to the pattern of
-each of the fifteen realms, and three more that only a prestige opens. **WARDROBE** in the
-top left corner of the title screen opens the same shop. They cost coins, and the coins come
-out of the file you played last, so start a file before you go shopping.
+each of the fifteen realms, and three more that only a prestige opens. That page is the only
+way in. They cost coins, and the coins come out of the file you are playing.
 
 A suit dresses the whole body — shirt, legs and trim — and replaces the plain shirt colour.
 Click a suit you own to wear it, and click it again to take it off.
@@ -795,6 +803,11 @@ also counts toward your combo, and once turned it can no longer hurt you.
 This works on anything that travels: the wyrm's fireballs, Zeus's bolts, the guardians'
 volleys and the Mother Spore's spores. Lightning called down from above is not a thing you
 can bat away.
+
+**In the Sunken Depths a parry is worth far more.** The three realms of Chapter Two send a
+parried shot back at double, two and a half times, and triple what it would be worth
+anywhere else. The guardians there throw a great deal, so a player who turns their own
+volleys on them cuts the fight in half.
 
 ## Combos
 

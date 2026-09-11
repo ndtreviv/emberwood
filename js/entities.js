@@ -1536,7 +1536,10 @@ class Player {
    trails behind a run, streams up through a jump or a fall, and
    settles when you stand still.
    ============================================================ */
-const CAPE_N = 9, CAPE_SEG = 3.4;
+/* A mantle is a short one: six links of two pixels.  The hero stands sixteen
+   pixels tall and the cloth hangs from five below the head, so ten pixels of
+   rope brings the hem to the boots and no further. */
+const CAPE_N = 6, CAPE_SEG = 2.0;
 Player.prototype.capeAnchor = function () {
   const top = G.room && G.room.mode === 'top';
   if (top) {
@@ -2319,6 +2322,8 @@ function projImpact(pr, halfW, halfH) {
   return false;
 }
 function deflectShot(pr, dmg) {
+  /* some realms send a parried shot back harder than the blade struck it */
+  dmg = Math.max(1, Math.round(dmg * (G.parryMult ? G.parryMult() : 1)));
   const b = G.boss;
   let dx, dy;
   if (b && !b.dead) { dx = b.x - pr.x; dy = (b.y - 40) - pr.y; }
@@ -2952,9 +2957,12 @@ const GUARDIANS = {
   tideWarden: { art: 'tideWarden', title: 'THE TIDE WARDEN', hp: 70, scale: 1.8,
     attacks: ['volley', 'shock', 'aimed'], shots: 7, spread: 1.5, dmgMul: 3,
     proj: { col: '#a8cbd6', col2: '#2f6fb0', dmg: 2, grav: 0.02, snd: 'splash' } },
-  kraken: { art: 'kraken', title: 'THE KRAKEN MAW', hp: 88, scale: 2.1,
+  /* The kraken asks for skill, not for hearts.  Nothing it does takes more
+     than one heart, it stands half the health it once did, and it knits
+     itself back together at a quarter of the usual rate. */
+  kraken: { art: 'kraken', title: 'THE KRAKEN MAW', hp: 44, scale: 2.1,
     attacks: ['volley', 'sweep', 'summon', 'grab'], shots: 9, spread: 2.4, minion: 'Jelly', brood: 3,
-    dmgMul: 3,
+    maxHit: 2, regen: 0.00175,
     proj: { col: '#c9a8ff', col2: '#4a1f6b', dmg: 3, grav: 0.01, snd: 'gulp' } },
   /* three hearts a hit, from the jaws, the body and the spit alike */
   leviathan: { art: 'leviathan', title: 'THE LEVIATHAN', hp: 104, scale: 2.4,
@@ -3029,8 +3037,14 @@ class Guardian extends Enemy {
        is folded in once, here, so every blow it lands carries it. */
     const mul = (cfg.dmgMul || 1) * ((extra && extra.dmgMul) || 1);
     const phases = (extra && extra.phases) || cfg.phases;
-    if (mul !== 1 || phases !== cfg.phases) {
-      const up = n => Math.max(1, Math.round(n * mul));
+    /* A guardian may also carry a cap: the most any one blow of its may
+       take, whatever the rest of its numbers say. */
+    const cap = cfg.maxHit || 0;
+    if (mul !== 1 || phases !== cfg.phases || cap) {
+      const up = n => {
+        const v = Math.max(1, Math.round(n * mul));
+        return cap ? Math.min(cap, v) : v;
+      };
       cfg = Object.assign({}, cfg, {
         phases: phases,
         graspDmg: cfg.graspDmg === undefined ? undefined : up(cfg.graspDmg),
@@ -3040,7 +3054,7 @@ class Guardian extends Enemy {
     super({ x: x, y: y, w: 48, h: 60, hp: cfg.hp, damage: 2, coinDrop: 0, blood: cfg.proj.col });
     this.kbScale = 0;                 /* a guardian holds its ground */
     this.cfg = cfg; this.key = key; this.title = cfg.title;
-    this.dmgMul = mul;
+    this.dmgMul = mul; this.hitCap = cap;
     this.maxHp = cfg.hp; this.homeY = y; this.homeX = x;
     this.face = -1; this.state = 'sleep'; this.stateT = 0; this.phase = 1;
     this.awake = false; this.dying = false; this.deathT = 0; this.mode = 'idle';
@@ -3048,7 +3062,10 @@ class Guardian extends Enemy {
   }
   get scale() { return this.cfg.scale || 1; }
   /* what a blow of n points comes to, for this guardian */
-  dm(n) { return Math.max(1, Math.round(n * (this.dmgMul || 1))); }
+  dm(n) {
+    const v = Math.max(1, Math.round(n * (this.dmgMul || 1)));
+    return this.hitCap ? Math.min(this.hitCap, v) : v;
+  }
   box() {
     const s = this.scale;
     return { x: this.x - 24 * s, y: this.y - 62 * s, w: 48 * s, h: 62 * s };
@@ -3130,7 +3147,9 @@ class Guardian extends Enemy {
       if (Math.abs(p.cx - this.x) < 220) this.wake();
       return;
     }
-    this.bossRegen(dt, 0.007);
+    /* most guardians knit at seven parts in a thousand a second; one that
+       carries its own figure mends at that instead */
+    this.bossRegen(dt, this.cfg.regen === undefined ? 0.007 : this.cfg.regen);
     this.stateT -= dt;
     this.face = p.cx > this.x ? 1 : -1;
     const sp = 1 + (this.phase - 1) * 0.22;

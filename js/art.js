@@ -4802,11 +4802,11 @@ function avatarSprite(kind) {
     g.rect(24, hz - 8, 20, 2, C('#7a5230'));
     for (let x = 25; x < 44; x += 5) g.rect(x, hz - 6, 2, 8, C('#4a3220'));
   }
-  /* a light vignette, so the picture sits in its frame */
+  /* a round vignette, since the picture hangs in a round frame */
   for (let x = 0; x < W; x++) for (let y = 0; y < H; y++) {
-    const d = Math.max(Math.abs(x - W / 2 + 0.5), Math.abs(y - H / 2 + 0.5)) / (W / 2);
-    if (d <= 0.82) continue;
-    g.set(x, y, sh(g.getc(x, y), -(d - 0.82) * 2.2));
+    const d = Math.hypot(x - W / 2 + 0.5, y - H / 2 + 0.5) / (W / 2);
+    if (d <= 0.72) continue;
+    g.set(x, y, sh(g.getc(x, y), -Math.min(0.6, (d - 0.72) * 1.9)));
   }
   return g;
 }

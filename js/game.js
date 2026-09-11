@@ -5337,6 +5337,16 @@ function rankColour(n) {
 }
 /* the button that offers a prestige, top middle of the play screen */
 function prestigeBtnRect() { return { x: VW / 2 - 42, y: VH - 22, w: 84, h: 14 }; }
+/* What a parry sends back.  Everywhere it is worth what the blade is worth.
+   In the Sunken Depths it is worth far more: double at the shore, half again
+   on top of that in the hall, and triple in the trench.  A guardian that hits
+   for six hearts can be answered. */
+G.parryMult = function () {
+  if (G.isleRun) return 1;
+  const lv = clamp(G.level | 0, 0, World.LEVELS.length - 1);
+  if (World.chapterOf(lv) !== 1) return 1;
+  return [2, 2.5, 3][lv - World.CHAPTERS[1].levels[0]] || 2;
+};
 /* A further realm pays more experience for the same work, and a buffed run
    pays more again.  An island pays best of all. */
 /* Each realm has an experience budget of its own, set so that a clean pass
@@ -5504,43 +5514,79 @@ function profFaceRect() {
   return { x: PROF_BOX.x + 16, y: PROF_BOX.y + 42,
            w: PORTRAIT + FRAME * 2, h: PORTRAIT + FRAME * 2 };
 }
+/* The two arrow rows reach a little wider than the picture, so the name of
+   the picture and the name of the border both sit clear between them. */
+const PIC_ROW_PAD = 12, PIC_ARROW_W = 16;
 function profPicArrow(dir) {
   const f = profFaceRect();
-  return { x: dir < 0 ? f.x : f.x + f.w - 26, y: f.y + f.h + 4, w: 26, h: 14 };
+  return { x: dir < 0 ? f.x - PIC_ROW_PAD : f.x + f.w + PIC_ROW_PAD - PIC_ARROW_W,
+           y: f.y + f.h + 4, w: PIC_ARROW_W, h: 14 };
 }
 function profEdgeArrow(dir) {
   const f = profFaceRect();
-  return { x: dir < 0 ? f.x : f.x + f.w - 26, y: f.y + f.h + 22, w: 26, h: 14 };
+  return { x: dir < 0 ? f.x - PIC_ROW_PAD : f.x + f.w + PIC_ROW_PAD - PIC_ARROW_W,
+           y: f.y + f.h + 22, w: PIC_ARROW_W, h: 14 };
 }
 function profNameRect() { return { x: PROF_BOX.x + 118, y: PROF_BOX.y + 50, w: 168, h: 18 }; }
 function profWardRect() { return { x: PROF_BOX.x + 118, y: PROF_BOX.y + 128, w: 110, h: 18 }; }
 function profPrestigeRect() { return { x: PROF_BOX.x + 236, y: PROF_BOX.y + 128, w: 104, h: 18 }; }
-/* the frame of brick, or of beaten metal, round the picture */
+/* The picture is a round one, so the frame is a ring of brick round it.
+   The bricks are laid in courses that run round the ring, and each one is
+   cut to the two circles that bound it. */
+function portraitCircle(r) {
+  return { cx: r.x + r.w / 2, cy: r.y + r.h / 2, inner: PORTRAIT / 2, outer: r.w / 2 };
+}
 function drawPortraitFrame(c2, r, idx, t) {
   const b = BORDERS[clamp(idx | 0, 0, BORDERS.length - 1)];
-  const brick = 6;
-  for (let y = r.y; y < r.y + r.h; y += brick) {
-    const row = ((y - r.y) / brick) | 0;
-    for (let x = r.x - (row & 1 ? brick / 2 : 0); x < r.x + r.w; x += brick) {
-      const inX = x >= r.x + FRAME - 1 && x + brick <= r.x + r.w - FRAME + 1;
-      const inY = y >= r.y + FRAME - 1 && y + brick <= r.y + r.h - FRAME + 1;
-      if (inX && inY) continue;
-      const x0 = Math.max(r.x, x), x1 = Math.min(r.x + r.w, x + brick - 1);
-      if (x1 <= x0) continue;
+  const cc = portraitCircle(r);
+  const courses = 2;                        /* two rings of brick */
+  const band = (cc.outer - cc.inner) / courses;
+  for (let ring = 0; ring < courses; ring++) {
+    const r0 = cc.inner + ring * band, r1 = r0 + band;
+    /* a longer brick on the outside, so every course reads the same width */
+    const n = 12 + ring * 6;
+    const off = (ring & 1) ? Math.PI / n : 0;
+    for (let k = 0; k < n; k++) {
+      const a0 = off + k / n * TAU, a1 = off + (k + 1) / n * TAU;
       /* metal catches a light that runs round it; stone does not */
-      let col = b.base;
+      let col;
       if (b.shine) {
-        const k = (Math.sin((x + y) * 0.06 - (t || 0) * 3) + 1) / 2;
-        col = k > 0.72 ? b.light : (k < 0.28 ? b.dark : b.base);
-      } else col = ((row + ((x / brick) | 0)) & 1) ? b.base : b.dark;
+        const mid = (a0 + a1) / 2;
+        const g = (Math.sin(mid * 2 - (t || 0) * 2.2) + 1) / 2;
+        col = g > 0.72 ? b.light : (g < 0.30 ? b.dark : b.base);
+      } else col = ((ring + k) & 1) ? b.base : b.dark;
       c2.fillStyle = col;
-      c2.fillRect(Math.round(x0), Math.round(y), Math.round(x1 - x0), Math.min(brick - 1, r.y + r.h - y));
+      c2.beginPath();
+      c2.arc(cc.cx, cc.cy, r1, a0, a1);
+      c2.arc(cc.cx, cc.cy, r0, a1, a0, true);
+      c2.closePath();
+      c2.fill();
+      /* the mortar between one brick and the next */
+      c2.strokeStyle = 'rgba(10,8,14,0.45)';
+      c2.lineWidth = 1;
+      c2.stroke();
     }
   }
-  c2.fillStyle = b.light;
-  c2.fillRect(r.x, r.y, r.w, 1);
-  c2.fillStyle = b.dark;
-  c2.fillRect(r.x, r.y + r.h - 1, r.w, 1);
+  /* a light on the crown of the ring and a shadow under its foot */
+  c2.save();
+  c2.lineWidth = 1;
+  c2.strokeStyle = b.light;
+  c2.beginPath(); c2.arc(cc.cx, cc.cy, cc.outer - 0.5, Math.PI, TAU); c2.stroke();
+  c2.strokeStyle = b.dark;
+  c2.beginPath(); c2.arc(cc.cx, cc.cy, cc.outer - 0.5, 0, Math.PI); c2.stroke();
+  c2.restore();
+}
+/* the picture itself, cut to a circle */
+function drawPortrait(c2, r, avatar) {
+  const cc = portraitCircle(r);
+  const img = Art.portrait && Art.portrait[clamp(avatar | 0, 0, Art.portrait.length - 1)];
+  if (!img) return;
+  c2.save();
+  c2.beginPath();
+  c2.arc(cc.cx, cc.cy, cc.inner, 0, TAU);
+  c2.clip();
+  c2.drawImage(img, Math.round(cc.cx - PORTRAIT / 2), Math.round(cc.cy - PORTRAIT / 2));
+  c2.restore();
 }
 
 function openProfile(thenState, tab) {
@@ -5713,8 +5759,7 @@ function drawProfileFace() {
   const f = profFaceRect();
   /* the picture, and the frame of brick or metal round it */
   drawPortraitFrame(ctx, f, a.border, G.profT);
-  const img = Art.portrait && Art.portrait[clamp(a.avatar | 0, 0, Art.portrait.length - 1)];
-  if (img) ctx.drawImage(img, f.x + FRAME, f.y + FRAME);
+  drawPortrait(ctx, f, a.avatar);
   for (const [rect, label, dir] of [[profPicArrow(-1), '<', -1], [profPicArrow(1), '>', 1],
                                     [profEdgeArrow(-1), '<', -1], [profEdgeArrow(1), '>', 1]]) {
     const hot = Input.over(rect);
@@ -6504,7 +6549,7 @@ function initTitle() {
 }
 
 /* the way into the wardrobe, in the corner opposite the cog */
-function titleWardRect() { return { x: 6, y: 6, w: 92, h: 18 }; }
+
 function updateTitle(dt) {
   const T = G.title;
   T.t += dt;
@@ -6532,13 +6577,11 @@ function updateTitle(dt) {
   if (G.settingsOpen) { updateSettings(); return; }
   if (T.phase === 'idle' && Input.mhit && T.overGear) { G.settingsOpen = true; G.setSel = -1; Snd.ui(); return; }
 
-  const wr = titleWardRect();
-  T.overWard = T.phase === 'idle' && Input.over(wr);
-  if (T.phase === 'idle' && Input.mhit && T.overWard) { openWardrobe('title'); Snd.ui(); return; }
   if (T.phase === 'idle') {
     T.btnY = T.baseY + Math.sin(T.t * 1.35) * 5;
     const w = 104, h = 30;
-    T.hover = !T.overGear && !T.overWard &&
+    /* the wardrobe is reached from the profile now, not from here */
+    T.hover = !T.overGear &&
               Math.abs(Input.mx - VW / 2) < w / 2 && Math.abs(Input.my - T.btnY) < h / 2;
     T.scale = lerp(T.scale, T.hover ? 1.06 : 1, 1 - Math.pow(0.001, dt));
     if ((T.hover && Input.mhit) || Input.hit('Enter') || Input.hit('Space')) {
@@ -6668,16 +6711,6 @@ function drawTitle() {
     }
     ctx.drawImage(Art.ui.startBtn, -52, -15);
     ctx.restore();
-    /* the wardrobe, top left */
-    if (T.phase === 'idle') {
-      const wr = titleWardRect(), wh = T.overWard;
-      ctx.fillStyle = wh ? 'rgba(74,56,34,0.96)' : 'rgba(10,8,18,0.66)';
-      ctx.fillRect(wr.x, wr.y, wr.w, wr.h);
-      ctx.fillStyle = wh ? '#ffd04a' : '#c68e3f';
-      ctx.fillRect(wr.x, wr.y, wr.w, 1); ctx.fillRect(wr.x, wr.y + wr.h - 1, wr.w, 1);
-      ctx.fillRect(wr.x, wr.y, 1, wr.h); ctx.fillRect(wr.x + wr.w - 1, wr.y, 1, wr.h);
-      drawText(ctx, 'WARDROBE', wr.x + wr.w / 2, wr.y + 6, wh ? '#ffeec0' : '#d8c49a', 1, 'center');
-    }
     if (T.phase === 'idle') {
       ctx.save(); ctx.globalAlpha = 0.55 + Math.sin(T.t * 3) * 0.25;
       drawText(ctx, 'CLICK  OR  PRESS  ENTER', VW / 2, T.btnY + 22, '#2a2016', 1, 'center');
