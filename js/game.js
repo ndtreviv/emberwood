@@ -109,6 +109,9 @@ function packSave() {
     v: 1, used: true,
     tutorialDone: G.tutorialDone,
     unlocked: G.unlocked, cleared: G.cleared.slice(), level: G.level,
+    xp: G.xp | 0, prestige: G.prestige | 0,
+    buffDone: Object.assign({}, G.buffDone || {}), buffTier: G.buffTier | 0,
+    account: Object.assign({}, G.account || {}),
     levelState: ls, roomFlags: packFlags(G.roomFlags), flags: G.flags,
     coins: p ? p.coins : 0, up: p ? Object.assign({}, p.up) : {},
     maxHp: p ? p.maxHp : 6, hp: p ? p.hp : 6, hasKey: p ? p.hasKey : false,
@@ -122,7 +125,11 @@ function packSave() {
     comboBest: G.comboBest || 0,
     buried: G.buried || null,
     vaultKey: G.vaultKey || null,
-    archipelago: G.archipelago || null,
+    archipelago: G.archipelago ? {
+      open: G.archipelago.open, type: G.archipelago.type,
+      shards: G.archipelago.shards, parts: G.archipelago.parts,
+      opened: G.archipelago.opened, cleared: G.archipelago.cleared
+    } : null,
     artifacts: { owned: Object.assign({}, (G.artifacts && G.artifacts.owned) || {}),
                  slots: ((G.artifacts && G.artifacts.slots) || [null, null, null]).slice() },
     wardrobe: Object.assign({}, (G.wardrobe && G.wardrobe.owned) || {}),
@@ -144,6 +151,11 @@ function applySave(d) {
   G.tutorialDone = !!d.tutorialDone;
   G.unlocked = Math.max(1, d.unlocked || 1);
   G.cleared = (d.cleared || []).slice();
+  G.xp = Math.max(0, d.xp | 0);
+  G.prestige = clamp(d.prestige | 0, 0, PRESTIGE_MAX);
+  G.buffDone = d.buffDone || {};
+  G.buffTier = clamp(d.buffTier | 0, 0, G.prestige);
+  G.account = Object.assign(newAccount(), d.account || {});
   G.level = d.level || 0;
   G.flags = d.flags || {};
   G.roomFlags = unpackFlags(d.roomFlags);
@@ -439,7 +451,12 @@ G.dropThroughPhase = function (quick, atX) {
   G.vaultKey = G.roomId + ':' + seed;
   World.rooms.vault = World.buildVault(seed, quick ? 'sand' : 'snow',
                                        quick ? 'THE BURIED VAULT' : 'THE HOLLOW UNDER THE DRIFT');
-  G.buried = { roomId: G.roomId, level: G.level, x: p.x, y: p.y - 20, key: G.vaultKey };
+  /* Where the way out puts you back.  It is three tiles over the surface of
+     the pool that swallowed you, and over the firm lip beside it, so you
+     come down on solid ground rather than straight back into the sand. */
+  const lipX = pool ? (pool.x - 1) * TILE + TILE / 2 : p.cx;
+  const lipY = (pool ? pool.y : Math.floor((p.y + p.h) / TILE)) * TILE - 3 * TILE;
+  G.buried = { roomId: G.roomId, level: G.level, x: lipX, y: lipY, key: G.vaultKey };
   Snd.door(); G.flash(0.4); G.shake(5);
   for (let i = 0; i < 30; i++) G.particles.push(new Particle({
     x: p.cx + rr(-12, 12), y: p.y + p.h, vx: rr(-2, 2), vy: rr(-3, -0.4), life: rr(0.3, 0.8),
@@ -496,7 +513,8 @@ function updateSurfacing(dt) {
   S.t += dt;
   const p = G.player;
   /* held in place while the door comes up and lets you out */
-  if (S.t < 1.5) { p.vx = 0; p.vy = 0; p.x = S.x - p.w / 2; p.y = S.y - p.h; }
+  const hx = S.hx === undefined ? S.x : S.hx, hy = S.hy === undefined ? S.y : S.hy;
+  if (S.t < 1.5) { p.vx = 0; p.vy = 0; p.x = hx - p.w / 2; p.y = hy - p.h; }
   if (Math.random() < dt * 40) G.particles.push(new Particle({
     x: S.x + rr(-18, 18), y: S.y - rr(0, 4), vx: rr(-1, 1), vy: rr(-1.6, -0.2),
     life: rr(0.3, 0.8), col: '#e0d3a8', col2: '#a8894f', size: rr(1, 2.4), grav: 0.12
@@ -559,8 +577,22 @@ G.enterRoom = function (id, spawn) {
   /* some realms breed hardier creatures; bosses set their own health */
   const lv = World.LEVELS[room.level];
   /* every creature stands twice what it did, on top of its realm's own scale */
-  const hpScale = ((lv && lv.enemyHp) || 1) * 2;
-  const dmgScale = (lv && lv.enemyDmg) || 1;
+  let hpScale = ((lv && lv.enemyHp) || 1) * 2;
+  let dmgScale = (lv && lv.enemyDmg) || 1;
+  /* An island is a harder place than any realm, and it gets harder the
+     further out along its spoke it lies.  The first island breeds creatures
+     that stand three times what a plain one does.  The fiftieth breeds
+     creatures that stand twenty four times it and hit four times as hard. */
+  if (room.isle) {
+    const f = room.isle.index / Math.max(1, ISLES_PER_TYPE - 1);
+    hpScale = (3 + f * 21) * (1 + room.isle.level * 0.12);
+    dmgScale = 1.5 + f * 2.5;
+  } else {
+    /* a buffed run breeds harder creatures than the plain one did */
+    const bt = clamp(G.buffTier | 0, 0, PRESTIGE_MAX);
+    hpScale *= BUFF_HP[bt];
+    dmgScale *= BUFF_DMG[bt];
+  }
   /* A generator can place a creature where a ledge or a wall was cut in
      afterwards, and it then starts life buried in the rock. Step it clear
      before the room begins: up first, since that is nearly always where
@@ -598,9 +630,9 @@ G.enterRoom = function (id, spawn) {
      anyone has, usually with no whetstone bought yet. */
   const lastLevel = World.LEVELS.length - 1;
   const roomLv = World.LEVELS[room.level];
-  const bossScale = (roomLv && roomLv.bossHp !== undefined)
+  const bossScale = ((roomLv && roomLv.bossHp !== undefined)
     ? roomLv.bossHp
-    : ((room.level === lastLevel) ? 10 : 3);
+    : ((room.level === lastLevel) ? 10 : 3)) * BUFF_BOSS[clamp(G.buffTier | 0, 0, PRESTIGE_MAX)];
   const hardenBoss = (b) => {
     b.hp = Math.round(b.hp * bossScale);
     b.maxHp = b.hp;
@@ -634,13 +666,26 @@ G.enterRoom = function (id, spawn) {
       case 'soldier': tough(new Soldier(sp.x, sp.y)); break;
       case 'idol': G.enemies.push(new Idol(sp.x, sp.y)); break;
       case 'relicChest': if (!G.flags['chest_' + (G.vaultKey || id)]) G.items.push(new RelicChest(sp.x, sp.y, sp.pool)); break;
-      case 'guardian': { const gd = hardenBoss(new Guardian(sp.x, sp.y, sp.key)); G.enemies.push(gd); G.boss = gd; break; }
+      case 'guardian': {
+        const bt = clamp(G.buffTier | 0, 0, PRESTIGE_MAX);
+        const gd = hardenBoss(new Guardian(sp.x, sp.y, sp.key, { dmgMul: BUFF_DMG[bt] }));
+        G.enemies.push(gd); G.boss = gd; break;
+      }
       case 'isleBoss': {
-        const gd = new Guardian(sp.x, sp.y, isleBossKey(sp.kind, sp.tier));
-        /* the further out the island, the harder its keeper */
-        const scale = 6 + sp.tier * 2.4;
-        gd.hp = Math.round(gd.hp * scale); gd.maxHp = gd.hp;
-        gd.isleTier = sp.tier;
+        /* The further out the island, the harder its keeper: far more
+           health, far heavier blows, and past the middle of a spoke it
+           stands through five phases rather than three. */
+        const tier = sp.tier | 0;
+        const f = tier / Math.max(1, ISLES_PER_TYPE - 1);
+        const gd = new Guardian(sp.x, sp.y, isleBossKey(sp.kind, tier),
+                                { dmgMul: 1.5 + f * 2.5, phases: tier >= 25 ? 5 : 4 });
+        /* A keeper's health comes from the tier alone, not from the shape it
+           borrows: the shapes carry very different numbers, and the fight
+           must take the same long time whichever one turns up.  That is
+           about a minute and a half at the first island and nine at the
+           fiftieth, for a player who cuts well. */
+        gd.hp = Math.round(3600 + tier * 440); gd.maxHp = gd.hp;
+        gd.isleTier = tier;
         G.enemies.push(gd); G.boss = gd;
         break;
       }
@@ -732,7 +777,8 @@ function updateTransition(dt) {
   if (!tr) return;
   tr.t += dt;
   if (tr.phase === 'out' && tr.t >= tr.dur) {
-    if (tr.toProfile) { openProfile('map'); G.trans = null; return; }
+    /* the first time out of the tutorial, the LOOK page is the one you want */
+    if (tr.toProfile) { openProfile('map', 1); G.trans = null; return; }
     if (tr.toArchi) { openArchipelago(tr.toArchi); G.trans = null; return; }
     if (tr.isleStart) { const st = tr.isleStart; G.trans = null; G.enterIsle(st.key, st.index, 0); return; }
     if (tr.isleNext) {
@@ -753,9 +799,13 @@ function updateTransition(dt) {
       }
     }
     if (tr.surface) {
-      /* coming up out of the ground: hold still while the door lets you out */
+      /* coming up out of the ground: hold still while the door lets you out.
+         The door rises out of the ground under you, which may be some way
+         below your feet, but you are held where you came up. */
       G.level = tr.surface.level;
-      G.surfacing = { t: 0, x: G.player.x + G.player.w / 2, y: G.player.y + G.player.h };
+      const px = G.player.x + G.player.w / 2, py = G.player.y + G.player.h;
+      const gy = room ? room.groundBelow(px, py) : py;
+      G.surfacing = { t: 0, x: px, y: gy, hx: px, hy: py };
       G.player.vx = 0; G.player.vy = 0;
       G.banner('BACK ON THE SURFACE', 2.4);
     }
@@ -933,6 +983,8 @@ function startGame(slot) {
   G.stats = { coins: 0, kills: 0, time: 0, deaths: 0 };
   G.roomFlags = {}; G.flags = {}; G.levelState = {};
   G.unlocked = 1; G.cleared = []; G.level = 0;
+  G.xp = 0; G.prestige = 0; G.buffDone = {}; G.buffTier = 0;
+  G.account = newAccount();
   G.trans = null;
   G.tutorialDone = false;
   G.codes = { found: {}, used: {}, tickets: 0, admin: false };
@@ -1108,9 +1160,28 @@ function updatePlay(dt) {
   if (G.comboT > 0) { G.comboT -= dt; if (G.comboT <= 0) G.combo = 0; }
   G.bannerT = Math.max(0, G.bannerT - dt);
   G.lockedMsgT = Math.max(0, G.lockedMsgT - dt);
+  G.xpGainT = Math.max(0, (G.xpGainT || 0) - dt);
+  if (G.xpGainT <= 0) G.xpGain = 0;
   updateRelicShow(dt);
   G.flashAmt = Math.max(0, G.flashAmt - dt * 2.2);
   G.shakeAmt = Math.max(0, G.shakeAmt - dt * 26);
+
+  /* The codes box covers the play screen, and on a phone its keyboard
+     covers all of it.  It takes every tap first, so a key never presses a
+     button under it. */
+  if (G.codesOpen) {
+    G.overShopIcon = false; G.overCodeIcon = false;
+    G.overMapIcon = false; G.overPouchIcon = false; G.overSkip = false;
+    updateCodes(dt);
+    return;
+  }
+
+  /* the prestige button, when it is showing, takes its own tap first */
+  if (G.canPrestige() && !G.shopOpen && !G.pouchOpen && !G.trans &&
+      Input.tap(prestigeBtnRect())) {
+    G.doPrestige();
+    return;
+  }
 
   /* a tap on the doorway button belongs to the doorway, never to an icon
      underneath it */
@@ -1137,7 +1208,6 @@ function updatePlay(dt) {
     G.codesOpen = true; G.codeBuf = ''; G.codeMsgT = 0; Snd.ui(); Snd.musicLevel(0.16, 0.3);
     return;
   }
-  if (G.codesOpen) { updateCodes(dt); return; }
   const mapR = { x: VW - 26, y: 4, w: 22, h: 22 };
   const overMap = Input.mx >= mapR.x && Input.mx <= mapR.x + mapR.w &&
                   Input.my >= mapR.y && Input.my <= mapR.y + mapR.h;
@@ -1570,9 +1640,25 @@ function respawn() {
 }
 
 G.onBossDead = function () {
+  /* a guardian pays far more experience than anything that walks a realm */
+  const b = G.boss;
+  if (b && G.giveXp) G.giveXp(Math.round((b.maxHp || 100) * 0.75 * G.xpScale()),
+                              G.player.cx, G.player.cy);
   /* an island keeper is a thing apart: it pays in shards, not in realms */
   if (G.isleRun) { G.onIsleBossDead(); G.state = 'victory'; G.victoryT = 0; return; }
   G.state = 'victory'; G.victoryT = 0;
+  /* a buffed run marks its own tier and changes nothing else */
+  const bt = clamp(G.buffTier | 0, 0, PRESTIGE_MAX);
+  if (bt > 0) {
+    G.buffDone = G.buffDone || {};
+    G.buffDone[buffKey(bt, G.level)] = true;
+    delete G.levelState[G.level];
+    G.newlyUnlocked = false;
+    Snd.play('victory'); Snd.musicLevel(0.4, 1.5);
+    G.banner('THE ' + PRESTIGE_NAME[bt] + ' RUN IS YOURS', 3);
+    writeSlot(G.slot, packSave());
+    return;
+  }
   G.cleared[G.level] = true;
   delete G.levelState[G.level];      /* a cleared realm begins again from the start */
   const next = G.level + 1;
@@ -1668,11 +1754,13 @@ const ISLE_TYPES = [
 ];
 const SHARD_PARTS = 3;              /* three parts make one shard */
 const FORGE_COST = 1000;            /* and the forge takes a thousand coins for it */
-/* the first island of a spoke is open; the rest cost two shards up to twenty */
-function isleCost(i) { return i === 0 ? 0 : Math.min(20, i + 1); }
+/* The first island of a spoke is open.  Every other one asks twice what it
+   once did: four shards for the second, rising to forty. */
+function isleCost(i) { return i === 0 ? 0 : Math.min(40, (i + 1) * 2); }
 function isleTypeAt(k) { return ISLE_TYPES[clamp(k | 0, 0, ISLE_TYPES.length - 1)]; }
 function newArchipelago() {
   const a = { open: false, type: 0, page: 0, isle: -1,
+              scroll: 0, scrollTo: 0, drag: null,
               shards: {}, parts: {}, opened: {}, cleared: {} };
   for (const t of ISLE_TYPES) { a.shards[t.shard] = 0; a.parts[t.shard] = 0; a.opened[t.key] = 1; }
   return a;
@@ -1718,6 +1806,24 @@ G.forgeShard = function (shard, n) {
   G.saveGame();
   return n;
 };
+/* Buying the next island out along a spoke.  Nothing opens unless the
+   shards are on hand, and the price comes out of the purse before the
+   island is marked open.  It answers true only when it took the payment. */
+G.buyIsle = function (t, idx) {
+  const a = archi();
+  if (idx !== isleOpened(t.key) || idx < 1 || idx >= ISLES_PER_TYPE) return false;
+  const cost = isleCost(idx);
+  const held = G.shardsOf(t.shard);
+  if (!G.codes.admin) {
+    if (held < cost) return false;
+    a.shards[t.shard] = held - cost;
+  }
+  a.opened[t.key] = idx + 1;
+  G.archMsg = 'THE ISLAND OPENS'; G.archMsgT = 2;
+  Snd.unlock(); G.flash(0.35);
+  G.saveGame();
+  return true;
+};
 function isleOpened(typeKey) { return archi().opened[typeKey] | 0; }
 function isleCleared(typeKey, i) { return !!archi().cleared[typeKey + ':' + i]; }
 
@@ -1730,17 +1836,31 @@ function archNodeRect(k) {
   const cx = VW / 2 + Math.cos(a) * 100, cy = VH / 2 + 6 + Math.sin(a) * 48;
   return { x: cx - 24, y: cy - 24, w: 48, h: 48, cx: cx, cy: cy };
 }
-/* five to a page, in one row, so nothing crowds anything */
-const ISLES_PER_PAGE = 5;
+/* The fifty islands of a spoke lie in one long row.  You scroll along it:
+   with the wheel, with the arrows, or by dragging the row itself. */
+const ISLE_PITCH = 66, ISLE_X0 = 34, ISLE_SIZE = 48;
+const ISLES_PER_PAGE = 5;             /* how far one arrow press carries you */
+function isleStripW() { return ISLE_X0 * 2 + (ISLES_PER_TYPE - 1) * ISLE_PITCH + ISLE_SIZE; }
+function maxIsleScroll() { return Math.max(0, isleStripW() - VW); }
 function archIsleRect(i) {
-  const x = 34 + i * 66;
-  return { x: x, y: 74, w: 48, h: 48, cx: x + 24, cy: 98 };
+  const x = ISLE_X0 + i * ISLE_PITCH - (archi().scroll || 0);
+  return { x: x, y: 74, w: ISLE_SIZE, h: ISLE_SIZE, cx: x + 24, cy: 98 };
 }
 function archPageRect(d) {
   return { x: d < 0 ? 4 : VW - 28, y: 86, w: 24, h: 24 };
 }
+/* the band the row lives in, where a drag scrolls rather than picks */
+const ISLE_BAND = { y0: 52, y1: VH - 28 };
+function isleScrollTo(px) { archi().scrollTo = clamp(px, 0, maxIsleScroll()); }
+/* put one island in the middle of the view */
+function centreIsle(i) {
+  isleScrollTo(ISLE_X0 + i * ISLE_PITCH + ISLE_SIZE / 2 - VW / 2);
+  archi().scroll = archi().scrollTo;
+}
 function openArchipelago(view) {
   const a = archi();
+  if (a.scroll === undefined) { a.scroll = 0; a.scrollTo = 0; }
+  a.drag = null;
   G.archView = view || 'pentagon';
   G.state = 'archipelago';
   G.archT = 0; G.archSel = -1; G.archMsgT = 0;
@@ -1781,30 +1901,63 @@ function updateArchipelago(dt) {
       if (Input.tap(r)) pick = k;
     }
     if (pick >= 0) {
-      a.type = pick; a.page = 0;
+      a.type = pick; a.page = 0; a.drag = null;
+      /* the row opens on the island you have yet to buy */
+      centreIsle(clamp(isleOpened(ISLE_TYPES[pick].key), 0, ISLES_PER_TYPE - 1));
       G.archView = 'chain'; G.archSel = -1; Snd.buy();
     }
     return;
   }
-  /* the chain of twenty, ten to a page */
+  /* the long row of fifty, scrolled through */
   const t = isleTypeAt(a.type);
-  const pages = Math.ceil(ISLES_PER_TYPE / ISLES_PER_PAGE);
+  const step = ISLE_PITCH * ISLES_PER_PAGE;
+  let onArrow = false;
   for (const d of [-1, 1]) if (Input.tap(archPageRect(d))) {
-    a.page = clamp(a.page + d, 0, pages - 1); Snd.ui();
+    isleScrollTo((a.scrollTo || 0) + d * step); Snd.ui(); onArrow = true;
   }
-  if (Input.hit('ArrowRight')) a.page = clamp(a.page + 1, 0, pages - 1);
-  if (Input.hit('ArrowLeft')) a.page = clamp(a.page - 1, 0, pages - 1);
-  G.archSel = -1;
+  if (Input.hit('ArrowRight')) isleScrollTo((a.scrollTo || 0) + step);
+  if (Input.hit('ArrowLeft')) isleScrollTo((a.scrollTo || 0) - step);
+  if (Input.wheel) isleScrollTo((a.scrollTo || 0) + Input.wheel * 1.4);
+
+  /* A drag along the row scrolls it.  A press that goes nowhere is a pick,
+     and it is read when the finger comes up, not when it lands: that is
+     what tells a drag from a tap. */
   let hitIsle = -1;
-  for (let i = 0; i < ISLES_PER_PAGE; i++) {
-    const idx = a.page * ISLES_PER_PAGE + i;
-    if (idx >= ISLES_PER_TYPE) break;
+  const inBand = Input.my > ISLE_BAND.y0 && Input.my < ISLE_BAND.y1;
+  if (!a.drag && !onArrow && Input.mhit && inBand) {
+    a.drag = { x: Input.mx, y: Input.my, from: a.scroll || 0, moved: 0 };
+  }
+  if (a.drag) {
+    a.drag.moved = Math.max(a.drag.moved, Math.abs(Input.mx - a.drag.x));
+    if (Input.mdown) {
+      a.scroll = clamp(a.drag.from - (Input.mx - a.drag.x), 0, maxIsleScroll());
+      a.scrollTo = a.scroll;
+    } else {
+      if (a.drag.moved < 5) {
+        for (let i = 0; i < ISLES_PER_TYPE; i++) {
+          const r = archIsleRect(i);
+          if (r.x + r.w < -20 || r.x > VW + 20) continue;
+          if (a.drag.x >= r.x && a.drag.x <= r.x + r.w &&
+              a.drag.y >= r.y && a.drag.y <= r.y + r.h) { hitIsle = i; break; }
+        }
+      }
+      a.drag = null;
+    }
+  }
+  /* the row eases toward wherever the arrows or the wheel asked for */
+  if (!a.drag) {
+    if (a.scrollTo === undefined) a.scrollTo = a.scroll || 0;
+    a.scroll = lerp(a.scroll || 0, a.scrollTo, 1 - Math.pow(0.0008, dt));
+    if (Math.abs(a.scroll - a.scrollTo) < 0.4) a.scroll = a.scrollTo;
+  }
+  G.archSel = -1;
+  for (let i = 0; i < ISLES_PER_TYPE; i++) {
     const r = archIsleRect(i);
+    if (r.x + r.w < 0 || r.x > VW) continue;
     if (Input.over(r)) G.archSel = i;
-    if (Input.tap(r)) hitIsle = i;
   }
   if (hitIsle >= 0) {
-    const idx = a.page * ISLES_PER_PAGE + hitIsle;
+    const idx = hitIsle;
     const open = isleOpened(t.key);
     if (idx < open) {
       Snd.buy();
@@ -1813,16 +1966,9 @@ function updateArchipelago(dt) {
       return;
     }
     if (idx > open) { Snd.uiBad(); G.archMsg = 'TAKE THE ONE BEFORE IT FIRST'; G.archMsgT = 2; return; }
-    const cost = isleCost(idx);
-    if (G.shardsOf(t.shard) >= cost || G.codes.admin) {
-      if (!G.codes.admin) a.shards[t.shard] -= cost;
-      a.opened[t.key] = idx + 1;
-      G.archMsg = 'THE ISLAND OPENS'; G.archMsgT = 2;
-      Snd.unlock(); G.flash(0.35);
-      G.saveGame();
-    } else {
+    if (!G.buyIsle(t, idx)) {
       Snd.uiBad();
-      G.archMsg = 'IT ASKS ' + cost + ' ' + t.shardName + ' SHARDS';
+      G.archMsg = 'IT ASKS ' + isleCost(idx) + ' ' + t.shardName + ' SHARDS';
       G.archMsgT = 2.2;
     }
   }
@@ -1925,7 +2071,7 @@ function drawArchipelago() {
 
   if (G.archView === 'pentagon') {
     drawText(ctx, 'THE ARCHIPELAGO', VW / 2, 6, '#ffeec0', 2, 'center', '#0a1420');
-    drawText(ctx, 'FIVE KINDS, TWENTY ISLANDS OF EACH', VW / 2, 22, '#8fd0e8', 1, 'center', '#0a1420');
+    drawText(ctx, 'FIVE KINDS, FIFTY ISLANDS OF EACH', VW / 2, 22, '#8fd0e8', 1, 'center', '#0a1420');
     /* the chains of the pentagon, drawn between the five */
     for (let k = 0; k < 5; k++) {
       const p1 = archNodeRect(k), p2 = archNodeRect((k + 1) % 5);
@@ -1956,19 +2102,18 @@ function drawArchipelago() {
     drawShard(ctx, 14, 30, 7, t, 1);
     drawText(ctx, G.shardsOf(t.shard) + ' SHARDS   ' + G.partsOf(t.shard) + ' PARTS',
              26, 26, t.col, 1, 'left', '#0a1420');
-    const pages = Math.ceil(ISLES_PER_TYPE / ISLES_PER_PAGE);
-    drawText(ctx, 'ISLANDS ' + (a.page * ISLES_PER_PAGE + 1) + ' TO ' +
-             Math.min(ISLES_PER_TYPE, (a.page + 1) * ISLES_PER_PAGE),
-             VW - 8, 26, '#a9b3c9', 1, 'right', '#0a1420');
     const open = isleOpened(t.key);
-    for (let i = 0; i < ISLES_PER_PAGE; i++) {
-      const idx = a.page * ISLES_PER_PAGE + i;
-      if (idx >= ISLES_PER_TYPE) break;
-      const r = archIsleRect(i), hot = G.archSel === i;
+    const scroll = a.scroll || 0;
+    const first = clamp(Math.floor((scroll - ISLE_X0) / ISLE_PITCH), 0, ISLES_PER_TYPE - 1);
+    const last = clamp(first + Math.ceil(VW / ISLE_PITCH) + 1, 0, ISLES_PER_TYPE - 1);
+    drawText(ctx, 'ISLANDS ' + (first + 1) + ' TO ' + (last + 1) + ' OF ' + ISLES_PER_TYPE,
+             VW - 8, 26, '#a9b3c9', 1, 'right', '#0a1420');
+    for (let idx = first; idx <= last; idx++) {
+      const r = archIsleRect(idx), hot = G.archSel === idx;
       const isOpen = idx < open, isNext = idx === open;
       const done = isleCleared(t.key, idx);
       /* the chain that links it to the one before */
-      if (i > 0) drawChainLine(r.x - 20, r.cy, r.x - 2, r.cy);
+      if (idx > 0) drawChainLine(r.x - 20, r.cy, r.x - 2, r.cy);
       ctx.save();
       if (!isOpen && !isNext) ctx.globalAlpha = 0.4;
       ctx.drawImage(Art.map.isle[a.type], Math.round(r.x - 1), Math.round(r.y - 1));
@@ -1989,9 +2134,19 @@ function drawArchipelago() {
                  can ? '#9be89a' : '#c9403a', 1, 'left', '#0a1420');
       }
     }
+    /* the bar under the row, to say how far along it you are */
+    const maxS = maxIsleScroll();
+    if (maxS > 0) {
+      const bx = 40, bw = VW - 80, by = VH - 30;
+      ctx.fillStyle = 'rgba(10,20,32,0.8)'; ctx.fillRect(bx, by, bw, 3);
+      const kw = Math.max(18, bw * VW / isleStripW());
+      ctx.fillStyle = t.col;
+      ctx.fillRect(Math.round(bx + (bw - kw) * (scroll / maxS)), by, Math.round(kw), 3);
+    }
+    drawText(ctx, 'DRAG OR SCROLL ALONG THE CHAIN', VW / 2, VH - 42, '#5f8faf', 1, 'center', '#0a1420');
     for (const d of [-1, 1]) {
       const r = archPageRect(d);
-      const can = d < 0 ? a.page > 0 : a.page < pages - 1;
+      const can = d < 0 ? scroll > 0.5 : scroll < maxS - 0.5;
       ctx.fillStyle = can ? 'rgba(20,40,60,0.9)' : 'rgba(14,26,38,0.6)';
       ctx.fillRect(r.x, r.y, r.w, r.h);
       drawText(ctx, d < 0 ? '<' : '>', r.x + r.w / 2, r.y + 8, can ? '#cfeaff' : '#3f5f7a', 1, 'center');
@@ -2082,7 +2237,12 @@ function updateWardrobe(dt) {
   for (let i = 0; i < keys.length; i++) if (Input.tap(wardRowRect(i))) wardTap = i;
   if (wardTap >= 0) {
     const key = keys[wardTap], suit = SUITS[key];
-    if (G.wardrobe.owned[key]) {
+    /* Three of the suits wait on a prestige.  No purse buys one early. */
+    if (!suitUnlocked(key)) {
+      G.wardMsg = 'PRESTIGE ' + PRESTIGE_MARK[suit.need] + ' OPENS IT';
+      G.wardMsgT = 2.2;
+      Snd.uiBad();
+    } else if (G.wardrobe.owned[key]) {
       /* owned, so the click wears it, or takes it off again */
       G.profile.suit = (G.profile.suit === key) ? 'none' : key;
       applyProfile();
@@ -2134,7 +2294,8 @@ function drawWardrobe() {
       const suit = SUITS[key], r = wardRowRect(i);
       const owned = !!G.wardrobe.owned[key];
       const worn = G.profile.suit === key;
-      const afford = G.codes.admin || G.player.coins >= suit.cost;
+      const open = suitUnlocked(key);
+      const afford = open && (G.codes.admin || G.player.coins >= suit.cost);
       const hot = G.wardSel === i;
       ctx.fillStyle = hot ? 'rgba(74,56,34,0.96)' : 'rgba(24,18,12,0.86)';
       ctx.fillRect(r.x, r.y, r.w, r.h);
@@ -2147,11 +2308,22 @@ function drawWardrobe() {
       ctx.fillStyle = suit.light; ctx.fillRect(r.x + 5, r.y + 5, 16, 4);
       ctx.fillStyle = suit.legs; ctx.fillRect(r.x + 5, r.y + 17, 16, 4);
       ctx.fillStyle = suit.trim; ctx.fillRect(r.x + 5, r.y + 15, 16, 2);
-      drawText(ctx, suit.name, r.x + 27, r.y + 4, owned ? '#ffeec0' : '#d8c49a', 1, 'left');
-      drawText(ctx, suit.realm, r.x + 27, r.y + 15, '#8a94a6', 1, 'left');
-      const tag = worn ? 'WORN' : (owned ? 'OWNED' : String(suit.cost));
+      /* a bought prestige suit catches a light running across it */
+      if (suit.shine && open) {
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        const k = ((G.wardT * 0.55 + i * 0.17) % 1) * 20 - 2;
+        ctx.globalAlpha = 0.55; ctx.fillStyle = '#ffffff';
+        ctx.fillRect(r.x + 5, r.y + 4 + Math.round(k), 16, 2);
+        ctx.restore();
+      }
+      drawText(ctx, suit.name, r.x + 27, r.y + 4,
+               open ? (owned ? '#ffeec0' : '#d8c49a') : '#6d7994', 1, 'left');
+      drawText(ctx, suit.realm, r.x + 27, r.y + 15, open ? '#8a94a6' : '#6d7994', 1, 'left');
+      const tag = !open ? 'LOCKED' : (worn ? 'WORN' : (owned ? 'OWNED' : String(suit.cost)));
       drawText(ctx, tag, r.x + r.w - 6, r.y + 9,
-               worn ? '#9be89a' : (owned ? '#b8862f' : (afford ? '#ffe98a' : '#c9403a')), 1, 'right');
+               !open ? '#c9403a'
+                     : (worn ? '#9be89a' : (owned ? '#b8862f' : (afford ? '#ffe98a' : '#c9403a'))),
+               1, 'right');
     });
     const pages = Math.ceil(SUIT_KEYS.length / WARD_PER_PAGE);
     for (const d of [-1, 1]) {
@@ -2589,6 +2761,12 @@ function drawPouch() {
 /* ============================================================
    THE REALM MAP
    ============================================================ */
+/* the picture of a realm: plain, or in the metal of the highest run taken */
+function nodeArt(i) {
+  const t = buffRank(i);
+  const set = t > 0 && Art.map.nodeTint && Art.map.nodeTint[t];
+  return (set && set[i]) || Art.map.node[i];
+}
 function mapNodeRect(i) {
   const n = World.LEVELS[i].node;
   const ch = World.chapterOf(i);
@@ -2746,9 +2924,11 @@ function mapBackRect() { return { x: 5, y: 6, w: 42, h: 14 }; }
 /* under the middle realm of whichever chapter is on the page */
 function mapLookRect() {
   const n = World.LEVELS[World.CHAPTERS[0].levels[1]].node;
-  return { x: n.x - 24, y: n.y + 46, w: 48, h: 14 };
+  return { x: n.x - 30, y: n.y + 46, w: 60, h: 14 };
 }
 function mapGearRect() { return { x: VW - 30, y: VH - 26, w: 24, h: 22 }; }
+/* the four ways to walk a realm: plain, then bronze, silver and gold */
+function mapBuffRect(t) { return { x: VW - 128 + t * 24, y: 32, w: 22, h: 14 }; }
 /* the footer line shares its strip with the cog, so it stops short of it */
 function mapFootX() { return (mapGearRect().x - 4) / 2; }
 /* the same pair of corner buttons on both maps */
@@ -2772,6 +2952,15 @@ function updateMap(dt) {
   G.mapT += dt;
   G.flashAmt = Math.max(0, G.flashAmt - dt * 2.2);
   G.bannerT = Math.max(0, G.bannerT - dt);
+  /* The codes box covers the chart, and on a phone its keyboard covers all
+     of it.  It takes every tap first, so a key never starts a realm. */
+  if (G.codesOpen) {
+    G.mapSel = -1; G.finalSel = false; G.overArrow = 0;
+    G.overMapBack = false; G.overMapGear = false;
+    G.overCodeIcon = false; G.overQuestIcon = false; G.overLookIcon = false;
+    updateCodes(dt);
+    return;
+  }
 
   /* the chapter-unlock flourish drives the map until it finishes */
   if (G.unlockAnim) {
@@ -2833,14 +3022,24 @@ function updateMap(dt) {
   if (Input.tap(gearR)) { G.settingsOpen = true; G.setSel = -1; Snd.ui(); return; }
   if (Input.tap(backR) || Input.hit('Escape')) { G.saveGame(); Snd.ui(); openFiles(); return; }
 
+  /* the tier picker, when a prestige has opened one */
+  if ((G.prestige | 0) > 0) for (let t = 0; t <= (G.prestige | 0); t++) {
+    if (!Input.tap(mapBuffRect(t))) continue;
+    G.buffTier = t; Snd.ui();
+    G.banner(t ? ('THE ' + PRESTIGE_NAME[t] + ' RUN') : 'THE PLAIN RUN', 1.8);
+    G.saveGame();
+    return;
+  }
   if (Input.mhit && G.overArrow && !G.unlockAnim) { gotoChapter(G.chapter + G.overArrow); Snd.ui(); }
   else if (Input.mhit && G.finalSel) {
     if (G.archipelago && G.archipelago.open) { Snd.buy(); openArchipelago('pentagon'); return; }
     Snd.uiBad(); G.banner('SEALED - A WORD OPENS IT', 2.2);
   }
   else if (Input.mhit && G.mapSel >= 0) {
-    if (G.mapSel < G.unlocked) { Snd.buy(); G.startLevel(G.mapSel); }
-    else { Snd.uiBad(); G.banner('CLEAR THE REALM BEFORE IT', 1.8); }
+    const bt = clamp(G.buffTier | 0, 0, PRESTIGE_MAX);
+    if (G.mapSel >= G.unlocked) { Snd.uiBad(); G.banner('CLEAR THE REALM BEFORE IT', 1.8); }
+    else if (!buffOpen(bt, G.mapSel)) { Snd.uiBad(); G.banner(buffBar(bt, G.mapSel), 2.4); }
+    else { Snd.buy(); G.startLevel(G.mapSel); }
   }
   const cbtn = { x: 6, y: VH - 46, w: 22, h: 22 };
   const qbtn = { x: 32, y: VH - 46, w: 22, h: 22 };
@@ -2850,7 +3049,6 @@ function updateMap(dt) {
   G.overLookIcon = Input.over(lbtn);
   if (G.questsOpen) { updateQuests(dt); return; }
   if (G.tutorialDone && Input.tap(lbtn)) { Snd.ui(); openProfile('map'); return; }
-  if (G.codesOpen) { updateCodes(dt); return; }
   if (Input.tap(qbtn)) { G.questsOpen = true; G.questSel = -1; G.questMsgT = 0; Snd.ui(); return; }
   if (Input.tap(cbtn) || Input.actHit('codes')) {
     G.codesOpen = true; G.codeBuf = ''; G.codeMsgT = 0; Snd.ui(); return;
@@ -2900,9 +3098,9 @@ function drawMap() {
       const s = 1 + (1 - k) * 0.5;
       ctx.translate(Math.round(r.cx), Math.round(r.cy + bob));
       ctx.scale(s, s);
-      ctx.drawImage(Art.map.node[i], -32, -30);
+      ctx.drawImage(nodeArt(i), -32, -30);
     } else {
-      ctx.drawImage(Art.map.node[i], Math.round(r.x), Math.round(r.y + bob));
+      ctx.drawImage(nodeArt(i), Math.round(r.x), Math.round(r.y + bob));
     }
     ctx.restore();
     if (locked && !bursting) ctx.drawImage(Art.map.lock, Math.round(r.cx - 8), Math.round(r.cy - 9 + bob));
@@ -2998,6 +3196,20 @@ function drawMap() {
     }
     if (qhov) drawText(ctx, 'QUESTS', 43, VH - 21, '#ffe98a', 1, 'center', '#3a2c1c');
   }
+  /* the tier picker, once a prestige has opened one */
+  if ((G.prestige | 0) > 0) {
+    drawText(ctx, 'THE RUN', mapBuffRect(0).x - 6, 36, '#5a4326', 1, 'right', '#ebdcb6');
+    for (let t = 0; t <= PRESTIGE_MAX; t++) {
+      const r = mapBuffRect(t), open = t <= (G.prestige | 0);
+      const on = (G.buffTier | 0) === t, hot = open && Input.over(r);
+      ctx.fillStyle = on ? 'rgba(74,56,34,0.96)' : (hot ? 'rgba(58,44,28,0.9)' : 'rgba(34,26,18,0.78)');
+      ctx.fillRect(r.x, r.y, r.w, r.h);
+      ctx.fillStyle = on ? (t ? PRESTIGE_COL[t] : '#ffd04a') : '#8a6a3a';
+      ctx.fillRect(r.x, r.y, r.w, 1); ctx.fillRect(r.x, r.y + r.h - 1, r.w, 1);
+      drawText(ctx, t ? PRESTIGE_MARK[t] : '-', r.x + r.w / 2, r.y + 4,
+               open ? (t ? PRESTIGE_COL[t] : '#ffeec0') : '#8a7a5e', 1, 'center', '#2a1a10');
+    }
+  }
   /* and the way back to your own look, under the middle realm */
   if (G.tutorialDone) {
     const lr = mapLookRect(), lh = G.overLookIcon;
@@ -3006,7 +3218,7 @@ function drawMap() {
     ctx.fillStyle = lh ? '#ffd04a' : '#b8862f';
     ctx.fillRect(lr.x, lr.y, lr.w, 1); ctx.fillRect(lr.x, lr.y + lr.h - 1, lr.w, 1);
     ctx.fillRect(lr.x, lr.y, 1, lr.h); ctx.fillRect(lr.x + lr.w - 1, lr.y, 1, lr.h);
-    drawText(ctx, 'LOOK', lr.x + lr.w / 2, lr.y + 4, '#ffeec0', 1, 'center');
+    drawText(ctx, 'PROFILE', lr.x + lr.w / 2, lr.y + 4, '#ffeec0', 1, 'center');
   }
   if (G.player) {
     ctx.drawImage(Art.item.coin[Math.floor(G.mapT / 0.09) % 8], 6, VH - 28);
@@ -4144,6 +4356,37 @@ function drawHUD() {
   /* coins */
   ctx.drawImage(Art.item.coin[Math.floor(G.t / 0.09) % 8], 32, 17);
   drawText(ctx, G.purse(), 46, 19, G.codes.admin ? '#ffeec0' : '#ffe98a', G.codes.admin ? 2 : 1, 'left', '#000000');
+  /* The rank, beside the purse: the mark of a prestige, the level, and a
+     thin bar that fills as you fight. */
+  {
+    const n = G.level0();
+    const rx = VW - 96, ry = 6;
+    ctx.fillStyle = 'rgba(10,8,18,0.55)'; ctx.fillRect(rx - 4, ry - 3, 46, 15);
+    drawRank(ctx, rx, ry, 1, 'left');
+    ctx.fillStyle = '#12101c'; ctx.fillRect(rx - 2, ry + 8, 42, 3);
+    ctx.fillStyle = rankColour(n);
+    ctx.fillRect(rx - 2, ry + 8, Math.round(42 * G.levelFrac()), 3);
+    /* what you just took, for a moment after you take it */
+    if (G.xpGainT > 0) {
+      ctx.save(); ctx.globalAlpha = Math.min(1, G.xpGainT);
+      drawText(ctx, '+' + G.xpGain, rx + 44, ry, '#8fd0e8', 1, 'left', '#000000');
+      ctx.restore();
+    }
+  }
+  /* and the button that gives it all back, once the hundredth is passed */
+  if (G.canPrestige()) {
+    const r = prestigeBtnRect(), hot = Input.over(r);
+    const pulse = 0.5 + Math.sin(G.t * 4) * 0.5;
+    ctx.fillStyle = hot ? '#6a4a1c' : 'rgba(48,34,14,0.92)';
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.save(); ctx.globalAlpha = 0.4 + pulse * 0.6;
+    ctx.fillStyle = PRESTIGE_COL[Math.min(PRESTIGE_MAX, (G.prestige | 0) + 1)];
+    ctx.fillRect(r.x, r.y, r.w, 1); ctx.fillRect(r.x, r.y + r.h - 1, r.w, 1);
+    ctx.fillRect(r.x, r.y, 1, r.h); ctx.fillRect(r.x + r.w - 1, r.y, 1, r.h);
+    ctx.restore();
+    drawText(ctx, 'PRESTIGE ' + PRESTIGE_MARK[(G.prestige | 0) + 1],
+             r.x + r.w / 2, r.y + 5, '#ffeec0', 1, 'center', '#2a1a10');
+  }
   /* dash meter */
   const dw = 42, dx = 32, dy = 29;
   ctx.fillStyle = '#12101c'; ctx.fillRect(dx - 1, dy - 1, dw + 2, 5);
@@ -4836,8 +5079,8 @@ function codeCloseRect() { const B = codeBox(); return { x: B.x + B.w - 18, y: B
 const CODE_ROWS = ['1234567890', 'QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM'];
 const CODE_KEY_W = 34, CODE_KEY_H = 26, CODE_KEY_GAP = 2;
 /* one row of keys, already laid out and centred */
-function codeKeyRow(r) {
-  const B = codeBox();
+function codeKeyRow(r, box) {
+  const B = box || codeBox();
   const keys = CODE_ROWS[r].split('').map(c => ({ ch: c, w: CODE_KEY_W }));
   if (r === CODE_ROWS.length - 1) {
     keys.push({ ch: 'DEL', w: 46, wide: true });
@@ -4850,9 +5093,9 @@ function codeKeyRow(r) {
   for (const k of keys) { k.x = x; k.y = y; k.h = CODE_KEY_H; x += k.w + CODE_KEY_GAP; }
   return keys;
 }
-function codeKeys() {
+function codeKeys(box) {
   const out = [];
-  for (let r = 0; r < CODE_ROWS.length; r++) for (const k of codeKeyRow(r)) out.push(k);
+  for (let r = 0; r < CODE_ROWS.length; r++) for (const k of codeKeyRow(r, box)) out.push(k);
   return out;
 }
 /* the papers you carry, listed down the box on a desktop and as chips on a phone */
@@ -4913,10 +5156,11 @@ function updateCodes(dt) {
   if (G.codeHover >= 0 && Input.mhit) { G.codeBuf = found[G.codeHover]; Snd.ui(); }
   void B;
 }
-function drawCodeKeyboard() {
-  const keys = codeKeys();
+function drawCodeKeyboard(box, hitCh) {
+  const keys = codeKeys(box);
+  const pressed = hitCh === undefined ? G.codeKeyHit : hitCh;
   for (const k of keys) {
-    const hit = G.codeKeyHit === k.ch;
+    const hit = pressed === k.ch;
     const isEnter = k.ch === 'ENTER', isDel = k.ch === 'DEL';
     ctx.fillStyle = hit ? '#6fc46a' : (isEnter ? '#2f4a34' : (isDel ? '#3a2c34' : '#2b2740'));
     ctx.fillRect(k.x, k.y, k.w, k.h);
@@ -4998,21 +5242,229 @@ function drawCodes() {
 }
 
 /* ============================================================
+   RANK — what fighting earns you, and what it makes of you.
+   Every creature you put down pays experience.  Experience buys
+   levels, a hundred of them, and each one costs more than the
+   one before it.  At the hundredth you may give it all back for
+   a prestige, and keep the mark.
+   ============================================================ */
+const LEVEL_MAX = 100;
+const PRESTIGE_MAX = 3;
+const XP_BASE = 46, XP_POW = 1.4;
+/* what it costs to go from level n to level n + 1 */
+function xpStep(n) { return Math.round(XP_BASE * Math.pow(n, XP_POW)); }
+/* XP_TABLE[n] is the total experience that makes you level n + 1 */
+const XP_TABLE = (function () {
+  const t = [0];
+  for (let n = 1; n < LEVEL_MAX; n++) t.push(t[n - 1] + xpStep(n));
+  return t;
+})();
+function levelFromXp(xp) {
+  let n = 1;
+  while (n < LEVEL_MAX && xp >= XP_TABLE[n]) n++;
+  return n;
+}
+G.xp = 0; G.prestige = 0; G.xpGainT = 0; G.xpGain = 0;
+G.level0 = function () { return levelFromXp(G.xp | 0); };
+/* how far through the present level you are, from 0 to 1 */
+G.levelFrac = function () {
+  const n = G.level0();
+  if (n >= LEVEL_MAX) return 1;
+  const a = XP_TABLE[n - 1], b = XP_TABLE[n];
+  return clamp(((G.xp | 0) - a) / Math.max(1, b - a), 0, 1);
+};
+/* at the hundredth level, more experience only waits for the button */
+G.canPrestige = function () {
+  return G.level0() >= LEVEL_MAX && (G.prestige | 0) < PRESTIGE_MAX &&
+         (G.xp | 0) > XP_TABLE[LEVEL_MAX - 1];
+};
+/* What a creature is worth.  What it takes to put down is the measure, but
+   the health is held under a root: a realm pays more because the realm pays
+   more, not because its creatures carry ten times the health. */
+function xpFor(e) {
+  const hp = (e.maxHp || 2), dmg = (e.damage || 1);
+  return Math.max(1, Math.round(6 + Math.sqrt(hp) * 3 + dmg * 2));
+}
+G.giveXp = function (n, x, y) {
+  n = Math.max(0, Math.round(n));
+  if (!n) return;
+  const was = G.level0();
+  G.xp = (G.xp | 0) + n;
+  G.xpGain += n; G.xpGainT = 1.6;
+  /* A small gain goes to the bar alone: a line of text over every creature
+     you put down would bury the screen.  A large one is worth saying. */
+  if (x !== undefined && n >= 25)
+    G.texts.push(new FloatText(x, y - 10, '+' + n + ' XP', '#8fd0e8'));
+  const now = G.level0();
+  if (now > was) {
+    Snd.unlock(); G.flash(0.3);
+    G.banner('LEVEL ' + now, 2.4);
+    for (let i = 0; i < 40; i++) G.particles.push(new Particle({
+      x: G.player.cx, y: G.player.cy, vx: rr(-3, 3), vy: rr(-3.4, 0.6), life: rr(0.5, 1.2),
+      col: rankColour(now), col2: '#ffffff', size: rr(1, 2.8), grav: 0.06, drag: 0.94
+    }));
+  }
+};
+/* Giving it all back.  The levels go, the mark stays, and the mark opens
+   doors that nothing else opens. */
+G.doPrestige = function () {
+  if (!G.canPrestige()) return false;
+  G.prestige = (G.prestige | 0) + 1;
+  G.xp = 0;
+  G.buffTier = 0;
+  Snd.unlock(); G.flash(1); G.shake(9);
+  G.banner('PRESTIGE ' + PRESTIGE_MARK[G.prestige], 4);
+  for (let i = 0; i < 140; i++) G.particles.push(new Particle({
+    x: G.player.cx, y: G.player.cy, vx: rr(-5, 5), vy: rr(-5, 2), life: rr(0.6, 1.6),
+    col: rpick([PRESTIGE_COL[G.prestige], '#ffffff']), col2: PRESTIGE_COL[G.prestige],
+    size: rr(1, 3.4), grav: 0.04, drag: 0.94
+  }));
+  try { applyProfile(); } catch (e) { console.error('look', e); }
+  G.saveGame();
+  return true;
+};
+/* The colour a level is written in.  It climbs from grey through to gold.
+   The band from eighty to eighty nine was not given a colour, so it takes
+   steel, which sits between bronze and silver. */
+function rankColour(n) {
+  if (n >= 100) return '#f0c93a';
+  if (n >= 90) return '#cfd8e6';
+  if (n >= 80) return '#7fb6d8';
+  if (n >= 70) return '#c68e3f';
+  if (n >= 60) return '#e8873a';
+  if (n >= 30) return '#ffd04a';
+  return '#a9b3c9';
+}
+/* the button that offers a prestige, top middle of the play screen */
+function prestigeBtnRect() { return { x: VW / 2 - 42, y: VH - 22, w: 84, h: 14 }; }
+/* A further realm pays more experience for the same work, and a buffed run
+   pays more again.  An island pays best of all. */
+/* Each realm has an experience budget of its own, set so that a clean pass
+   through a chapter leaves you where it should: about level fifteen at the
+   end of the first, forty at the end of the second, and a hundred at the end
+   of the last.  A buffed run pays half again for every step of its tier. */
+const REALM_XP = [1.19, 5.78, 6.81, 4.70, 4.33, 4.08, 16.35, 15.93, 10.31,
+                  11.01, 10.74, 10.32, 3.55, 4.05, 4.62];
+G.xpScale = function () {
+  if (G.isleRun) return 60 + G.isleRun.index * 4;
+  const lv = clamp(G.level | 0, 0, World.LEVELS.length - 1);
+  return REALM_XP[lv] * (1 + (G.buffTier | 0) * 0.5);
+};
+/* ---------- the face you show ---------- */
+/* ten small landscapes, one from each kind of country in the game */
+const AVATARS = [
+  { key: 'glade', name: 'GLADE' }, { key: 'deep', name: 'DEEP WOOD' },
+  { key: 'cloud', name: 'AETHER' }, { key: 'spore', name: 'SPOREWOOD' },
+  { key: 'shore', name: 'SHORE' }, { key: 'trench', name: 'TRENCH' },
+  { key: 'cinder', name: 'CINDER' }, { key: 'frost', name: 'FROSTFELL' },
+  { key: 'dune', name: 'DUNE SEA' }, { key: 'mesa', name: 'MESA' }
+];
+/* Four darknesses of stone brick, and three more the prestiges open. */
+const BORDERS = [
+  { name: 'PALE STONE', base: '#8a8274', dark: '#5d5850', light: '#b0a798', need: 0 },
+  { name: 'GREY STONE', base: '#6b6760', dark: '#454340', light: '#8f8a80', need: 0 },
+  { name: 'DARK STONE', base: '#4a4744', dark: '#2c2b2a', light: '#6a6660', need: 0 },
+  { name: 'BLACK STONE', base: '#2e2d2c', dark: '#1a1a19', light: '#484644', need: 0 },
+  { name: 'BRONZE', base: '#c68e3f', dark: '#7d5620', light: '#f0c07a', need: 1, shine: true },
+  { name: 'SILVER', base: '#cfd8e6', dark: '#8a95a8', light: '#ffffff', need: 2, shine: true },
+  { name: 'GOLD', base: '#f0c93a', dark: '#a8862a', light: '#fff4c0', need: 3, shine: true }
+];
+function newAccount() { return { name: 'WANDERER', avatar: 0, border: 1 }; }
+function borderOwned(i) { return (BORDERS[i] ? BORDERS[i].need : 99) <= (G.prestige | 0); }
+function accountName() {
+  const n = (G.account && G.account.name) || '';
+  return n ? n : 'WANDERER';
+}
+/* ---------- the buffed runs a prestige opens ---------- */
+/* A prestige lets you walk every realm you have already cleared a second
+   time, harder.  Bronze first, then silver, then gold: the order holds
+   however high your prestige stands. */
+const BUFF_HP = [1, 3, 6, 10];
+const BUFF_DMG = [1, 1.6, 2.2, 3];
+/* A guardian already carries many times what a creature does, so a buffed
+   run lifts it by less.  Ten times over would make a fight of half an hour. */
+const BUFF_BOSS = [1, 2, 3.2, 5];
+function buffKey(tier, level) { return tier + ':' + level; }
+function buffCleared(tier, level) {
+  if (tier <= 0) return !!G.cleared[level];
+  return !!(G.buffDone && G.buffDone[buffKey(tier, level)]);
+}
+/* the highest tier this realm has been taken at */
+function buffRank(level) {
+  for (let t = PRESTIGE_MAX; t > 0; t--) if (buffCleared(t, level)) return t;
+  return 0;
+}
+/* A buffed realm opens when you have cleared it plain, when your prestige
+   reaches its tier, and when the tier under it is already done. */
+function buffOpen(tier, level) {
+  if (tier <= 0) return true;
+  if (tier > (G.prestige | 0)) return false;
+  if (!G.cleared[level]) return false;
+  return buffCleared(tier - 1, level);
+}
+/* why a buffed realm will not open, in words */
+function buffBar(tier, level) {
+  if (tier > (G.prestige | 0)) return 'PRESTIGE ' + PRESTIGE_MARK[tier] + ' OPENS IT';
+  if (!G.cleared[level]) return 'CLEAR IT PLAIN FIRST';
+  if (!buffCleared(tier - 1, level)) return 'TAKE THE ' + PRESTIGE_NAME[tier - 1] + ' RUN FIRST';
+  return '';
+}
+const PRESTIGE_MARK = ['', 'I', 'II', 'III'];
+const PRESTIGE_COL = ['', '#c68e3f', '#cfd8e6', '#f0c93a'];
+const PRESTIGE_NAME = ['', 'BRONZE', 'SILVER', 'GOLD'];
+/* the mark and the number, written together, as they go everywhere */
+function drawRank(c2, x, y, scale, align) {
+  const n = G.level0(), pr = G.prestige | 0;
+  let w = 0;
+  const sc = scale || 1;
+  const mark = PRESTIGE_MARK[pr];
+  if (mark) w += textWidth(mark) * sc + 3 * sc;
+  w += textWidth(String(n)) * sc;
+  let cx = align === 'center' ? x - w / 2 : (align === 'right' ? x - w : x);
+  if (mark) {
+    drawText(c2, mark, cx, y, PRESTIGE_COL[pr], sc, 'left', '#1a1206');
+    cx += textWidth(mark) * sc + 3 * sc;
+  }
+  drawText(c2, String(n), cx, y, rankColour(n), sc, 'left', '#1a1206');
+  return w;
+}
+
+/* ============================================================
    THE PROFILE — the hero's own hair, clothes and mantle. Opened
    once the tutorial is done, and from the chart after that.
    ============================================================ */
-G.profile = { hair: 0, hairCol: 0, outfit: 0, tee: 0, cape: 'none' };
-const CAPE_ORDER = ['wood', 'tide', 'ember'];
-/* a mantle is earned by finishing a chapter */
+G.profile = { hair: 0, hairCol: 0, outfit: 0, tee: 0, cape: 'none', suit: 'none' };
+const CAPE_ORDER = ['wood', 'tide', 'ember', 'pBronze', 'pSilver', 'pGold'];
+/* A mantle is earned: the first three by finishing a chapter, the last
+   three by taking a prestige. */
 function capeUnlocked(key) {
+  const des = CAPES[key];
+  if (des && des.prestige) return (G.prestige | 0) >= des.prestige;
   const ch = CAPE_ORDER.indexOf(key);
-  if (ch < 0) return true;
+  if (ch < 0 || ch >= World.CHAPTERS.length) return true;
   const levels = World.CHAPTERS[ch].levels;
   return levels.every(l => G.cleared[l]);
 }
+/* a hair colour or a suit may wait on a prestige */
+function hairUnlocked(i) {
+  const c = HAIR_COLS[i];
+  return !c || !c.need || (G.prestige | 0) >= c.need;
+}
+function suitUnlocked(key) {
+  const su = SUITS[key];
+  return !su || !su.need || (G.prestige | 0) >= su.need;
+}
+/* does anything the hero wears carry a shine? */
+G.heroShines = function () {
+  const p = G.profile;
+  const su = SUITS[p.suit], ha = HAIR_COLS[p.hairCol], ca = CAPES[p.cape];
+  return !!((su && su.shine) || (ha && ha.shine) || (ca && ca.shine));
+};
 function applyProfile() {
   const p = G.profile;
   if (p.cape !== 'none' && !capeUnlocked(p.cape)) p.cape = 'none';
+  if (!hairUnlocked(p.hairCol)) p.hairCol = 0;
+  if (p.suit && p.suit !== 'none' && !suitUnlocked(p.suit)) p.suit = 'none';
   try { Art.rebuildHero(p); } catch (e) { console.error('hero look', e); }
   if (G.codes.admin) { try { Art.buildGold(); } catch (e) { /* rebuilt lazily */ } }
   if (G.player) G.player.cape = null;
@@ -5024,61 +5476,166 @@ const PROF_ROWS = [
   { key: 'outfit', name: 'CLOTHES', list: () => OUTFITS },
   { key: 'tee', name: 'SHIRT', list: () => TEE_COLS.map(c => c.name) }
 ];
-/* Two columns: what you wear on the left with the hero beneath it, and the
-   mantles on the right. Nothing overlaps anything. */
+/* The panel holds two pages.  PROFILE carries the face you show: a name, a
+   picture, a border round it, and the rank you have fought your way to.
+   LOOK carries what the hero wears. */
 const PROF_BOX = { x: 16, y: 10, w: 352, h: 196 };
-function profRowRect(i) { return { x: PROF_BOX.x + 12, y: PROF_BOX.y + 30 + i * 20, w: 150, h: 17 }; }
+const PROF_TABS = ['PROFILE', 'LOOK'];
+function profTabRect(i) { return { x: PROF_BOX.x + 12 + i * 74, y: PROF_BOX.y + 19, w: 70, h: 14 }; }
+function profRowRect(i) { return { x: PROF_BOX.x + 12, y: PROF_BOX.y + 40 + i * 20, w: 150, h: 17 }; }
 function profArrowRect(i, dir) {
   const r = profRowRect(i);
   return dir < 0 ? { x: r.x + 58, y: r.y, w: 16, h: r.h }
                  : { x: r.x + r.w - 16, y: r.y, w: 16, h: r.h };
 }
+/* six mantles in two columns, and a seventh tile that takes them all off */
 function profCapeRect(i) {
-  return i < 3 ? { x: PROF_BOX.x + 174, y: PROF_BOX.y + 30 + i * 26, w: 166, h: 22 }
-               : { x: PROF_BOX.x + 174, y: PROF_BOX.y + 110, w: 166, h: 15 };
+  if (i >= CAPE_ORDER.length) return { x: PROF_BOX.x + 174, y: PROF_BOX.y + 146, w: 166, h: 14 };
+  const col = i % 2, row = (i / 2) | 0;
+  return { x: PROF_BOX.x + 174 + col * 86, y: PROF_BOX.y + 40 + row * 34, w: 80, h: 31 };
 }
 function profDoneRect() { return { x: PROF_BOX.x + 262, y: PROF_BOX.y + PROF_BOX.h - 24, w: 78, h: 16 }; }
 function profRandomRect() { return { x: PROF_BOX.x + 174, y: PROF_BOX.y + PROF_BOX.h - 24, w: 80, h: 16 }; }
-function profPreviewSpot() { return { cx: PROF_BOX.x + 84, base: PROF_BOX.y + 186, scale: 2.4 }; }
+function profPreviewSpot() { return { cx: PROF_BOX.x + 84, base: PROF_BOX.y + 170, scale: 1.4 }; }
 
-function openProfile(thenState) {
+/* ---------- the PROFILE page ---------- */
+const PORTRAIT = 48, FRAME = 8;
+function profFaceRect() {
+  return { x: PROF_BOX.x + 16, y: PROF_BOX.y + 42,
+           w: PORTRAIT + FRAME * 2, h: PORTRAIT + FRAME * 2 };
+}
+function profPicArrow(dir) {
+  const f = profFaceRect();
+  return { x: dir < 0 ? f.x : f.x + f.w - 26, y: f.y + f.h + 4, w: 26, h: 14 };
+}
+function profEdgeArrow(dir) {
+  const f = profFaceRect();
+  return { x: dir < 0 ? f.x : f.x + f.w - 26, y: f.y + f.h + 22, w: 26, h: 14 };
+}
+function profNameRect() { return { x: PROF_BOX.x + 118, y: PROF_BOX.y + 50, w: 168, h: 18 }; }
+function profWardRect() { return { x: PROF_BOX.x + 118, y: PROF_BOX.y + 128, w: 110, h: 18 }; }
+function profPrestigeRect() { return { x: PROF_BOX.x + 236, y: PROF_BOX.y + 128, w: 104, h: 18 }; }
+/* the frame of brick, or of beaten metal, round the picture */
+function drawPortraitFrame(c2, r, idx, t) {
+  const b = BORDERS[clamp(idx | 0, 0, BORDERS.length - 1)];
+  const brick = 6;
+  for (let y = r.y; y < r.y + r.h; y += brick) {
+    const row = ((y - r.y) / brick) | 0;
+    for (let x = r.x - (row & 1 ? brick / 2 : 0); x < r.x + r.w; x += brick) {
+      const inX = x >= r.x + FRAME - 1 && x + brick <= r.x + r.w - FRAME + 1;
+      const inY = y >= r.y + FRAME - 1 && y + brick <= r.y + r.h - FRAME + 1;
+      if (inX && inY) continue;
+      const x0 = Math.max(r.x, x), x1 = Math.min(r.x + r.w, x + brick - 1);
+      if (x1 <= x0) continue;
+      /* metal catches a light that runs round it; stone does not */
+      let col = b.base;
+      if (b.shine) {
+        const k = (Math.sin((x + y) * 0.06 - (t || 0) * 3) + 1) / 2;
+        col = k > 0.72 ? b.light : (k < 0.28 ? b.dark : b.base);
+      } else col = ((row + ((x / brick) | 0)) & 1) ? b.base : b.dark;
+      c2.fillStyle = col;
+      c2.fillRect(Math.round(x0), Math.round(y), Math.round(x1 - x0), Math.min(brick - 1, r.y + r.h - y));
+    }
+  }
+  c2.fillStyle = b.light;
+  c2.fillRect(r.x, r.y, r.w, 1);
+  c2.fillStyle = b.dark;
+  c2.fillRect(r.x, r.y + r.h - 1, r.w, 1);
+}
+
+function openProfile(thenState, tab) {
   G.state = 'profile';
   G.profAfter = thenState || 'map';
   G.profSel = -1; G.profT = 0;
+  if (tab !== undefined) G.profTab = tab;
+  if (G.profTab === undefined) G.profTab = 0;
+  G.nameEdit = false;
+  G.profMsgT = 0;
   G.particles.length = 0;
+  if (!G.account) G.account = newAccount();
   if (!G.profPreview) G.profPreview = new Player();
   G.profPreview.cape = null;
   applyProfile();
   Snd.play('title'); Snd.musicLevel(0.30, 0.8);
 }
+/* Typing a name.  The keys of a real keyboard and the keys of the built-in
+   one write into the same place. */
+const NAME_MAX = 12;
+function updateNameEdit() {
+  const B = CODE_BOX_MOB;
+  G.nameKeyFlash = Math.max(0, (G.nameKeyFlash || 0) - G.dt);
+  if (G.nameKeyFlash <= 0) G.nameKeyHit = null;
+  const done = { x: B.x + B.w - 74, y: B.y + 26, w: 68, h: 18 };
+  const type = ch => {
+    if (ch === 'ENTER') { G.nameEdit = false; G.saveGame(); Snd.buy(); return; }
+    if (ch === 'DEL') { G.account.name = G.account.name.slice(0, -1); Snd.ui(); return; }
+    if (G.account.name.length < NAME_MAX) { G.account.name += ch; Snd.ui(); }
+    else Snd.uiBad();
+  };
+  if (Input.hit('Escape') || Input.hit('Enter') || Input.tap(done)) {
+    G.nameEdit = false; G.saveGame(); Snd.buy(); return;
+  }
+  if (Input.hit('Backspace')) G.account.name = G.account.name.slice(0, -1);
+  for (const ch of Input.typed)
+    if (/[A-Za-z0-9 ]/.test(ch) && G.account.name.length < NAME_MAX)
+      G.account.name += ch.toUpperCase();
+  for (const k of codeKeys(B)) {
+    if (!Input.tap({ x: k.x, y: k.y, w: k.w, h: k.h })) continue;
+    G.nameKeyHit = k.ch; G.nameKeyFlash = 0.12;
+    type(k.ch);
+    return;
+  }
+}
 function updateProfile(dt) {
   G.profT += dt;
+  G.profMsgT = Math.max(0, (G.profMsgT || 0) - dt);
   G.flashAmt = Math.max(0, G.flashAmt - dt * 2.2);
   if (G.settingsOpen) { updateSettings(); return; }
+  /* the name keyboard covers the panel, so it takes every tap first */
+  if (G.nameEdit) { updateNameEdit(); return; }
   let changed = false;
   const p = G.profile;
-  for (let i = 0; i < PROF_ROWS.length; i++) {
-    const row = PROF_ROWS[i], n = row.list().length;
-    for (const dir of [-1, 1]) {
-      if (Input.tap(profArrowRect(i, dir))) {
-        p[row.key] = ((p[row.key] + dir) % n + n) % n;
+  for (let i = 0; i < PROF_TABS.length; i++) if (Input.tap(profTabRect(i))) {
+    G.profTab = i; Snd.ui();
+  }
+  /* the face page may leave for the wardrobe, and then nothing else runs */
+  if (G.profTab === 0) { if (updateProfileFace()) return; }
+  else {
+    for (let i = 0; i < PROF_ROWS.length; i++) {
+      const row = PROF_ROWS[i], n = row.list().length;
+      for (const dir of [-1, 1]) {
+        if (!Input.tap(profArrowRect(i, dir))) continue;
+        /* step over anything a prestige has yet to open */
+        let v = p[row.key];
+        for (let guard = 0; guard < n; guard++) {
+          v = ((v + dir) % n + n) % n;
+          if (row.key !== 'hairCol' || hairUnlocked(v)) break;
+        }
+        p[row.key] = v;
         changed = true; Snd.ui();
       }
     }
-  }
-  CAPE_ORDER.forEach((key, i) => {
-    if (!Input.tap(profCapeRect(i))) return;
-    if (!capeUnlocked(key)) { Snd.uiBad(); return; }
-    p.cape = (p.cape === key) ? 'none' : key;
-    changed = true; Snd.ui();
-  });
-  if (Input.tap(profCapeRect(3))) { p.cape = 'none'; changed = true; Snd.ui(); }
-  if (Input.tap(profRandomRect())) {
-    p.hair = ri(0, HAIR_STYLES.length - 1);
-    p.hairCol = ri(0, HAIR_COLS.length - 1);
-    p.outfit = ri(0, OUTFITS.length - 1);
-    p.tee = ri(0, TEE_COLS.length - 1);
-    changed = true; Snd.buy();
+    CAPE_ORDER.forEach((key, i) => {
+      if (!Input.tap(profCapeRect(i))) return;
+      if (!capeUnlocked(key)) {
+        Snd.uiBad();
+        const des = CAPES[key];
+        G.profMsg = des.prestige ? ('PRESTIGE ' + PRESTIGE_MARK[des.prestige] + ' OPENS IT')
+                                 : ('FINISH ' + des.hint);
+        G.profMsgT = 2.2;
+        return;
+      }
+      p.cape = (p.cape === key) ? 'none' : key;
+      changed = true; Snd.ui();
+    });
+    if (Input.tap(profCapeRect(CAPE_ORDER.length))) { p.cape = 'none'; changed = true; Snd.ui(); }
+    if (Input.tap(profRandomRect())) {
+      p.hair = ri(0, HAIR_STYLES.length - 1);
+      do { p.hairCol = ri(0, HAIR_COLS.length - 1); } while (!hairUnlocked(p.hairCol));
+      p.outfit = ri(0, OUTFITS.length - 1);
+      p.tee = ri(0, TEE_COLS.length - 1);
+      changed = true; Snd.buy();
+    }
   }
   if (changed) { applyProfile(); G.saveGame(); }
   if (Input.tap(profDoneRect()) || Input.hit('Enter') || Input.hit('Escape')) {
@@ -5094,14 +5651,166 @@ function updateProfile(dt) {
     life: rr(3, 6), col: rpick(['#ebdcb6', '#d8c49a', '#fff4d6']), size: 1, grav: 0, type: 'leaf'
   }));
 }
+/* the PROFILE page: the picture, the name and the rank */
+function updateProfileFace() {
+  const a = G.account;
+  let changed = false;
+  for (const dir of [-1, 1]) {
+    if (Input.tap(profPicArrow(dir))) {
+      a.avatar = ((a.avatar + dir) % AVATARS.length + AVATARS.length) % AVATARS.length;
+      changed = true; Snd.ui();
+    }
+    if (Input.tap(profEdgeArrow(dir))) {
+      let v = a.border;
+      for (let guard = 0; guard < BORDERS.length; guard++) {
+        v = ((v + dir) % BORDERS.length + BORDERS.length) % BORDERS.length;
+        if (borderOwned(v)) break;
+      }
+      if (borderOwned(v)) { a.border = v; changed = true; Snd.ui(); }
+      else { Snd.uiBad(); G.profMsg = 'A PRESTIGE OPENS IT'; G.profMsgT = 2; }
+    }
+  }
+  if (Input.tap(profNameRect())) {
+    G.nameEdit = true; G.nameKeyHit = null; Snd.ui();
+  }
+  if (Input.tap(profWardRect())) { openWardrobe('profile'); return true; }
+  if (Input.tap(profPrestigeRect())) {
+    if (G.canPrestige()) G.doPrestige();
+    else {
+      Snd.uiBad();
+      G.profMsg = (G.prestige | 0) >= PRESTIGE_MAX ? 'NOTHING IS LEFT TO GIVE BACK'
+                                                   : 'REACH LEVEL 100 FIRST';
+      G.profMsgT = 2.2;
+    }
+  }
+  if (changed) G.saveGame();
+  return false;
+}
+function drawNameEdit() {
+  const B = CODE_BOX_MOB;
+  ctx.fillStyle = 'rgba(8,6,16,0.86)'; ctx.fillRect(0, 0, VW, VH);
+  panel(ctx, B.x, B.y, B.w, B.h);
+  drawText(ctx, 'YOUR NAME', B.x + 10, B.y + 8, '#f2e2b8', 1, 'left', '#000000');
+  const fx = B.x + 10, fy = B.y + 26;
+  ctx.fillStyle = '#12101c'; ctx.fillRect(fx - 2, fy - 3, 240, 18);
+  ctx.fillStyle = '#3a3350'; ctx.fillRect(fx - 2, fy - 3, 240, 1);
+  const shown = G.account.name || '';
+  drawText(ctx, shown, fx + 2, fy + 2, rankColour(G.level0()), 2, 'left');
+  if (Math.floor(G.t * 2.4) % 2 === 0) {
+    ctx.fillStyle = '#6fc46a';
+    ctx.fillRect(fx + 2 + textWidth(shown) * 2 + 2, fy + 1, 2, 12);
+  }
+  const done = { x: B.x + B.w - 74, y: B.y + 26, w: 68, h: 18 };
+  const hot = Input.over(done);
+  ctx.fillStyle = hot ? '#3c5a40' : '#2f4a34'; ctx.fillRect(done.x, done.y, done.w, done.h);
+  ctx.fillStyle = '#6fc46a'; ctx.fillRect(done.x, done.y, done.w, 1);
+  drawText(ctx, 'DONE', done.x + done.w / 2, done.y + 6, '#ffeec0', 1, 'center');
+  drawText(ctx, 'UP TO ' + NAME_MAX + ' LETTERS', fx, fy + 20, '#6d7994', 1, 'left');
+  drawCodeKeyboard(B, G.nameKeyHit);
+}
+function drawProfileFace() {
+  const a = G.account, n = G.level0(), pr = G.prestige | 0;
+  const f = profFaceRect();
+  /* the picture, and the frame of brick or metal round it */
+  drawPortraitFrame(ctx, f, a.border, G.profT);
+  const img = Art.portrait && Art.portrait[clamp(a.avatar | 0, 0, Art.portrait.length - 1)];
+  if (img) ctx.drawImage(img, f.x + FRAME, f.y + FRAME);
+  for (const [rect, label, dir] of [[profPicArrow(-1), '<', -1], [profPicArrow(1), '>', 1],
+                                    [profEdgeArrow(-1), '<', -1], [profEdgeArrow(1), '>', 1]]) {
+    const hot = Input.over(rect);
+    ctx.fillStyle = hot ? '#3c5a40' : '#2b2740';
+    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    drawText(ctx, label, rect.x + rect.w / 2, rect.y + 4, '#ffeec0', 1, 'center');
+    void dir;
+  }
+  drawText(ctx, AVATARS[clamp(a.avatar | 0, 0, AVATARS.length - 1)].name,
+           f.x + f.w / 2, profPicArrow(-1).y + 4, '#a9b3c9', 1, 'center');
+  drawText(ctx, BORDERS[clamp(a.border | 0, 0, BORDERS.length - 1)].name,
+           f.x + f.w / 2, profEdgeArrow(-1).y + 4, '#a9b3c9', 1, 'center');
+
+  /* the name */
+  const nr = profNameRect(), nameHot = Input.over(nr);
+  ctx.fillStyle = nameHot ? '#332c4c' : '#211c32';
+  ctx.fillRect(nr.x, nr.y, nr.w, nr.h);
+  ctx.fillStyle = nameHot ? '#ffd04a' : '#3a3350';
+  ctx.fillRect(nr.x, nr.y, nr.w, 1);
+  drawText(ctx, accountName(), nr.x + 5, nr.y + 5, rankColour(n), 2, 'left', '#12101c');
+  drawText(ctx, 'CLICK TO CHANGE YOUR NAME', nr.x, nr.y + 21, '#6d7994', 1, 'left');
+
+  /* the rank: the mark of a prestige, then the level, then the bar */
+  const ry = PROF_BOX.y + 84;
+  drawText(ctx, 'LEVEL', nr.x, ry + 3, '#a9b3c9', 1, 'left');
+  drawRank(ctx, nr.x + 34, ry, 2, 'left');
+  if (pr > 0) drawText(ctx, 'PRESTIGE ' + PRESTIGE_MARK[pr] + '  -  ' + PRESTIGE_NAME[pr],
+                       nr.x + 96, ry + 3, PRESTIGE_COL[pr], 1, 'left');
+  const bw = 200, by = ry + 18;
+  ctx.fillStyle = '#12101c'; ctx.fillRect(nr.x, by, bw, 7);
+  ctx.fillStyle = rankColour(n);
+  ctx.fillRect(nr.x + 1, by + 1, Math.round((bw - 2) * G.levelFrac()), 5);
+  ctx.fillStyle = '#3a3350'; ctx.fillRect(nr.x, by, bw, 1);
+  const left = n >= LEVEL_MAX ? 0 : XP_TABLE[n] - (G.xp | 0);
+  drawText(ctx, n >= LEVEL_MAX ? 'THE HUNDREDTH LEVEL' : (left + ' XP TO LEVEL ' + (n + 1)),
+           nr.x + bw, by + 9, '#8a94a6', 1, 'right');
+
+  /* the two buttons */
+  const wr = profWardRect(), wh = Input.over(wr);
+  ctx.fillStyle = wh ? 'rgba(74,56,34,0.96)' : 'rgba(34,26,16,0.9)';
+  ctx.fillRect(wr.x, wr.y, wr.w, wr.h);
+  ctx.fillStyle = wh ? '#ffd04a' : '#b8862f';
+  ctx.fillRect(wr.x, wr.y, wr.w, 1);
+  drawText(ctx, 'THE WARDROBE', wr.x + wr.w / 2, wr.y + 6, '#ffeec0', 1, 'center');
+  const pgr = profPrestigeRect(), ph = Input.over(pgr), can = G.canPrestige();
+  ctx.fillStyle = can ? (ph ? '#6a4a1c' : '#4a3414') : 'rgba(24,20,30,0.9)';
+  ctx.fillRect(pgr.x, pgr.y, pgr.w, pgr.h);
+  ctx.fillStyle = can ? PRESTIGE_COL[Math.min(PRESTIGE_MAX, pr + 1)] : '#3a3350';
+  ctx.fillRect(pgr.x, pgr.y, pgr.w, 1);
+  drawText(ctx, pr >= PRESTIGE_MAX ? 'PRESTIGE III' : ('PRESTIGE ' + PRESTIGE_MARK[pr + 1]),
+           pgr.x + pgr.w / 2, pgr.y + 6, can ? '#ffeec0' : '#6d7994', 1, 'center');
+  drawText(ctx, pr >= PRESTIGE_MAX ? 'ALL THREE MARKS ARE YOURS'
+                                   : 'GIVE BACK YOUR LEVELS FOR THE MARK',
+           nr.x, pgr.y + 22, '#6d7994', 1, 'left');
+  if (G.profMsgT > 0) {
+    ctx.save(); ctx.globalAlpha = Math.min(1, G.profMsgT * 2);
+    drawText(ctx, G.profMsg, PROF_BOX.x + PROF_BOX.w / 2, PROF_BOX.y + PROF_BOX.h - 22,
+             '#ffd04a', 1, 'center', '#2a1a10');
+    ctx.restore();
+  }
+}
 function drawProfile() {
   ctx.drawImage(Art.map.bg, 0, 0);
   for (const pa of G.particles) pa.draw(ctx);
   panel(ctx, PROF_BOX.x, PROF_BOX.y, PROF_BOX.w, PROF_BOX.h);
-  drawText(ctx, 'YOUR OWN LOOK', PROF_BOX.x + 12, PROF_BOX.y + 8, '#f2e2b8', 1, 'left', '#000000');
-  drawText(ctx, 'HOW YOU GO INTO THE REALMS',
-           PROF_BOX.x + PROF_BOX.w - 12, PROF_BOX.y + 8, '#a9b3c9', 1, 'right');
-
+  drawText(ctx, 'YOUR PROFILE', PROF_BOX.x + 12, PROF_BOX.y + 7, '#f2e2b8', 1, 'left', '#000000');
+  drawText(ctx, accountName(), PROF_BOX.x + PROF_BOX.w - 52, PROF_BOX.y + 7,
+           rankColour(G.level0()), 1, 'right');
+  drawRank(ctx, PROF_BOX.x + PROF_BOX.w - 12, PROF_BOX.y + 7, 1, 'right');
+  /* the two tabs */
+  PROF_TABS.forEach((name, i) => {
+    const r = profTabRect(i), on = G.profTab === i, hot = Input.over(r);
+    ctx.fillStyle = on ? 'rgba(74,56,34,0.96)' : (hot ? '#332c4c' : '#211c32');
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.fillStyle = on ? '#ffd04a' : '#3a3350';
+    ctx.fillRect(r.x, r.y, r.w, 1);
+    drawText(ctx, name, r.x + r.w / 2, r.y + 4, on ? '#ffeec0' : '#a9b3c9', 1, 'center');
+  });
+  const dr = profDoneRect(), dh = Input.over(dr);
+  ctx.fillStyle = dh ? 'rgba(74,56,34,0.96)' : 'rgba(34,26,16,0.9)';
+  ctx.fillRect(dr.x, dr.y, dr.w, dr.h);
+  ctx.fillStyle = dh ? '#ffd04a' : '#b8862f';
+  ctx.fillRect(dr.x, dr.y, dr.w, 1);
+  drawText(ctx, 'DONE', dr.x + dr.w / 2, dr.y + 5, '#ffeec0', 1, 'center');
+  if (G.profTab === 0) {
+    drawProfileFace();
+    if (G.nameEdit) drawNameEdit();
+    if (G.flashAmt > 0) {
+      ctx.save(); ctx.globalAlpha = Math.min(1, G.flashAmt);
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, VW, VH); ctx.restore();
+    }
+    return;
+  }
+  drawProfileLook();
+}
+function drawProfileLook() {
   const p = G.profile;
   PROF_ROWS.forEach((row, i) => {
     const r = profRowRect(i);
@@ -5126,7 +5835,7 @@ function drawProfile() {
   });
 
   /* the mantles, and what each is still waiting on */
-  drawText(ctx, 'MANTLES - ONE PER CHAPTER', PROF_BOX.x + 174, PROF_BOX.y + 20, '#a9b3c9', 1, 'left');
+  drawText(ctx, 'MANTLES', PROF_BOX.x + PROF_BOX.w - 12, PROF_BOX.y + 31, '#a9b3c9', 1, 'right');
   CAPE_ORDER.forEach((key, i) => {
     const r = profCapeRect(i), des = CAPES[key];
     const got = capeUnlocked(key), on = p.cape === key;
@@ -5141,13 +5850,23 @@ function drawProfile() {
     for (let j = 0; j < 7; j++) for (let k = 0; k < 5; k++) {
       const col = got ? capeCell(key, j, k, 7, 5) : '#3a3350';
       ctx.fillStyle = col;
-      ctx.fillRect(r.x + 4 + k * 3, r.y + 3 + j * 2, 3, 2);
+      ctx.fillRect(r.x + 3 + k * 3, r.y + 3 + j * 2, 3, 2);
     }
-    drawText(ctx, got ? des.name : 'NOT YET YOURS', r.x + 22, r.y + 3, got ? '#ffeec0' : '#5b6480', 1, 'left');
-    drawText(ctx, got ? (on ? 'WORN' : 'CLICK TO WEAR') : ('FINISH ' + des.hint),
-             r.x + 22, r.y + 13, got ? (on ? '#6fc46a' : '#a9b3c9') : '#7f8aa3', 1, 'left');
+    /* metal cloth catches a light running down it */
+    if (got && des.shine) {
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      const k = ((G.profT * 0.5 + i * 0.2) % 1) * 16 - 2;
+      ctx.globalAlpha = 0.5; ctx.fillStyle = '#ffffff';
+      ctx.fillRect(r.x + 3, r.y + 3 + Math.round(k), 15, 2);
+      ctx.restore();
+    }
+    const name = got ? (des.short || des.name) : 'LOCKED';
+    drawText(ctx, name, r.x + 21, r.y + 3, got ? '#ffeec0' : '#5b6480', 1, 'left');
+    const need = des.prestige ? ('NEEDS ' + PRESTIGE_MARK[des.prestige]) : des.hint;
+    drawText(ctx, got ? (on ? 'WORN' : 'WEAR') : need,
+             r.x + 21, r.y + 12, got ? (on ? '#6fc46a' : '#a9b3c9') : '#7f8aa3', 1, 'left');
   });
-  const nr = profCapeRect(3);
+  const nr = profCapeRect(CAPE_ORDER.length);
   const noneHot = Input.over(nr);
   ctx.fillStyle = p.cape === 'none' ? '#2f4a34' : (noneHot ? '#332c4c' : '#211c32');
   ctx.fillRect(nr.x, nr.y, nr.w, nr.h);
@@ -5158,9 +5877,9 @@ function drawProfile() {
     const spot = profPreviewSpot();
     const bx = spot.cx, by = spot.base, sc = spot.scale;
     ctx.fillStyle = 'rgba(10,8,18,0.45)';
-    ctx.fillRect(bx - 76, by - 76, 144, 80);
+    ctx.fillRect(bx - 76, by - 44, 144, 48);
     ctx.fillStyle = '#3a3350';
-    ctx.fillRect(bx - 76, by - 76, 144, 1); ctx.fillRect(bx - 76, by + 3, 144, 1);
+    ctx.fillRect(bx - 76, by - 44, 144, 1); ctx.fillRect(bx - 76, by + 3, 144, 1);
     /* a stone for them to stand on, so the feet are not left in the air */
     ctx.fillStyle = '#2b2740'; ctx.fillRect(bx - 26, by + 1, 52, 2);
     if (G.profPreview) {
@@ -5184,8 +5903,12 @@ function drawProfile() {
 
   const rr2 = profRandomRect();
   uiButton(rr2, 'SURPRISE ME', Input.over(rr2));
-  const dr = profDoneRect();
-  uiButton(dr, 'READY', Input.over(dr), '#3c5a40');
+  if (G.profMsgT > 0) {
+    ctx.save(); ctx.globalAlpha = Math.min(1, G.profMsgT * 2);
+    drawText(ctx, G.profMsg, PROF_BOX.x + 88, PROF_BOX.y + PROF_BOX.h - 20,
+             '#ffd04a', 1, 'center', '#2a1a10');
+    ctx.restore();
+  }
   if (G.settingsOpen) drawSettings();
   if (G.flashAmt > 0) {
     ctx.save(); ctx.globalAlpha = Math.min(1, G.flashAmt); ctx.fillStyle = '#ffffff';
@@ -5651,8 +6374,11 @@ function drawVictoryOverlay() {
   const a = Math.min(1, (G.victoryT - 0.6) * 1.2);
   ctx.save(); ctx.globalAlpha = a;
   const bob = Math.sin(G.t * 1.6) * 2;
-  drawText(ctx, 'REALM CLEARED', VW / 2, 40 + bob, '#ffd04a', 3, 'center', '#3a1c08');
-  drawText(ctx, World.LEVELS[G.level].name + ' IS FREE', VW / 2, 66, '#f2e2b8', 1, 'center', '#000000');
+  const bt = clamp(G.buffTier | 0, 0, PRESTIGE_MAX);
+  drawText(ctx, bt ? (PRESTIGE_NAME[bt] + ' RUN TAKEN') : 'REALM CLEARED', VW / 2, 40 + bob,
+           bt ? PRESTIGE_COL[bt] : '#ffd04a', 3, 'center', '#3a1c08');
+  drawText(ctx, World.LEVELS[G.level].name + (bt ? ' STOOD AND FELL' : ' IS FREE'),
+           VW / 2, 66, '#f2e2b8', 1, 'center', '#000000');
   if (G.newlyUnlocked)
     drawText(ctx, World.LEVELS[G.level + 1].name + ' IS OPEN', VW / 2, 78, '#9be89a', 1, 'center', '#000000');
   else if (G.level + 1 >= World.LEVELS.length)

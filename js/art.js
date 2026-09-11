@@ -16,12 +16,16 @@ const Art = { hero: {}, top: {}, snake: {}, bear: {}, bat: {}, spider: {}, drago
 const HAIR_COLS = [
   { name: 'CHESTNUT', base: '#7b4a26', dark: '#53301a', light: '#a06a38' },
   { name: 'BLACK',    base: '#3a3040', dark: '#241d2c', light: '#5d5068' },
-  { name: 'STRAW',    base: '#e0c46a', dark: '#a8873a', light: '#f6e6a8' },
-  { name: 'COPPER',   base: '#c95f2a', dark: '#8e3c16', light: '#e88a4a' },
+  { name: 'BLONDE',   base: '#ecd99a', dark: '#b49f5c', light: '#fff6d8' },
   { name: 'ASH',      base: '#b9c2d0', dark: '#7f8a9c', light: '#e6edf6' },
   { name: 'MOSS',     base: '#4f9a3f', dark: '#2f6f37', light: '#8fd06a' },
   { name: 'PLUM',     base: '#8f5fc0', dark: '#5d3a86', light: '#c39ae8' },
-  { name: 'ROSE',     base: '#e0688a', dark: '#a13c5c', light: '#f7a2bb' }
+  { name: 'ROSE',     base: '#e0688a', dark: '#a13c5c', light: '#f7a2bb' },
+  /* Three that no shop sells.  A prestige opens each of them, and each one
+     carries a shine the plain colours do not. */
+  { name: 'BRONZE',   base: '#c68e3f', dark: '#7d5620', light: '#f0c07a', need: 1, shine: true },
+  { name: 'SILVER',   base: '#cfd8e6', dark: '#8a95a8', light: '#ffffff', need: 2, shine: true },
+  { name: 'GOLD',     base: '#f0c93a', dark: '#a8862a', light: '#fff4c0', need: 3, shine: true }
 ];
 /* colours that are found rather than given. A code adds one to the list. */
 const EXTRA_HAIR = {
@@ -41,12 +45,12 @@ Art.lockExtraHair = function () {
 const HAIR_STYLES = ['SHORT', 'LONG', 'MOHAWK', 'PIGTAILS', 'BUN', 'SPIKES', 'BALD'];
 const OUTFITS = ['TUNIC', 'TSHIRT'];
 const TEE_COLS = [
-  { name: 'GREEN', base: '#48a24f', dark: '#2e6c38', light: '#71c96e' },
-  { name: 'BLUE',  base: '#3f6fd8', dark: '#2a4a9a', light: '#7fa2f0' },
-  { name: 'RED',   base: '#c9403a', dark: '#8f2820', light: '#e8736a' },
-  { name: 'GOLD',  base: '#e0b040', dark: '#a07a20', light: '#f6d878' },
-  { name: 'PLUM',  base: '#8f5fc0', dark: '#5d3a86', light: '#c39ae8' },
-  { name: 'SLATE', base: '#5d6a80', dark: '#3a4354', light: '#8fa0b8' }
+  { name: 'GREEN',  base: '#48a24f', dark: '#2e6c38', light: '#71c96e' },
+  { name: 'BLUE',   base: '#3f6fd8', dark: '#2a4a9a', light: '#7fa2f0' },
+  { name: 'RED',    base: '#c9403a', dark: '#8f2820', light: '#e8736a' },
+  { name: 'YELLOW', base: '#e8d24a', dark: '#a89526', light: '#fbee9a' },
+  { name: 'PLUM',   base: '#8f5fc0', dark: '#5d3a86', light: '#c39ae8' },
+  { name: 'SLATE',  base: '#5d6a80', dark: '#3a4354', light: '#8fa0b8' }
 ];
 /* Clothes cut to the pattern of a realm.  They are bought, not given, and a
    suit overrides the plain shirt colour. */
@@ -80,7 +84,15 @@ const SUITS = {
   sphinx:   { name: 'RIDDLEWEAVE', realm: 'SPHINX HOLLOW', cost: 24000,
               base: '#2f5fb0', dark: '#1c3a70', light: '#5f9fe0', legs: '#c9a06a', trim: '#e0b040' },
   suntomb:  { name: 'SUNREGALIA', realm: 'THE SUN TOMB', cost: 30000,
-              base: '#e0b040', dark: '#9c7418', light: '#f6d878', legs: '#241c14', trim: '#2f5fb0' }
+              base: '#e0b040', dark: '#9c7418', light: '#f6d878', legs: '#241c14', trim: '#2f5fb0' },
+  /* Three suits no realm holds.  Each one waits on a prestige, and no purse
+     buys it before then.  All three shine. */
+  pBronze:  { name: 'BRONZE REGALIA', realm: 'PRESTIGE I', cost: 20000, need: 1, shine: true,
+              base: '#c68e3f', dark: '#7d5620', light: '#f0c07a', legs: '#8a5f26', trim: '#ffe0a8' },
+  pSilver:  { name: 'SILVER REGALIA', realm: 'PRESTIGE II', cost: 40000, need: 2, shine: true,
+              base: '#cfd8e6', dark: '#8a95a8', light: '#ffffff', legs: '#93a0b4', trim: '#eef4ff' },
+  pGold:    { name: 'GOLD REGALIA', realm: 'PRESTIGE III', cost: 60000, need: 3, shine: true,
+              base: '#f0c93a', dark: '#a8862a', light: '#fff4c0', legs: '#a8862a', trim: '#fffbe0' }
 };
 const SUIT_KEYS = Object.keys(SUITS);
 /* what the hero currently looks like; heroFrame reads this as it draws */
@@ -4601,22 +4613,38 @@ Art.rebuildHero = function (look) {
    ============================================================ */
 const CAPES = {
   wood: {
-    name: 'GREENWOOD', hint: 'CHAPTER ONE',
+    name: 'GREENWOOD', short: 'GREENWOOD', hint: 'CHAPTER ONE',
     /* dark pines over a ridge of grey stone and snow */
     band: ['#e6edf6', '#8a94a6', '#4a5165', '#2f6f37', '#4f9a3f', '#2f6f37', '#245427', '#1a3d1e'],
     edge: '#f0c93a'
   },
   tide: {
-    name: 'DROWNED DEEP', hint: 'CHAPTER TWO',
+    name: 'DROWNED DEEP', short: 'DROWNED', hint: 'CHAPTER TWO',
     /* pale crests falling into deep water over sunken stone */
     band: ['#dff0ff', '#9fe8ff', '#5fa3dc', '#3f6fd8', '#2a4a9a', '#1d3a6b', '#2b4a63', '#8a94a6'],
     edge: '#9fe8ff'
   },
   ember: {
-    name: 'MOLTEN CROWN', hint: 'CHAPTER THREE',
+    name: 'MOLTEN CROWN', short: 'MOLTEN', hint: 'CHAPTER THREE',
     /* a cone of dark rock with fire running down it */
     band: ['#fff4d6', '#ffd06a', '#ff8b4a', '#e0522a', '#a83218', '#6d2412', '#3a1a14', '#241014'],
     edge: '#ffd06a'
+  },
+  /* Three that a prestige gives outright.  Beaten metal, shining. */
+  pBronze: {
+    name: 'BRONZE MANTLE', short: 'BRONZE', hint: 'PRESTIGE I', prestige: 1, shine: true,
+    band: ['#ffe0a8', '#f0c07a', '#c68e3f', '#a8762e', '#7d5620', '#5e3f17', '#432d10', '#2c1d0a'],
+    edge: '#ffe0a8'
+  },
+  pSilver: {
+    name: 'SILVER MANTLE', short: 'SILVER', hint: 'PRESTIGE II', prestige: 2, shine: true,
+    band: ['#ffffff', '#eef4ff', '#cfd8e6', '#aab6c8', '#8a95a8', '#6a7386', '#4c5464', '#333944'],
+    edge: '#ffffff'
+  },
+  pGold: {
+    name: 'GOLD MANTLE', short: 'GOLD', hint: 'PRESTIGE III', prestige: 3, shine: true,
+    band: ['#fffbe0', '#fff4c0', '#f0c93a', '#d4ac2e', '#a8862a', '#7e641e', '#584614', '#3a2e0c'],
+    edge: '#fffbe0'
   }
 };
 /* the pattern across the cloth: which band a cell takes */
@@ -4640,13 +4668,147 @@ function capeCell(design, along, across, n, w) {
     /* waves running across, deepening toward the hem */
     const wave = Math.sin(u * Math.PI * 4 + t * 6) * 0.5 + 0.5;
     idx = Math.floor(t * 5.5 + wave * 1.6);
-  } else {
+  } else if (design === 'ember') {
     /* a cone of rock with fire licking up its flanks */
     const cone = Math.abs(u - 0.5) * 2;
     const flame = Math.sin(u * Math.PI * 7 + t * 4) * 0.5 + 0.5;
     idx = Math.floor(t * 4 + cone * 2.4 + flame * 1.4);
+  } else {
+    /* beaten metal: a bright band down the middle and hammer marks across it */
+    const sheen = 1 - Math.abs(u - 0.42) * 2.2;
+    const hammer = (Math.sin(u * Math.PI * 9) + Math.sin(t * Math.PI * 7)) * 0.5;
+    idx = Math.round(3.4 - sheen * 3 + t * 2.2 + hammer * 0.8);
   }
   return d.band[clamp(idx, 0, d.band.length - 1)];
+}
+
+/* ============================================================
+   BEATEN METAL.  A picture is read for its brightness alone and
+   written back in bronze, silver or gold.  The realms a prestige
+   run has taken are shown this way.
+   ============================================================ */
+const METAL = [null,
+  { dark: '#4a3010', mid: '#c68e3f', light: '#ffe0a8' },
+  { dark: '#4a5160', mid: '#cfd8e6', light: '#ffffff' },
+  { dark: '#5c4708', mid: '#f0c93a', light: '#fffbe0' }];
+function tintMetal(src, m) {
+  const g = new Pix(src.w, src.h);
+  const dk = C(m.dark), md = C(m.mid), lt = C(m.light);
+  for (let y = 0; y < src.h; y++) for (let x = 0; x < src.w; x++) {
+    const a = src.alphaAt(x, y);
+    if (!a) continue;
+    const c = src.getc(x, y);
+    const lum = clamp((c[0] * 0.30 + c[1] * 0.59 + c[2] * 0.11) / 255, 0, 1);
+    const out = lum < 0.5 ? mixc(dk, md, lum * 2) : mixc(md, lt, (lum - 0.5) * 2);
+    g.set(x, y, [out[0], out[1], out[2], a]);
+  }
+  return g;
+}
+
+/* ============================================================
+   THE PORTRAITS — ten small landscapes, one from each kind of
+   country the game holds.  They hang in the profile panel.
+   ============================================================ */
+const AVATAR_KEYS = ['glade', 'deep', 'cloud', 'spore', 'shore',
+                     'trench', 'cinder', 'frost', 'dune', 'mesa'];
+const AVATAR_SKY = {
+  glade:  [['#8fd0ff', '#cfeaff'], ['#54924a', '#2f5636']],
+  deep:   [['#3a5a46', '#7fae74'], ['#24402e', '#16281d']],
+  cloud:  [['#7fa2f0', '#dff0ff'], ['#e6edf6', '#a8b6c8']],
+  spore:  [['#3a2c4c', '#7a5a9c'], ['#4a3a58', '#241c2c']],
+  shore:  [['#8fd0ff', '#fff4d6'], ['#5fa3dc', '#2a4a9a']],
+  trench: [['#0b1424', '#1d3a6b'], ['#12203a', '#060b14']],
+  cinder: [['#4a2418', '#c0341a'], ['#3a2c30', '#1a1214']],
+  frost:  [['#bcd8ee', '#eef6ff'], ['#e8eef8', '#aebdd2']],
+  dune:   [['#f0dca8', '#ffd06a'], ['#d9bd7e', '#a8894f']],
+  mesa:   [['#f0b878', '#ffd8a0'], ['#a4713f', '#6d4423']]
+};
+/* one portrait: a sky, a horizon and whatever stands on it */
+function avatarSprite(kind) {
+  const W = 48, H = 48;
+  const g = new Pix(W, H);
+  const r = new RNG(kind.charCodeAt(0) * 977 + kind.length * 131);
+  const pal = AVATAR_SKY[kind] || AVATAR_SKY.glade;
+  const hz = 30;
+  /* the sky, graded from the top down to the horizon */
+  const skyA = C(pal[0][0]), skyB = C(pal[0][1]);
+  const gndA = C(pal[1][0]), gndB = C(pal[1][1]);
+  for (let y = 0; y < hz; y++) g.rect(0, y, W, 1, mixc(skyA, skyB, y / hz));
+  /* the ground, graded the other way */
+  for (let y = hz; y < H; y++) g.rect(0, y, W, 1, mixc(gndA, gndB, (y - hz) / (H - hz)));
+  if (kind === 'glade') {
+    g.disc(36, 11, 5, C('#fff4d6'));
+    for (let k = 0; k < 6; k++) {
+      const x = 3 + k * 8 + r.i(-2, 2), h = r.i(8, 14);
+      g.rect(x, hz - 1, 2, 5, C('#54371f'));
+      g.poly([[x + 1, hz - h], [x - 5, hz], [x + 7, hz]], C('#2f5636'));
+      g.poly([[x + 1, hz - h + 3], [x - 3, hz - 2], [x + 5, hz - 2]], C('#54924a'));
+    }
+  } else if (kind === 'deep') {
+    for (let k = 0; k < 5; k++) {
+      const x = 2 + k * 11;
+      g.rect(x, 6, 4, H - 6, C('#24402e'));
+      g.rect(x + 1, 6, 1, H - 6, C('#3d6b40'));
+    }
+    for (let k = 0; k < 16; k++) g.set(r.i(0, W - 1), r.i(4, H - 4), C('#8fd06a'));
+  } else if (kind === 'cloud') {
+    for (const [cx, cy, cr] of [[10, 18, 7], [22, 14, 9], [34, 20, 6]])
+      g.disc(cx, cy, cr, C('#ffffff'));
+    for (let k = 0; k < 4; k++) {
+      const x = 6 + k * 11;
+      g.rect(x, hz - 12, 5, 12, C('#e6edf6'));
+      g.rect(x, hz - 14, 7, 2, C('#ffe14d'));
+    }
+  } else if (kind === 'spore') {
+    for (let k = 0; k < 4; k++) {
+      const x = 6 + k * 11, h = r.i(9, 16);
+      g.rect(x, hz - h, 3, h, C('#e8dcc0'));
+      g.disc(x + 1, hz - h, 6, C('#c9403a'));
+      for (let d = 0; d < 4; d++) g.set(x + r.i(-4, 4), hz - h + r.i(-3, 1), C('#f6efdc'));
+    }
+  } else if (kind === 'shore') {
+    g.disc(38, 10, 6, C('#ffd06a'));
+    for (let y = hz; y < H; y += 3)
+      g.rect(r.i(0, 6), y, W - r.i(0, 8), 1, C('#8fd0ff'));
+    g.poly([[4, hz], [14, hz - 10], [24, hz]], C('#c8b98c'));
+  } else if (kind === 'trench') {
+    for (let k = 0; k < 26; k++) g.set(r.i(0, W - 1), r.i(0, H - 1), C('#8fd0e8'));
+    g.disc(24, 26, 7, C('#1b2c42'));
+    g.disc(24, 26, 3, C('#6fc4a8'));
+    g.poly([[0, H], [12, hz + 2], [26, H]], C('#12203a'));
+  } else if (kind === 'cinder') {
+    g.poly([[24, 8], [6, hz + 4], [42, hz + 4]], C('#2a2028'));
+    g.poly([[24, 8], [18, 20], [30, 20]], C('#ff7a2a'));
+    for (let k = 0; k < 18; k++) g.set(r.i(4, W - 4), r.i(10, H - 6), C(r.bool(0.5) ? '#ffd06a' : '#c0341a'));
+  } else if (kind === 'frost') {
+    g.poly([[10, hz], [22, 10], [34, hz]], C('#aebdd2'));
+    g.poly([[22, 10], [27, 19], [17, 19]], C('#ffffff'));
+    for (let k = 0; k < 5; k++) {
+      const x = 4 + k * 10;
+      g.poly([[x, hz + 10], [x - 4, H], [x + 4, H]], C('#8fa8c4'));
+    }
+  } else if (kind === 'dune') {
+    g.disc(12, 12, 6, C('#ffd06a'));
+    for (let k = 0; k < 3; k++) {
+      const x = 4 + k * 15, h = r.i(7, 13);
+      g.poly([[x + 6, hz + 2 - h], [x - 2, hz + 8], [x + 14, hz + 8]], C('#a8894f'));
+      g.poly([[x + 6, hz + 2 - h], [x + 6, hz + 8], [x + 14, hz + 8]], C('#c9a86a'));
+    }
+  } else {
+    /* the mesa: a flat topped butte, a trestle, and a sky going gold */
+    g.rect(6, hz - 16, 18, 18, C('#a4713f'));
+    g.rect(6, hz - 16, 18, 2, C('#c98f52'));
+    g.rect(28, hz - 9, 14, 11, C('#8a5f38'));
+    g.rect(24, hz - 8, 20, 2, C('#7a5230'));
+    for (let x = 25; x < 44; x += 5) g.rect(x, hz - 6, 2, 8, C('#4a3220'));
+  }
+  /* a light vignette, so the picture sits in its frame */
+  for (let x = 0; x < W; x++) for (let y = 0; y < H; y++) {
+    const d = Math.max(Math.abs(x - W / 2 + 0.5), Math.abs(y - H / 2 + 0.5)) / (W / 2);
+    if (d <= 0.82) continue;
+    g.set(x, y, sh(g.getc(x, y), -(d - 0.82) * 2.2));
+  }
+  return g;
 }
 
 Art.buildGold = function () {
@@ -5039,6 +5201,7 @@ Art.steps = function () {
                     thrust: frames(4, (i, n) => soldierFrame('thrust', i, n)) };
   });
   push('THE REALM', () => {
+    Art.portrait = AVATAR_KEYS.map(k => avatarSprite(k).canvas());
     Art.map.bg = mapBackground().canvas();
     Art.map.tutorial = mapNodeSprite('tutorial').canvas();
     Art.prop.sign = prop(signSprite(), 10, 26);
@@ -5046,6 +5209,13 @@ Art.steps = function () {
     Art.map.node = ['forest', 'cloud', 'mush', 'shore', 'drowned', 'abyss', 'cinder', 'obsidian', 'molten',
                     'frost', 'glacier', 'aurora', 'dune', 'sphinx', 'suntomb']
       .map(t => mapNodeSprite(t).canvas());
+    /* the same realms again in beaten metal, one set for each prestige */
+    const nodePix = ['forest', 'cloud', 'mush', 'shore', 'drowned', 'abyss', 'cinder', 'obsidian', 'molten',
+                     'frost', 'glacier', 'aurora', 'dune', 'sphinx', 'suntomb'].map(t => mapNodeSprite(t));
+    Art.map.nodeTint = [null,
+                        nodePix.map(g => tintMetal(g, METAL[1]).canvas()),
+                        nodePix.map(g => tintMetal(g, METAL[2]).canvas()),
+                        nodePix.map(g => tintMetal(g, METAL[3]).canvas())];
     Art.map.lock = lockSprite().canvas();
     Art.map.archipelago = mapNodeSprite('archipelago').canvas();
     Art.map.isle = ['isle-snow', 'isle-fire', 'isle-desert', 'isle-forest', 'isle-mesa']

@@ -90,6 +90,19 @@ class Room {
       if (this.wet(tx, ty)) return true;
     return false;
   }
+  /* Is the straight line between two points stopped by rock?  A blade must
+     not cut through a wall, so a hit test asks this first.  The two ends are
+     left out of the walk: a creature half buried in the rock is still open to
+     a blow that reaches the part of it you can see. */
+  losBlocked(x0, y0, x1, y1) {
+    const dx = x1 - x0, dy = y1 - y0;
+    const steps = Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / 4);
+    for (let i = 1; i < steps; i++) {
+      const f = i / steps;
+      if (this.solid(Math.floor((x0 + dx * f) / TILE), Math.floor((y0 + dy * f) / TILE))) return true;
+    }
+    return false;
+  }
   /* first solid surface below a pixel column */
   groundBelow(px, py) {
     const tx = Math.floor(px / TILE);
@@ -1496,10 +1509,10 @@ World.buildVault = buildVault;
 
 /* ============================================================
    THE ISLANDS.  Cut on demand from the kind of island, which
-   one of the twenty it is, and which of its four levels.  The
-   twentieth island of a spoke is a harder place than the first.
+   one of the fifty it is, and which of its four levels.  The
+   fiftieth island of a spoke is a far harder place than the first.
    ============================================================ */
-const ISLES_PER_TYPE = 20;
+const ISLES_PER_TYPE = 50;
 const ISLE_LEVELS = 4;              /* three levels and the guardian's ground */
 const ISLE_THEME = {
   snow:   { ground: T_SNOW, top: T_SNOWTOP, plat: T_ICE, bg: 'snow', music: 'tide',
@@ -1521,7 +1534,7 @@ function buildIsle(typeKey, index, level) {
   const rng = new RNG(seed);
   const boss = level === ISLE_LEVELS - 1;
   const hard = index / (ISLES_PER_TYPE - 1);          /* 0 at the first, 1 at the last */
-  const W = boss ? 54 : 86 + Math.round(hard * 40) + level * 8;
+  const W = boss ? 54 : 86 + Math.round(hard * 60) + level * 8;
   const H = 30;
   const room = new Room({ id: 'isle', name: '', mode: 'side', w: W, h: H,
                           music: boss ? (typeKey === 'snow' ? 'bossDeep' : 'bossAsh') : th.music,
@@ -1557,8 +1570,9 @@ function buildIsle(typeKey, index, level) {
       for (let x = gx; x < gx + gw; x++) { for (let y = surf[x]; y < H; y++) room.set(x, y, T_EMPTY); surf[x] = H - 1; }
       const by = Math.min(surf[gx - 1], surf[gx + gw]) - 1;
       for (let x = gx - 1; x <= gx + gw; x++) room.set(x, by, T_WOOD);
+      /* the stilts run the whole way down to the floor of the gorge */
       room.decor.push({ kind: 'trestle', x: gx * TILE, y: by * TILE, w: (gw + 2) * TILE,
-                        h: (H - 2 - by) * TILE, layer: 0 });
+                        h: (H - by) * TILE, layer: 0 });
       for (let x = gx; x < gx + gw; x += 3)
         room.spawns.push({ type: 'coin', x: x * TILE + 8, y: (by - 2) * TILE });
     }
@@ -1589,7 +1603,7 @@ function buildIsle(typeKey, index, level) {
                       to: '@isleNext', label: 'ONWARD', kind: 'cave',
                       door: { x: exX * TILE, y: surf[exX] * TILE } });
     /* its people */
-    const n = 8 + Math.round(hard * 14) + level * 2;
+    const n = 12 + Math.round(hard * 30) + level * 3;
     for (let k = 0; k < n; k++) {
       const x = rng.i(8, W - 8);
       if (surf[x] >= H - 2) continue;

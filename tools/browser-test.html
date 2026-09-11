@@ -39,8 +39,11 @@ var iv=setInterval(function(){
     if(G.state==='title'){ Input.hitKeys['Enter']=true; return; }
     if(G.state==='files'){ var fr=fileRect(0); Input.mx=fr.x+fr.w/2; Input.my=fr.y+fr.h/2;
       Input.taps=[{id:'mouse',x:Input.mx,y:Input.my}]; Input.mhit=true; return; }
-    if(G.state==='map'){ G.tutorialDone=true; G.mapMode='realm'; G.unlocked=9; var n=World.LEVELS[0].node; Input.mx=n.x; Input.my=n.y; Input.mhit=true; return; }
-    if(G.state!=='play'&&G.state!=='dead'&&G.state!=='victory') return;
+    /* the late phases drive the chart, the profile and the wardrobe themselves */
+    var owns = phase>=903;
+    if(G.state==='map'&&!owns){ G.tutorialDone=true; G.mapMode='realm'; G.unlocked=9; var n=World.LEVELS[0].node; Input.mx=n.x; Input.my=n.y; Input.mhit=true; return; }
+    if(G.state!=='play'&&G.state!=='dead'&&G.state!=='victory'
+       &&!(owns&&(G.state==='profile'||G.state==='wardrobe'||G.state==='map'))) return;
 
     if(phase===0){                                   // free play in the glade
       Input.held['ArrowRight']=(phaseTick%4)!==0;
@@ -147,6 +150,47 @@ var iv=setInterval(function(){
       if(phaseTick===1){ G.saveGame(); openFiles(); }
       else if(phaseTick>6){ note('files ok, pct='+[0,1,2].map(function(i){return slotPercent(readSlot(i));}).join('/')
         +' state='+G.state); phase=903; phaseTick=0; }
+    } else if(phase===903){        // the profile: both pages, the name, a prestige
+      if(phaseTick===1){ G.state='play'; G.enterRoom('glade',null); G.trans=null;
+        G.xp=XP_TABLE[99]+900; G.prestige=0; G.buffTier=0; G.buffDone={};
+        openProfile('map'); G.profTab=0; }
+      else if(phaseTick===4){ var r=profPicArrow(1); Input.mx=r.x+4; Input.my=r.y+4;
+        Input.taps=[{id:'mouse',x:Input.mx,y:Input.my}]; Input.mhit=true; }
+      else if(phaseTick===6){ var r2=profEdgeArrow(1); Input.mx=r2.x+4; Input.my=r2.y+4;
+        Input.taps=[{id:'mouse',x:Input.mx,y:Input.my}]; Input.mhit=true; }
+      else if(phaseTick===8){ var r3=profNameRect(); Input.mx=r3.x+4; Input.my=r3.y+4;
+        Input.taps=[{id:'mouse',x:Input.mx,y:Input.my}]; Input.mhit=true; }
+      else if(phaseTick>10&&phaseTick<24){ Input.typed='ABCDEFGHIJKLM'.charAt(phaseTick-11); }
+      else if(phaseTick===26){ Input.hitKeys['Enter']=true; }
+      else if(phaseTick===28){ var r4=profPrestigeRect(); Input.mx=r4.x+4; Input.my=r4.y+4;
+        Input.taps=[{id:'mouse',x:Input.mx,y:Input.my}]; Input.mhit=true; }
+      else if(phaseTick===30){ var t2=profTabRect(1); Input.mx=t2.x+4; Input.my=t2.y+4;
+        Input.taps=[{id:'mouse',x:Input.mx,y:Input.my}]; Input.mhit=true; }
+      else if(phaseTick>32&&phaseTick<48){ var ci=(phaseTick-33)%(CAPE_ORDER.length+1);
+        var cr=profCapeRect(ci); Input.mx=cr.x+6; Input.my=cr.y+6;
+        Input.taps=[{id:'mouse',x:Input.mx,y:Input.my}]; Input.mhit=true; }
+      else if(phaseTick===50){ var t3=profTabRect(0); Input.mx=t3.x+4; Input.my=t3.y+4;
+        Input.taps=[{id:'mouse',x:Input.mx,y:Input.my}]; Input.mhit=true; }
+      else if(phaseTick===52){ var w=profWardRect(); Input.mx=w.x+4; Input.my=w.y+4;
+        Input.taps=[{id:'mouse',x:Input.mx,y:Input.my}]; Input.mhit=true; }
+      else if(phaseTick===56){ Input.hitKeys['Escape']=true; }
+      else if(phaseTick===60){ var d=profDoneRect(); Input.mx=d.x+4; Input.my=d.y+4;
+        Input.taps=[{id:'mouse',x:Input.mx,y:Input.my}]; Input.mhit=true; }
+      else if(phaseTick>64){ note('profile ok, name="'+accountName()+'" prestige='+G.prestige
+        +' level='+G.level0()+' cape='+G.profile.cape+' avatar='+G.account.avatar
+        +' border='+G.account.border+' state='+G.state); phase=904; phaseTick=0; }
+    } else if(phase===904){        // the chart with a prestige: the tier picker and a buffed run
+      if(phaseTick===1){ G.state='map'; G.mapMode='realm'; openMap(false);
+        G.chapter=0; G.mapScroll=0; for(var q=0;q<World.LEVELS.length;q++) G.cleared[q]=true; }
+      else if(phaseTick===4){ var b1=mapBuffRect(1); Input.mx=b1.x+4; Input.my=b1.y+4;
+        Input.taps=[{id:'mouse',x:Input.mx,y:Input.my}]; Input.mhit=true; }
+      else if(phaseTick===8){ var b2=mapBuffRect(3); Input.mx=b2.x+4; Input.my=b2.y+4;
+        Input.taps=[{id:'mouse',x:Input.mx,y:Input.my}]; Input.mhit=true; }
+      else if(phaseTick===12){ G.buffTier=1; G.level=0; G.state='play'; G.enterRoom('glade',null); }
+      else if(phaseTick===16){ note('buff ok, tier='+G.buffTier
+        +' creature hp='+(G.enemies[0]?G.enemies[0].maxHp:0)
+        +' xp x'+(Math.round(G.xpScale()*100)/100)); }
+      else if(phaseTick>20){ G.buffTier=0; phase=905; phaseTick=0; }
     } else {
       clearInterval(iv);
       note('FINAL state='+G.state+' ticks='+ticks

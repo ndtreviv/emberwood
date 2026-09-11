@@ -115,7 +115,7 @@ page in Settings.
 | Sword, part way through a roll | **Roll cut**: a low sweep that keeps the roll going |
 | Walk into a ladder | Climb it. Keep holding to go up, hold down to descend, jump to let go |
 | Space, X, Z or left click | Swing the sword |
-| Hold the sword instead of tapping | **Charge a gale.** Let go on a full charge and a blade of wind goes out, cutting through everything in a line and batting shots back |
+| Hold the sword instead of tapping | **Charge a gale.** Let go on a full charge and a blade of wind goes out, cutting through everything in a line and batting shots back. It works in the maze too, where it goes whichever of the four ways the blade points |
 | D | Dash toward the cursor (has a cooldown) |
 | F, in the air, two tiles up | Air pierce: stab straight down. No cooldown, double coins |
 | S (hold), in water | Swim freely in any direction |
@@ -124,6 +124,7 @@ page in Settings.
 | Esc, or click the shop sign (top left) | Open the shop |
 | Click the chart (top right), or Backspace | Leave the realm, back to the map |
 | Click the codes panel (left edge), or C | Open the codes box |
+| Click **PRESTIGE**, when it shows | Give back your levels for the mark. It never presses itself |
 | M | Mute |
 
 Directions are read one at a time, so any two of them hold together — up and left to jump
@@ -180,6 +181,9 @@ Both cuts keep a **close reach**. The whetstone adds a little to it, but a cap h
 reach at the last upgrade step: the flip bites 24 pixels each side of you, and the roll cut
 reaches 30 pixels ahead.
 
+Neither cut goes through rock. The blade passes round the body, not through the wall beside
+it, so a creature on the far side of a pillar stays whole until you come round to it.
+
 Both, and the air pierce with them, hit harder for every step of the **Duellist's Sigil**
 in the shop — up to three times as hard.
 
@@ -220,35 +224,121 @@ A blow against you knocks you back too, mildly: enough to feel it, and your own 
 muted for a sixth of a second before you get control again. The one exception is a spinning
 cut, which carries straight through a hit.
 
-## Your own look
+## Your profile
 
-The first time you finish the tutorial, before the realm map opens, you choose how the hero
-goes into the world. **LOOK** on the chart reopens it whenever you like, and the choice is
-kept per save file.
+**PROFILE** on the chart opens the panel that holds everything about you. It has two pages.
+
+### The PROFILE page
+
+| What | How |
+| --- | --- |
+| **Your picture** | Ten small landscapes, one from each kind of country the game holds |
+| **Your border** | Four darknesses of stone brick, and three of beaten metal a prestige opens |
+| **Your name** | Up to twelve letters. Type it, or tap it out on the built-in keyboard |
+| **Your rank** | The mark of a prestige, the level, and a bar that fills as you fight |
+| **THE WARDROBE** | The way into the shop of clothes |
+| **PRESTIGE** | Give back your levels for the mark. It waits until you pass level 100 |
+
+### The LOOK page
 
 | Row | Choices |
 | --- | --- |
 | **HAIR** | Short, long, mohawk, pigtails, bun, spikes, or shaved |
-| **COLOUR** | Eight, from chestnut through ash to plum |
+| **COLOUR** | Seven, from chestnut through ash to rose, and three of metal |
 | **CLOTHES** | A tunic, or a t-shirt and shorts — bare arms and shins |
 | **SHIRT** | Six colours, for the t-shirt |
 
-**SURPRISE ME** rolls the lot. The hero turns on the spot beside the rows, so you see every
-change as you make it.
+**SURPRISE ME** rolls the lot, and it never rolls anything a prestige has yet to open. The
+hero turns on the spot beside the rows, so you see every change as you make it.
 
 ### Mantles
 
-Finish a chapter and you earn its mantle. They hang on the same screen from the start, named
-and greyed, so you can see what is coming before you go in for it.
+Finish a chapter and you earn its mantle. Take a prestige and you earn another. All six hang
+on the same screen from the start, named and greyed, so you can see what is coming.
 
 | Mantle | Earned by | Woven as |
 | --- | --- | --- |
 | **Greenwood** | Chapter One | dark pines over a ridge of grey stone and snow |
 | **Drowned Deep** | Chapter Two | pale crests falling into deep water over sunken stone |
 | **Molten Crown** | Chapter Three | a cone of dark rock with fire running down it |
+| **Bronze Mantle** | Prestige I | beaten bronze, with a light running down it |
+| **Silver Mantle** | Prestige II | beaten silver, with a light running down it |
+| **Gold Mantle** | Prestige III | beaten gold, with a light running down it |
 
 A mantle is a rope of nine links hung from the shoulders. It **trails behind a run**,
 **streams upward through a jump or a fall**, and settles when you stand still.
+
+## Levels and prestige
+
+Every creature you put down pays **experience**. A guardian pays three quarters of its own
+health. A further realm pays more for the same work, and a buffed run pays half again for
+every step of its tier.
+
+Experience buys levels, a hundred of them. **Each level costs more than the one before it.**
+One clean pass through the game lands here:
+
+| At the end of | You are about |
+| --- | --- |
+| Chapter One | level 15 |
+| Chapter Two | level 42 |
+| Chapter Three | level 68 |
+| Chapter Four | level 88 |
+| Chapter Five | level 100 |
+
+Kill more than you must, or walk a realm twice, and you climb faster.
+
+### What colour the number is
+
+Your level and your name are written in the same colour, and the colour climbs with you.
+
+| Level | Colour |
+| --- | --- |
+| 0 to 29 | grey |
+| 30 to 59 | yellow |
+| 60 to 69 | orange |
+| 70 to 79 | bronze |
+| 80 to 89 | steel |
+| 90 to 99 | silver |
+| 100 | gold |
+
+The band from eighty to eighty nine was not given a colour in the brief, so it takes steel,
+which sits between bronze and silver.
+
+### Prestige
+
+Pass level 100 and earn one more point of experience, and a **PRESTIGE** button appears on
+the play screen. **Nothing happens until you press it.** Press it and your levels go back to
+one and the mark stays.
+
+There are **three marks**, written as Roman numerals and shown **before** the level:
+
+| Mark | Colour | What it opens |
+| --- | --- | --- |
+| **I** | bronze | bronze hair, the Bronze Regalia, a bronze border, the Bronze Mantle |
+| **II** | silver | silver hair, the Silver Regalia, a silver border, the Silver Mantle |
+| **III** | gold | gold hair, the Gold Regalia, a gold border, the Gold Mantle |
+
+All of it shines: a light runs down the hero, the cloth and the frame. **No purse buys any of
+it early.** The wardrobe says `LOCKED` and names the mark it waits on.
+
+### The buffed runs
+
+A prestige also lets you walk every realm you have already cleared a second time, harder.
+Pick the run from **THE RUN** on the chart: `-` for the plain one, then `I`, `II` and `III`.
+
+| Run | Creatures stand | Creatures hit | Guardians stand | Guardians hit |
+| --- | --- | --- | --- | --- |
+| Bronze | 3x | 1.6x | 2x | 1.6x |
+| Silver | 6x | 2.2x | 3.2x | 2.2x |
+| Gold | 10x | 3x | 5x | 3x |
+
+**The order holds however high your prestige stands.** You take the bronze run of a realm
+before its silver one, and its silver one before its gold one, even at Prestige III. Once
+bronze is done the silver one opens at once, so a high prestige never waits on anything but
+the run under it.
+
+A realm you have taken on a buffed run shows its **icon in that metal** on the chart: bronze,
+then silver, then gold.
 
 ## The tutorial
 
@@ -321,7 +411,8 @@ within 150 pixels of its mouth, so only the dark marks the way in. A low crawl l
 room of coins.
 
 Six areas make up Emberwood: forest, deep wood, a top-down maze holding the cave key, a
-cavern, an old mineshaft, and the dragon's lair. Aether City is marble ruins on the cloud
+cavern, an old mineshaft, and the dragon's lair. The maze walls stop a blade: nothing you
+swing, and no gale you throw, reaches a creature on the far side of one. Aether City is marble ruins on the cloud
 tops. Sporewood has **spring caps** that launch you past any jump.
 
 Every realm has its own track. The deep is bright and bubbly at the shore, slower and
@@ -496,8 +587,10 @@ other, kick again. It takes about twelve wall jumps and four or five seconds. No
 gets you up — a standing jump reaches four tiles, the Stormfeather Wings included.
 
 At the head of the climb sit the prize and the way home: a chest holding an artifact you do
-not own yet, and a door. Walk through the door and you come back up where you fell — it heaves
-itself out of the ground, you step out of it, and the ground takes it back.
+not own yet, and a door. Walk through the door and you come back up beside the pool that
+swallowed you: **three tiles over its surface, and over the firm lip at its edge**, so you
+come down on solid ground rather than straight back into the sand. The door heaves itself
+out of the ground under you, you step out of it, and the ground takes it back.
 
 ## The pouch
 
@@ -534,19 +627,33 @@ Beyond it lie five kinds of island, set out as a **pentagon** and chained one to
 | The Green Isles | Amethyst |
 | The Mesa Isles | Gold |
 
-There are **twenty islands of each kind**, and each island holds **three levels and its
-keeper** — four hundred levels in all. Nothing is cut until you sail there, so the islands
+There are **fifty islands of each kind**, and each island holds **three levels and its
+keeper** — a thousand levels in all. Nothing is cut until you sail there, so the islands
 cost nothing until you go.
+
+The fifty lie in one long chain. **Drag the row, roll the wheel, press the arrow keys, or
+tap the `<` and `>` buttons** to run along it. A bar under the row says how far out you are.
+The row opens on the next island you have yet to buy.
+
+An island is a harder place than any realm, and it gets harder the further out it lies. Its
+creatures stand **three times** what a plain one does at the first island and **twenty four
+times** at the fiftieth, and they hit from one and a half to four times as hard. Its keeper
+carries **3,600 health at the first island and 25,160 at the fiftieth**, stands through
+**four phases up to the twenty fifth island and five past it**, and lands every blow from
+one and a half to four times as hard. That is about a minute and a half of cutting at the
+first island and nine minutes at the fiftieth.
 
 The **Mesa Isles** carry great timber trestles over their gorges, clapboard houses with
 porches on their flats, and tumbleweed rolling across them, and they are walked by bears,
-wolves, rattlesnakes and vultures.
+wolves, rattlesnakes and vultures. The trestle stilts run the whole way down to the floor
+of the gorge.
 
 ### Shards
 
 You buy your way outward with shards of that spoke's own kind. The first island of every
-spoke is open. After that the price climbs: **two shards for the second, and twenty for the
-twentieth**.
+spoke is open. After that the price climbs: **four shards for the second, six for the third,
+and forty from the twentieth onward**. An island opens only when the shards are on hand. A
+short purse buys nothing, and you cannot skip one island to reach the next.
 
 - Every creature you kill on an island leaves **one to four shard parts**.
 - **Three parts** make one whole shard at the **smithing table**, and the forge takes
@@ -557,9 +664,10 @@ The smithing table opens from either archipelago screen.
 
 ## The wardrobe
 
-**WARDROBE** in the top left corner of the title screen opens a shop of clothes, one suit cut
-to the pattern of each of the fifteen realms. They cost coins, and the coins come out of the
-file you played last, so start a file before you go shopping.
+**THE WARDROBE** on the profile page opens a shop of clothes, one suit cut to the pattern of
+each of the fifteen realms, and three more that only a prestige opens. **WARDROBE** in the
+top left corner of the title screen opens the same shop. They cost coins, and the coins come
+out of the file you played last, so start a file before you go shopping.
 
 A suit dresses the whole body — shirt, legs and trim — and replaces the plain shirt colour.
 Click a suit you own to wear it, and click it again to take it off.
@@ -581,6 +689,11 @@ Click a suit you own to wear it, and click it again to take it off.
 | The Dune Sea | Sandstride | 19,000 |
 | Sphinx Hollow | Riddleweave | 24,000 |
 | The Sun Tomb | Sunregalia | 30,000 |
+| Prestige I | Bronze Regalia | 20,000 |
+| Prestige II | Silver Regalia | 40,000 |
+| Prestige III | Gold Regalia | 60,000 |
+
+The last three shine, and no purse buys one before its mark is yours.
 
 Enemies get sturdier and drop far more with each chapter, so the deeper shop stock stays
 within reach. Aether City pays a coin more per kill than anywhere else.
@@ -768,3 +881,7 @@ results into the page:
 ```
 
 Read the `<pre id="err">` block in the output. `crash=NONE` means the run was clean.
+
+The run covers the profile pages as well: it steps the picture and the border, types a name,
+takes a prestige, wears a mantle, opens the wardrobe, picks a buffed run on the chart, and
+walks a realm at that tier.

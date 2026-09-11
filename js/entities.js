@@ -340,7 +340,9 @@ class Player {
   get charged() { return this.chargeT >= CHARGE_FULL; }
   updateCharge(dt) {
     this.chargeCd = Math.max(0, this.chargeCd - dt);
-    const may = !this.dead && !this.heldBy && G.room.mode === 'side' &&
+    /* the gale is thrown in the maze too, where it goes the way you face */
+    const may = !this.dead && !this.heldBy &&
+                (G.room.mode === 'side' || G.room.mode === 'top') &&
                 this.dashT <= 0 && this.pierceT <= 0 && !this.onLadder && !this.swimming;
     if (Input.act('attack') && may && this.chargeCd <= 0) {
       const was = this.charged;
@@ -367,24 +369,33 @@ class Player {
     if (this.chargeT >= CHARGE_FULL && may) this.releaseCharge();
     this.chargeT = 0; this.chargeRang = false;
   }
+  /* which way a gale goes: along the ground from the side, and at whatever
+     the blade points to in the maze */
+  galeAim() {
+    if (G.room.mode !== 'top') return { x: this.face, y: 0 };
+    const d = this.topDir;
+    return { x: [0, -1, 0, 1][d], y: [1, 0, -1, 0][d] };
+  }
   releaseCharge() {
     this.chargeCd = 0.45;
     this.atkT = 0.001; this.atkHit = new Set(); this.atkCd = 0.3;
     const dmg = Math.max(2, Math.round(this.atkDmg * 2));
-    G.waves.push(new WindSwipe(this.cx + this.face * 10, this.cy, this.face, dmg));
+    const a = this.galeAim();
+    G.waves.push(new WindSwipe(this.cx + a.x * 10, this.cy + a.y * 10, a, dmg));
     /* the gale carries the emberheart fire half again as far */
-    if (this.up.emberheart > 0 && G.room.mode === 'side') {
-      G.waves.push(new Wave(this.cx + this.face * 12, this.cy, this.face, this.atkDmg, GALE_RANGE));
+    if (this.up.emberheart > 0) {
+      G.waves.push(new Wave(this.cx + a.x * 12, this.cy + a.y * 12, a, this.atkDmg, GALE_RANGE));
       Snd.fire();
     }
-    if (this.grounded) this.vx += this.face * 1.4;
+    if (this.grounded && G.room.mode === 'side') this.vx += this.face * 1.4;
     Snd.swing(); Snd.spinCut(); G.shake(5); G.hitStop(0.05);
     G.texts.push(new FloatText(this.cx, this.y - 8, 'GALE', '#dff0ff'));
     for (let i = 0; i < 22; i++) {
-      const a = rr(-0.7, 0.7);
+      const sp = rr(3, 7), off = rr(-0.7, 0.7);
+      const c = Math.cos(off), sn = Math.sin(off);
       G.particles.push(new Particle({
-        x: this.cx + this.face * 10, y: this.cy + rr(-8, 8),
-        vx: this.face * Math.cos(a) * rr(3, 7), vy: Math.sin(a) * rr(2, 5),
+        x: this.cx + a.x * 10 + rr(-8, 8) * a.y, y: this.cy + a.y * 10 + rr(-8, 8) * a.x,
+        vx: (a.x * c - a.y * sn) * sp, vy: (a.x * sn + a.y * c) * sp,
         life: rr(0.2, 0.5), col: '#ffffff', col2: '#8fd0ff', size: rr(1, 2.6), grav: 0, drag: 0.92
       }));
     }
@@ -665,6 +676,8 @@ class Player {
     for (const e of G.enemies) {
       if (e.dead || this.spinHit.has(e)) continue;
       if (!rectsOverlap(box, e.box())) continue;
+      /* the blade goes round the body, not through the rock beside it */
+      if (!this.clearHit(box, e.box())) continue;
       this.spinHit.add(e);
       e.hurt(this.specialDmg, this.cx, this.cy, 2);  /* 2 = double the coin drop */
       struck = true; G.tutMark('fight');
@@ -674,6 +687,7 @@ class Player {
       if (pr.dead || pr.friendly || typeof pr.vx !== 'number') continue;
       if (this.spinHit.has(pr)) continue;
       if (!rectsOverlap(box, { x: pr.x - 8, y: pr.y - 8, w: 16, h: 16 })) continue;
+      if (!this.clearHit(box, { x: pr.x - 8, y: pr.y - 8, w: 16, h: 16 })) continue;
       this.spinHit.add(pr);
       deflectShot(pr, this.specialDmg * 2);
       G.addCombo(); G.tutMark('parry');
@@ -1326,6 +1340,16 @@ class Player {
     }
   }
 
+  /* Where a blade and a body meet, and whether rock stands in the way.
+     The test aims at the middle of the overlap, not at the middle of the
+     creature: that is the part of it the blade actually touches. */
+  clearHit(box, target) {
+    const room = G.room;
+    if (!room || !room.losBlocked) return true;
+    const x0 = Math.max(box.x, target.x), x1 = Math.min(box.x + box.w, target.x + target.w);
+    const y0 = Math.max(box.y, target.y), y1 = Math.min(box.y + box.h, target.y + target.h);
+    return !room.losBlocked(this.cx, this.cy, (x0 + x1) / 2, (y0 + y1) / 2);
+  }
   swordBox() {
     const t = this.atkT;
     if (t <= 0.06 || t > 0.22) return null;
@@ -1342,9 +1366,12 @@ class Player {
     const box = this.swordBox();
     if (!box) return;
     let struck = false;
+    /* seen from above, the maze walls are walls: a blade stops at them */
+    const walled = G.room.mode === 'top';
     for (const e of G.enemies) {
       if (e.dead || this.atkHit.has(e)) continue;
       if (!rectsOverlap(box, e.box())) continue;
+      if (walled && !this.clearHit(box, e.box())) continue;
       this.atkHit.add(e);
       e.hurt(this.atkDmg, this.cx, this.cy);
       struck = true; G.tutMark('fight');
@@ -1354,6 +1381,7 @@ class Player {
       if (pr.dead || pr.friendly || typeof pr.vx !== 'number') continue;
       if (this.atkHit.has(pr)) continue;
       if (!rectsOverlap(box, { x: pr.x - 8, y: pr.y - 8, w: 16, h: 16 })) continue;
+      if (walled && !this.clearHit(box, { x: pr.x - 8, y: pr.y - 8, w: 16, h: 16 })) continue;
       this.atkHit.add(pr);
       deflectShot(pr, this.atkDmg * 2);
       G.addCombo(); G.tutMark('parry');
@@ -1445,7 +1473,6 @@ class Player {
     const flick = this.invuln > 0 && Math.floor(this.invuln * 22) % 2 === 0;
     if (flick) return;
     this.drawCape(c2);                   /* the cloth hangs behind the body */
-    void 0;
     const img = this.currentSprite();
     const flip = isTopAnim ? false : this.face < 0;
     /* the roll spins a full turn, so the tucked body reads as tumbling */
@@ -1458,9 +1485,11 @@ class Player {
         turn = 1 - clamp(this.spinT / dur, 0, 1); dir = this.spinDir;
       }
       blit(c2, img, sx, sy - 5, anchor.x, anchor.y - 5, flip, 1, 1, dir * turn * TAU);
+      drawHeroShine(c2, img, sx, sy - 5, anchor.x, anchor.y - 5, flip);
       return;
     }
     blit(c2, img, sx, sy, anchor.x, anchor.y, flip, 1, 1, 0);
+    drawHeroShine(c2, img, sx, sy, anchor.x, anchor.y, flip);
     this.drawBubble(c2);
   }
   /* Under the Sunken Depths you breathe out of a glass bubble.  It sits over
@@ -1689,6 +1718,8 @@ class Enemy {
     }));
     const n = Math.max(1, Math.round((this.coinDrop || 2) * (this.coinMult || 1) * G.coinScale() * G.comboMult())) + G.coinBonus();
     G.payOut(n, this.cx, this.cy);
+    /* and it pays experience as well as coins */
+    if (G.giveXp) G.giveXp(xpFor(this) * G.xpScale(), this.cx, this.cy);
     /* on an island every creature leaves a part or four of its own shard */
     if (G.isleRun && G.dropShardParts) G.dropShardParts(ri(1, 4));
   }
@@ -2984,20 +3015,24 @@ const ISLE_BOSS_ART = {
   forest: ['tideWarden', 'kraken', 'leviathan'],
   mesa: ['ashTitan', 'duneMaw', 'rimeColossus']
 };
+/* the three shapes a keeper may take are spread over the fifty islands */
 function isleBossKey(kind, tier) {
   const list = ISLE_BOSS_ART[kind] || ISLE_BOSS_ART.forest;
-  return list[Math.min(list.length - 1, Math.floor(tier / 7))];
+  return list[Math.min(list.length - 1, Math.floor(tier / 17))];
 }
 class Guardian extends Enemy {
-  constructor(x, y, key) {
+  /* `extra` lets the room that raises a guardian ask for more than the table
+     gives it: a heavier blow, or more phases to stand through. */
+  constructor(x, y, key, extra) {
     let cfg = GUARDIANS[key];
     /* A guardian may hit harder than its plain numbers say.  The multiplier
        is folded in once, here, so every blow it lands carries it. */
-    const mul = cfg.dmgMul || 1;
-    if (mul !== 1) {
+    const mul = (cfg.dmgMul || 1) * ((extra && extra.dmgMul) || 1);
+    const phases = (extra && extra.phases) || cfg.phases;
+    if (mul !== 1 || phases !== cfg.phases) {
       const up = n => Math.max(1, Math.round(n * mul));
       cfg = Object.assign({}, cfg, {
-        touch: up(cfg.touch || 2),
+        phases: phases,
         graspDmg: cfg.graspDmg === undefined ? undefined : up(cfg.graspDmg),
         proj: Object.assign({}, cfg.proj, { dmg: up(cfg.proj.dmg) })
       });
@@ -3222,7 +3257,7 @@ class Guardian extends Enemy {
           for (let k = 0; k < n; k++) {
             const bx = clamp(p.cx + (k ? rr(-70, 70) : 0), 30, G.room.pxW() - 30);
             const by = p.cy + (k ? rr(-16, 16) : 0);
-            G.waves.push(new Maw(bx, by, cfg.touch || 6, cfg.proj.col, cfg.proj.col2));
+            G.waves.push(new Maw(bx, by, this.dm(cfg.touch || 6), cfg.proj.col, cfg.proj.col2));
           }
           Snd.gulp(); G.shake(4);
         }
@@ -3357,7 +3392,7 @@ class Guardian extends Enemy {
           x: this.x - this.face * 20, y: this.y - rr(4, 40), vx: -this.face * rr(0.6, 2), vy: rr(-1, 0.4),
           life: rr(0.2, 0.5), col: cfg.proj.col, col2: cfg.proj.col2, size: rr(1, 2.6), grav: 0.02
         }));
-        this.touchPlayer(cfg.touch || 2);
+        this.touchPlayer(this.dm(cfg.touch || 2));
         break;
       }
       case 'slam': {
@@ -3388,7 +3423,7 @@ class Guardian extends Enemy {
       if (this.state === 'rest' || this.state === 'sleep') { this.slammed = false; this.nextAttack(); }
       else { this.state = 'rest'; this.mode = 'idle'; this.stateT = 1.0 / sp; this.slammed = false; }
     }
-    this.touchPlayer(cfg.touch || 2);
+    this.touchPlayer(this.dm(cfg.touch || 2));
   }
   draw(c2) {
     const set = Art[this.cfg.art];
@@ -3790,27 +3825,34 @@ class Crusher {
    everything it passes, and bats shots back on its way. */
 class WindSwipe {
   constructor(x, y, dir, dmg) {
-    this.x = x; this.y = y; this.dir = dir; this.dmg = dmg;
+    const a = aimVec(dir);
+    this.x = x; this.y = y; this.dx = a.x; this.dy = a.y; this.dir = a.x || 1;
+    this.dmg = dmg;
     this.t = 0; this.life = 1.05; this.dead = false; this.hit = new Set();
     this.speed = 4.4;
     this.range = GALE_RANGE; this.gone = 0;
   }
   box() {
     const grow = 1 + this.t * 0.9;
-    return { x: this.x - 14, y: this.y - 22 * grow, w: 28, h: 44 * grow };
+    /* the blade of air stands across the way it goes */
+    const across = 22 * grow, along = 14;
+    const w = this.dy === 0 ? along : across, h = this.dy === 0 ? across : along;
+    return { x: this.x - w, y: this.y - h, w: w * 2, h: h * 2 };
   }
   update(dt) {
     this.t += dt; this.life -= dt;
     let step = this.speed * dt * 60;
     if (this.gone + step >= this.range) { step = this.range - this.gone; this.dead = true; }
-    this.x += this.dir * step;
+    this.x += this.dx * step; this.y += this.dy * step;
     this.gone += step;
     const box = this.box();
+    const walled = G.room.mode === 'top';
     for (const en of G.enemies) {
       if (en.dead || this.hit.has(en)) continue;
       if (!rectsOverlap(box, en.box())) continue;
+      if (walled && G.room.losBlocked(this.x, this.y, en.cx, en.cy)) continue;
       this.hit.add(en);
-      en.hurt(this.dmg, this.x - this.dir * 20, this.y);
+      en.hurt(this.dmg, this.x - this.dx * 20, this.y - this.dy * 20);
       G.hitStop(0.04);
     }
     for (const pr of G.projectiles) {
@@ -3821,12 +3863,17 @@ class WindSwipe {
       deflectShot(pr, this.dmg);
       Snd.parry();
     }
-    for (let i = 0; i < 2; i++) G.particles.push(new Particle({
-      x: this.x + rr(-10, 10), y: this.y + rr(-20, 20),
-      vx: this.dir * rr(1, 3.4), vy: rr(-0.8, 0.8), life: rr(0.12, 0.3),
-      col: '#ffffff', col2: '#8fd0ff', size: rr(1, 2.4), grav: 0, drag: 0.9
-    }));
-    if (G.room.solidPx(this.x + this.dir * 8, this.y) || this.life <= 0) this.dead = true;
+    /* the air scatters across the blade and runs on with it */
+    for (let i = 0; i < 2; i++) {
+      const across = rr(-20, 20), along = rr(-10, 10), sp = rr(1, 3.4), drift = rr(-0.8, 0.8);
+      G.particles.push(new Particle({
+        x: this.x - this.dy * across + this.dx * along,
+        y: this.y + this.dx * across + this.dy * along,
+        vx: this.dx * sp - this.dy * drift, vy: this.dy * sp + this.dx * drift,
+        life: rr(0.12, 0.3), col: '#ffffff', col2: '#8fd0ff', size: rr(1, 2.4), grav: 0, drag: 0.9
+      }));
+    }
+    if (G.room.solidPx(this.x + this.dx * 8, this.y + this.dy * 8) || this.life <= 0) this.dead = true;
   }
   draw(c2) {
     const k = clamp(1 - this.life / 1.05, 0, 1);
@@ -3834,14 +3881,16 @@ class WindSwipe {
     c2.save();
     c2.globalAlpha = (1 - k) * 0.95;
     c2.globalCompositeOperation = 'lighter';
-    /* three crescents, one inside the next */
+    /* three crescents, one inside the next, turned to face the way it goes */
+    const ca = this.dx, sa = this.dy;
     for (let ring = 0; ring < 3; ring++) {
       const r = (13 + ring * 6) * grow;
       c2.fillStyle = ring === 0 ? '#ffffff' : (ring === 1 ? '#dff0ff' : '#8fd0ff');
       for (let step = 0; step <= 22; step++) {
         const ang = -1.25 + (step / 22) * 2.5;
-        const px = this.x + this.dir * Math.cos(ang) * r * 0.55;
-        const py = this.y + Math.sin(ang) * r;
+        const ux = Math.cos(ang) * r * 0.55, uy = Math.sin(ang) * r;
+        const px = this.x + ux * ca - uy * sa;
+        const py = this.y + ux * sa + uy * ca;
         c2.fillRect(Math.round(px), Math.round(py), 2, 2);
       }
     }
@@ -4372,9 +4421,16 @@ class FirePillar {
    seven and a half. Both hold, whatever the whetstone step. */
 const EMBER_RANGE = TILE * 5;
 const GALE_RANGE = TILE * 7.5;
+/* a direction given either as a sign along the ground or as a vector */
+function aimVec(d) {
+  if (typeof d === 'number') return { x: d, y: 0 };
+  return { x: d.x, y: d.y };
+}
 class Wave {
   constructor(x, y, dir, dmg, range) {
-    this.x = x; this.y = y; this.dir = dir; this.dmg = dmg;
+    const a = aimVec(dir);
+    this.x = x; this.y = y; this.dx = a.x; this.dy = a.y; this.dir = a.x || 1;
+    this.dmg = dmg;
     this.range = range || EMBER_RANGE;
     this.gone = 0;
     this.life = 1.1; this.dead = false; this.t = 0; this.hit = new Set();
@@ -4384,11 +4440,14 @@ class Wave {
     /* the last step is cut short, so the reach is exact */
     let step = 4.2 * dt * 60;
     if (this.gone + step >= this.range) { step = this.range - this.gone; this.dead = true; }
-    this.x += this.dir * step;
+    this.x += this.dx * step; this.y += this.dy * step;
     this.gone += step;
+    const box = { x: this.x - 8, y: this.y - 13, w: 16, h: 26 };
+    const walled = G.room.mode === 'top';
     for (const en of G.enemies) {
       if (en.dead || this.hit.has(en)) continue;
-      if (!rectsOverlap({ x: this.x - 8, y: this.y - 13, w: 16, h: 26 }, en.box())) continue;
+      if (!rectsOverlap(box, en.box())) continue;
+      if (walled && G.room.losBlocked(this.x, this.y, en.cx, en.cy)) continue;
       this.hit.add(en);
       en.hurt(this.dmg, this.x, this.y);
     }
@@ -4396,12 +4455,45 @@ class Wave {
       x: this.x + rr(-5, 5), y: this.y + rr(-11, 11), vx: -this.dir * rr(0.2, 1), vy: rr(-0.5, 0.2),
       life: rr(0.16, 0.4), col: '#ffd06a', col2: '#8a2410', size: rr(1.4, 2.8), grav: -0.01, type: 'fire'
     }));
-    if (G.room.solidPx(this.x + this.dir * 6, this.y) || this.life <= 0) this.dead = true;
+    if (G.room.solidPx(this.x + this.dx * 6, this.y + this.dy * 6) || this.life <= 0) this.dead = true;
   }
   draw(c2) {
     const f = Art.item.wave[Math.floor(this.t / 0.06) % 4];
-    blit(c2, f, this.x, this.y, 11, 13, this.dir < 0);
+    if (this.dy === 0) { blit(c2, f, this.x, this.y, 11, 13, this.dx < 0); return; }
+    /* thrown up or down, the fire turns with it */
+    c2.save();
+    c2.translate(Math.round(this.x), Math.round(this.y));
+    c2.rotate(this.dy > 0 ? Math.PI / 2 : -Math.PI / 2);
+    blit(c2, f, 0, 0, 11, 13, false);
+    c2.restore();
   }
+}
+
+/* ============================================================
+   THE SHINE.  Bronze, silver and gold gear catches a light that
+   runs down the body.  The sprite is drawn a second time inside
+   a moving band, so only the hero lights up, never the ground.
+   ============================================================ */
+function drawHeroShine(c2, img, x, y, ax, ay, flip) {
+  if (!G.heroShines || !G.heroShines()) return;
+  const w = img.width, h = img.height;
+  const left = Math.round(x - (flip ? w - ax : ax));
+  const top = Math.round(y - ay);
+  /* the band runs from above the head to below the boots and back again */
+  const span = h + 26;
+  const k = ((G.t * 0.55) % 1) * span - 13;
+  c2.save();
+  c2.beginPath();
+  c2.moveTo(left - 4, top + k);
+  c2.lineTo(left + w + 4, top + k - 10);
+  c2.lineTo(left + w + 4, top + k - 2);
+  c2.lineTo(left - 4, top + k + 8);
+  c2.closePath();
+  c2.clip();
+  c2.globalCompositeOperation = 'lighter';
+  c2.globalAlpha = 0.5;
+  blit(c2, img, x, y, ax, ay, flip, 1, 1, 0);
+  c2.restore();
 }
 
 /* ---------- the Mother Spore ---------- */
