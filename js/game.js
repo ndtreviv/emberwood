@@ -1002,17 +1002,21 @@ function frame(now) {
   try {
     updatePad();
     /* A casket on the screen holds it: nothing under it takes a tap until
-       you have opened it and put what was in it away. */
-    if (updateBoxShow(dt)) { render(); Input.endFrame(); return; }
-    if (G.state === 'load') updateLoad(dt);
-    else if (G.state === 'title') updateTitle(dt);
-    else if (G.state === 'wardrobe') updateWardrobe(dt);
-    else if (G.state === 'archipelago') updateArchipelago(dt);
-    else if (G.state === 'store') updateStore(dt);
-    else if (G.state === 'files') updateFiles(dt);
-    else if (G.state === 'profile') updateProfile(dt);
-    else if (G.state === 'map') updateMap(dt);
-    else updatePlay(dt);
+       you have opened it and put what was in it away.  It only stands in
+       front of the screen beneath: the frame itself runs on as it always
+       does, and every path below still reaches the one render and the one
+       request for the next frame. */
+    if (!updateBoxShow(dt)) {
+      if (G.state === 'load') updateLoad(dt);
+      else if (G.state === 'title') updateTitle(dt);
+      else if (G.state === 'wardrobe') updateWardrobe(dt);
+      else if (G.state === 'archipelago') updateArchipelago(dt);
+      else if (G.state === 'store') updateStore(dt);
+      else if (G.state === 'files') updateFiles(dt);
+      else if (G.state === 'profile') updateProfile(dt);
+      else if (G.state === 'map') updateMap(dt);
+      else updatePlay(dt);
+    }
     render();
   } catch (err) {
     reportCrash(err);
