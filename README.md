@@ -766,7 +766,18 @@ own icon on a plate of its rank**, so the tier reads before the words do.
 Ember Wyrm of the first realm leaves **5**. The Pharaoh of the last leaves **100**. Every
 guardian between them falls on a curve between the two.
 
-Rubies buy nothing but caskets, and a casket holds one artifact you do not own yet:
+Rubies buy nothing but caskets. **A casket holds three artifacts** you do not own yet, and
+it does not open on the shelf:
+
+1. Buy one and **it comes to the middle of the screen, still shut**, shivering. Nothing under
+   it takes a tap while it stands there.
+2. **Click it** and the lid goes. The three inside are yours at that moment, and they rise
+   into place one after another on cards edged in the colour of their rank.
+3. **Click again** to put them away.
+
+A **red mark** then sits beside the pouch until you open it and look at what you have.
+
+Each of the three is rolled on the casket's own table:
 
 | Casket | Rubies | Rare | Super rare | Legendary | Mythic |
 | --- | --- | --- | --- | --- | --- |
@@ -775,6 +786,10 @@ Rubies buy nothing but caskets, and a casket holds one artifact you do not own y
 | **King's** | 100 | 30% | 58% | **10%** | **2%** |
 
 Only the King's Casket can hold **the Longbow**.
+
+Because three are rolled, a whole casket is likelier than any one of its three. Over four
+thousand openings apiece: **at least one legendary** came out of a worn casket 2.9% of the
+time, a sealed one 13.6%, and a King's 26.8%, and the King's gave up the Longbow 6.1%.
 
 ## The longbow
 

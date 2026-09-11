@@ -109,7 +109,7 @@ function packSave() {
     v: 1, used: true,
     tutorialDone: G.tutorialDone,
     unlocked: G.unlocked, cleared: G.cleared.slice(), level: G.level,
-    xp: G.xp | 0, prestige: G.prestige | 0, rubies: G.rubies | 0,
+    xp: G.xp | 0, prestige: G.prestige | 0, rubies: G.rubies | 0, pouchNew: G.pouchNew | 0,
     arrows: G.arrows | 0, boosts: G.boosts ? G.boosts.slice() : [],
     buffDone: Object.assign({}, G.buffDone || {}), buffTier: G.buffTier | 0,
     account: Object.assign({}, G.account || {}),
@@ -154,6 +154,7 @@ function applySave(d) {
   G.cleared = (d.cleared || []).slice();
   G.xp = Math.max(0, d.xp | 0);
   G.rubies = Math.max(0, d.rubies | 0);
+  G.pouchNew = Math.max(0, d.pouchNew | 0);
   G.arrows = Math.max(0, d.arrows | 0);
   G.boosts = (d.boosts || []).slice();
   G.prestige = clamp(d.prestige | 0, 0, PRESTIGE_MAX);
@@ -986,6 +987,9 @@ function frame(now) {
   /* One bad frame must never kill the loop: catch it, show it, keep going. */
   try {
     updatePad();
+    /* A casket on the screen holds it: nothing under it takes a tap until
+       you have opened it and put what was in it away. */
+    if (updateBoxShow(dt)) { render(); Input.endFrame(); return; }
     if (G.state === 'load') updateLoad(dt);
     else if (G.state === 'title') updateTitle(dt);
     else if (G.state === 'wardrobe') updateWardrobe(dt);
@@ -1059,7 +1063,7 @@ function startGame(slot) {
   G.roomFlags = {}; G.flags = {}; G.levelState = {};
   G.unlocked = 1; G.cleared = []; G.level = 0;
   G.xp = 0; G.prestige = 0; G.buffDone = {}; G.buffTier = 0;
-  G.rubies = 0; G.arrows = 0; G.boosts = [];
+  G.rubies = 0; G.arrows = 0; G.boosts = []; G.pouchNew = 0; G.boxShow = null;
   G.account = newAccount();
   G.trans = null;
   G.tutorialDone = false;
@@ -1296,7 +1300,8 @@ function updatePlay(dt) {
   G.overPouchIcon = Input.over(pchR) && !G.shopOpen && !G.pouchOpen && G.roomId !== 'tutorial';
   if (G.state === 'play' && G.roomId !== 'tutorial' && !G.shopOpen && !G.pouchOpen && !G.trans &&
       Input.tap(pchR) && !tapOnExitBtn) {
-    G.pouchOpen = true; G.pouchSel = -1; G.pouchSlotSel = -1; Snd.ui(); Snd.musicLevel(0.16, 0.3);
+    G.pouchOpen = true; G.pouchSel = -1; G.pouchSlotSel = -1; G.pouchNew = 0;
+    Snd.ui(); Snd.musicLevel(0.16, 0.3);
     return;
   }
   if (G.pouchOpen) { updatePouch(dt); return; }
@@ -2401,11 +2406,14 @@ G.spendShards = function (n) {
   }
   return true;
 };
-/* ---------- a casket ---------- */
-G.openBox = function (key) {
-  const box = BOXES.find(b => b.key === key);
-  if (!box) return false;
-  /* the roll: a rank first, then one of that rank you do not already own */
+/* ============================================================
+   A CASKET.  Three things come out of one.  It does not open on
+   the shelf: it comes to the middle of the screen shut, and you
+   open it yourself.
+   ============================================================ */
+const BOX_ITEMS = 3;
+/* one roll on a casket's table, avoiding what has already come out of it */
+function rollBoxItem(box, taken) {
   const r = Math.random();
   let acc = 0, rank = 2;
   for (const k of [5, 4, 3, 2]) {
@@ -2413,20 +2421,167 @@ G.openBox = function (key) {
     if (r < acc) { rank = k; break; }
   }
   const pick = (want) => {
-    const pool = ARTIFACTS.filter(a => a.rank === want && !G.ownsArtifact(a.key));
+    const pool = ARTIFACTS.filter(a => a.rank === want && !G.ownsArtifact(a.key) && !taken[a.key]);
     return pool.length ? pool[ri(0, pool.length - 1)] : null;
   };
   let got = pick(rank);
-  /* nothing of that rank left, so walk down until something is */
+  /* nothing of that rank left, so look below it and then above it */
   for (let k = rank - 1; !got && k >= 2; k--) got = pick(k);
   for (let k = rank + 1; !got && k <= 5; k++) got = pick(k);
-  if (!got) { G.storeMsg = 'YOU HOLD EVERY ARTIFACT ALREADY'; G.storeMsgT = 2.6; Snd.uiBad(); return false; }
-  G.giveArtifact(got.key);
-  G.storeMsg = got.name + '  -  ' + RANK_NAME[got.rank];
-  G.storeMsgT = 4;
-  Snd.unlock(); G.flash(0.5);
+  return got;
+}
+G.openBox = function (key) {
+  const box = BOXES.find(b => b.key === key);
+  if (!box) return false;
+  const tier = BOXES.indexOf(box);
+  const taken = {}, items = [];
+  for (let i = 0; i < BOX_ITEMS; i++) {
+    const got = rollBoxItem(box, taken);
+    if (!got) break;
+    taken[got.key] = 1;
+    items.push(got);
+  }
+  if (!items.length) {
+    G.storeMsg = 'YOU HOLD EVERY ARTIFACT ALREADY'; G.storeMsgT = 2.6; Snd.uiBad();
+    return false;
+  }
+  /* it comes to the middle of the screen, still shut */
+  G.boxShow = { tier: tier, name: box.name, items: items, phase: 'shut', t: 0, given: false };
+  Snd.buy();
   return true;
 };
+/* ---------- the ceremony ---------- */
+const BOX_CARD_W = 102, BOX_CARD_H = 104;
+function boxCardRect(i, n) {
+  const span = n * (BOX_CARD_W + 8) - 8;
+  const x = VW / 2 - span / 2 + i * (BOX_CARD_W + 8);
+  return { x: x, y: VH / 2 - BOX_CARD_H / 2 + 6, w: BOX_CARD_W, h: BOX_CARD_H };
+}
+/* true while the casket has the screen: nothing under it takes a tap */
+function boxShowBusy() { return !!G.boxShow; }
+function updateBoxShow(dt) {
+  const b = G.boxShow;
+  if (!b) return false;
+  b.t += dt;
+  const clicked = Input.mhit || Input.hit('Enter') || Input.hit('Space') || Input.actHit('attack');
+  if (b.phase === 'shut') {
+    /* it shivers a little the longer it waits */
+    if (Math.random() < dt * 8) G.particles.push(new Particle({
+      x: VW / 2 + rr(-20, 20), y: VH / 2 + rr(-14, 14), vx: rr(-0.4, 0.4), vy: rr(-1, -0.2),
+      life: rr(0.4, 1), col: rpick(['#ffeec0', '#ffd04a']), col2: '#b8862f',
+      size: rr(1, 2.2), grav: -0.01
+    }));
+    if (clicked && b.t > 0.25) {
+      b.phase = 'burst'; b.t = 0;
+      Snd.unlock(); G.flash(0.8); G.shake(7);
+      /* what is inside is yours the moment the lid goes */
+      if (!b.given) {
+        b.given = true;
+        for (const it of b.items) G.giveArtifact(it.key);
+        G.pouchNew = (G.pouchNew | 0) + b.items.length;
+        G.saveGame();
+      }
+      for (let i = 0; i < 90; i++) G.particles.push(new Particle({
+        x: VW / 2, y: VH / 2, vx: rr(-5, 5), vy: rr(-6, 1.4), life: rr(0.5, 1.4),
+        col: rpick(['#ffeec0', '#ffd04a', '#ffffff']), col2: '#b8862f',
+        size: rr(1, 3.2), grav: 0.06, drag: 0.94
+      }));
+    }
+    return true;
+  }
+  if (b.phase === 'burst') {
+    if (b.t >= 0.55) { b.phase = 'open'; b.t = 0; }
+    return true;
+  }
+  /* open: the three stand there until you send them away */
+  if (clicked && b.t > 0.35) { G.boxShow = null; Snd.ui(); }
+  return true;
+}
+function drawBoxShow() {
+  const b = G.boxShow;
+  if (!b) return;
+  ctx.save();
+  ctx.fillStyle = 'rgba(8,6,16,0.78)';
+  ctx.fillRect(0, 0, VW, VH);
+  ctx.restore();
+  for (const pa of G.particles) pa.draw(ctx);
+  const shelf = Art.item.shop || {};
+  const img = shelf.casket && shelf.casket[b.tier];
+
+  if (b.phase === 'shut' || b.phase === 'burst') {
+    const k = b.phase === 'burst' ? clamp(b.t / 0.55, 0, 1) : 0;
+    const bob = b.phase === 'shut' ? Math.sin(b.t * 3) * 2 : 0;
+    const shake = b.phase === 'shut' ? Math.sin(b.t * 26) * (0.6 + Math.sin(b.t * 1.7) * 0.6) : 0;
+    const sc = 3 + k * 1.4;
+    ctx.save();
+    ctx.globalAlpha = 1 - k * 0.9;
+    ctx.translate(Math.round(VW / 2 + shake), Math.round(VH / 2 + bob));
+    ctx.scale(sc, sc);
+    /* a light behind it, brighter as it gives */
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.16 + Math.sin(b.t * 5) * 0.06 + k * 0.7;
+    ctx.fillStyle = ['#c9a06a', '#cfd8e6', '#f0c93a'][b.tier];
+    ctx.beginPath(); ctx.arc(0, 0, 13, 0, TAU); ctx.fill();
+    ctx.restore();
+    if (img) ctx.drawImage(img, -8, -8);
+    ctx.restore();
+    if (b.phase === 'shut') {
+      drawText(ctx, b.name, VW / 2, VH / 2 - 44, '#ffeec0', 2, 'center', '#2a1a10');
+      ctx.save();
+      ctx.globalAlpha = 0.55 + Math.sin(b.t * 4) * 0.3;
+      drawText(ctx, G.mobile ? 'TAP TO OPEN IT' : 'CLICK TO OPEN IT',
+               VW / 2, VH / 2 + 40, '#ffd04a', 1, 'center', '#2a1a10');
+      ctx.restore();
+    }
+    return;
+  }
+
+  /* open: the three of them, rising into place one after another */
+  drawText(ctx, 'THE CASKET HELD', VW / 2, 18, '#ffeec0', 2, 'center', '#2a1a10');
+  b.items.forEach((it, i) => {
+    const r = boxCardRect(i, b.items.length);
+    const up = clamp((b.t - i * 0.14) / 0.3, 0, 1);
+    if (up <= 0) return;
+    const ease = 1 - Math.pow(1 - up, 3);
+    const y = r.y + (1 - ease) * 26;
+    ctx.save();
+    ctx.globalAlpha = ease;
+    ctx.fillStyle = 'rgba(16,12,26,0.94)';
+    ctx.fillRect(r.x, y, r.w, r.h);
+    ctx.fillStyle = RANK_COL[it.rank];
+    ctx.fillRect(r.x, y, r.w, 2);
+    ctx.fillRect(r.x, y + r.h - 2, r.w, 2);
+    ctx.fillRect(r.x, y, 2, r.h); ctx.fillRect(r.x + r.w - 2, y, 2, r.h);
+    /* a light behind a better find */
+    if (it.rank >= 4) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.12 + Math.sin(b.t * 4 + i) * 0.06;
+      ctx.fillStyle = RANK_COL[it.rank];
+      ctx.fillRect(r.x - 4, y - 4, r.w + 8, r.h + 8);
+      ctx.restore();
+    }
+    const ic = Art.item.artifact[it.key];
+    if (ic) {
+      ctx.save();
+      ctx.translate(r.x + r.w / 2, y + 28);
+      ctx.scale(2, 2);
+      ctx.drawImage(ic, -8, -8);
+      ctx.restore();
+    }
+    drawText(ctx, RANK_NAME[it.rank], r.x + r.w / 2, y + 50, RANK_COL[it.rank], 1, 'center');
+    drawText(ctx, fitText(it.short, r.w - 8), r.x + r.w / 2, y + 61, '#ffeec0', 1, 'center');
+    wrapText(it.desc, r.w - 10, 3).forEach((line, li) =>
+      drawText(ctx, line, r.x + r.w / 2, y + 74 + li * 9, '#8a94a6', 1, 'center'));
+    ctx.restore();
+  });
+  ctx.save();
+  ctx.globalAlpha = clamp((b.t - 0.5) * 2, 0, 1) * (0.55 + Math.sin(b.t * 4) * 0.3);
+  drawText(ctx, G.mobile ? 'TAP TO PUT THEM AWAY' : 'CLICK TO PUT THEM AWAY',
+           VW / 2, VH - 26, '#ffd04a', 1, 'center', '#2a1a10');
+  ctx.restore();
+}
 
 /* the picture a shop row shows */
 function storeRowPic(row) {
@@ -3072,6 +3227,23 @@ const RANK_PRICE = [0, 5000, 20000, 50000, 100000, 250000];
    MONEY, WRITTEN SHORT.  A shop row has no room for six noughts,
    so a thousand is 1K and a million is 1MIL.
    ============================================================ */
+/* a line broken on its spaces, so it stands in the room given */
+function wrapText(str, room, maxLines) {
+  const words = String(str).split(' ');
+  const out = [];
+  let line = '';
+  for (const w of words) {
+    const test = line ? line + ' ' + w : w;
+    if (textWidth(test) <= room || !line) line = test;
+    else { out.push(line); line = w; }
+  }
+  if (line) out.push(line);
+  if (maxLines && out.length > maxLines) {
+    out.length = maxLines;
+    out[maxLines - 1] = fitText(out[maxLines - 1], room);
+  }
+  return out;
+}
 /* as much of a line as will stand in the room given, and no more */
 function fitText(str, room) {
   str = String(str);
@@ -4911,6 +5083,17 @@ function drawHUD() {
     if (worn > 0) {
       ctx.fillStyle = '#e0b040'; ctx.fillRect(VW - 9, 32, 6, 6);
       drawText(ctx, String(worn), VW - 7, 33, '#2a1a0e', 1, 'left');
+    }
+    /* a mark beside the pouch while something new is waiting in it */
+    if ((G.pouchNew | 0) > 0) {
+      const bx = VW - 28, by = 36 + Math.sin(G.t * 6) * 1.4;
+      ctx.fillStyle = '#8f2028';
+      ctx.fillRect(Math.round(bx) - 1, Math.round(by) - 1, 9, 11);
+      ctx.fillStyle = '#c9403a';
+      ctx.fillRect(Math.round(bx), Math.round(by), 7, 9);
+      ctx.fillStyle = '#ff8b7a';
+      ctx.fillRect(Math.round(bx), Math.round(by), 7, 1);
+      drawText(ctx, '!', Math.round(bx) + 4, Math.round(by) + 1, '#ffffff', 1, 'center');
     }
     if (ph) drawText(ctx, 'POUCH', VW - 15, 55, '#ffe98a', 1, 'center', '#000000');
   }
@@ -7519,6 +7702,8 @@ function render() {
   else if (G.state === 'profile') { drawProfile(); drawCursor(); }
   else if (G.state === 'map') { drawMap(); drawCursor(); }
   else drawWorld();
+  /* the casket stands over whatever screen it was bought on */
+  if (G.boxShow) { drawBoxShow(); drawCursor(); }
 }
 
 if (document.readyState === 'loading') addEventListener('DOMContentLoaded', boot);
