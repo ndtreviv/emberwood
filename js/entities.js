@@ -338,6 +338,32 @@ class Player {
   /* Hold the sword rather than tapping it and the blade gathers the air.
      Let go on a full charge and it goes out as a blade of wind. */
   get charged() { return this.chargeT >= CHARGE_FULL; }
+  /* You draw a bow the way you charge a gale: by holding the sword down.
+     Carrying the longbow and an arrow to spare turns the hold into a draw. */
+  get bowReady() {
+    return !!(G.hasArtifact && G.hasArtifact('bow') && (G.arrows | 0) > 0);
+  }
+  /* where an arrow would go, and what it would cost */
+  get arrowDmg() {
+    return Math.max(2, Math.round((2 + this.atkDmg) * (G.hasArtifact('flintnock') ? 1.5 : 1)));
+  }
+  loose() {
+    const a = G.aim(this.cx, this.cy - 6);
+    const pull = clamp(this.chargeT / CHARGE_FULL, 0.35, 1);
+    const sp = ARROW_SPEED * (0.55 + pull * 0.45);
+    G.projectiles.push(new Arrow(this.cx + a.x * 8, this.cy - 6 + a.y * 8,
+                                 a.x * sp, a.y * sp - 0.8, this.arrowDmg));
+    /* the deep quiver keeps an arrow back now and then */
+    if (!(G.hasArtifact('deepquiver') && Math.random() < 0.34)) G.arrows = Math.max(0, (G.arrows | 0) - 1);
+    this.atkT = 0.001; this.atkHit = new Set(); this.atkCd = 0.26;
+    this.chargeCd = 0.3;
+    Snd.swing(); G.shake(2);
+    for (let i = 0; i < 10; i++) G.particles.push(new Particle({
+      x: this.cx + a.x * 8, y: this.cy - 6 + a.y * 8,
+      vx: a.x * rr(1, 3), vy: a.y * rr(1, 3), life: rr(0.1, 0.28),
+      col: '#ffeec0', col2: '#8a6a3a', size: rr(1, 2), grav: 0
+    }));
+  }
   updateCharge(dt) {
     this.chargeCd = Math.max(0, this.chargeCd - dt);
     /* the gale is thrown in the maze too, where it goes the way you face */
@@ -366,7 +392,9 @@ class Player {
       }
       return;
     }
-    if (this.chargeT >= CHARGE_FULL && may) this.releaseCharge();
+    /* a drawn bow looses at any pull; a gale must be full */
+    if (may && this.bowReady && this.chargeT > 0.12) this.loose();
+    else if (this.chargeT >= CHARGE_FULL && may) this.releaseCharge();
     this.chargeT = 0; this.chargeRang = false;
   }
   /* which way a gale goes: along the ground from the side, and at whatever
@@ -381,10 +409,12 @@ class Player {
     this.atkT = 0.001; this.atkHit = new Set(); this.atkCd = 0.3;
     const dmg = Math.max(2, Math.round(this.atkDmg * 2));
     const a = this.galeAim();
-    G.waves.push(new WindSwipe(this.cx + a.x * 10, this.cy + a.y * 10, a, dmg));
+    G.waves.push(new WindSwipe(this.cx + a.x * 10, this.cy + a.y * 10, a, dmg,
+                               G.hasArtifact('windvane') ? 1.5 : 1));
     /* the gale carries the emberheart fire half again as far */
     if (this.up.emberheart > 0) {
-      G.waves.push(new Wave(this.cx + a.x * 12, this.cy + a.y * 12, a, this.atkDmg, GALE_RANGE));
+      G.waves.push(new Wave(this.cx + a.x * 12, this.cy + a.y * 12, a, this.atkDmg,
+                            GALE_RANGE * (G.hasArtifact('windvane') ? 1.5 : 1)));
       Snd.fire();
     }
     if (this.grounded && G.room.mode === 'side') this.vx += this.face * 1.4;
@@ -430,6 +460,8 @@ class Player {
        and NaN is never at or below zero, so they could not die again */
     if (!isFinite(dmg)) dmg = 1;
     dmg = Math.max(1, dmg - (this.up.armour > 0 && Math.random() < this.up.armour * 0.2 ? 1 : 0));
+    /* the rune plate turns one point off every blow that lands */
+    if (G.hasArtifact && G.hasArtifact('runeplate')) dmg = Math.max(1, dmg - 1);
     this.hp -= dmg;
     G.breakCombo();
     this.invuln = 1.15;
@@ -526,6 +558,7 @@ class Player {
     const inPhase = room.boxPhase(this.x + 2, this.y + this.h - 6, this.w - 4, 8);
     if (!inPhase) {
       if (this.sinkT > 0) this.sinkT = Math.max(0, this.sinkT - dt * 2.4);
+      this.sinkSaid = false;
       return;
     }
     const ring = G.canPhase && G.canPhase();
@@ -539,10 +572,18 @@ class Player {
       col: col[0], col2: col[1], size: rr(1, 2.4), grav: 0.08
     }));
     if (ring) {
-      /* the ring carries you down through it, into whatever is below */
+      /* The ring carries you down through it, but only if you mean to go:
+         you must crouch on the surface.  Stand on it and it holds you up,
+         so you may cross a pool without being taken under it. */
+      const want = Input.act('down');
+      if (!want) { this.sinkT = 0; this.vy = clamp(this.vy, -0.4, 0.3); return; }
       this.vy = Math.max(this.vy, 3.4);
       this.vx *= 0.7;
-      if (this.sinkT > 0.55 && G.dropThroughPhase) { this.sinkT = 0; G.dropThroughPhase(quick, this.cx); }
+      if (!this.sinkSaid) {
+        this.sinkSaid = true;
+        G.texts.push(new FloatText(this.cx, this.y - 6, 'GOING UNDER', '#cfb87c'));
+      }
+      if (this.sinkT > 0.4 && G.dropThroughPhase) { this.sinkT = 0; G.dropThroughPhase(quick, this.cx); }
       return;
     }
     /* without it the ground holds you, and it does not let go */
@@ -3864,13 +3905,13 @@ class Crusher {
 /* A blade of wind, thrown from a charged swing. It runs a long way, cuts
    everything it passes, and bats shots back on its way. */
 class WindSwipe {
-  constructor(x, y, dir, dmg) {
+  constructor(x, y, dir, dmg, reach) {
     const a = aimVec(dir);
     this.x = x; this.y = y; this.dx = a.x; this.dy = a.y; this.dir = a.x || 1;
     this.dmg = dmg;
     this.t = 0; this.life = 1.05; this.dead = false; this.hit = new Set();
     this.speed = 4.4;
-    this.range = GALE_RANGE; this.gone = 0;
+    this.range = GALE_RANGE * (reach || 1); this.gone = 0;
   }
   box() {
     const grow = 1 + this.t * 0.9;
@@ -4505,6 +4546,56 @@ class Wave {
     c2.translate(Math.round(this.x), Math.round(this.y));
     c2.rotate(this.dy > 0 ? Math.PI / 2 : -Math.PI / 2);
     blit(c2, f, 0, 0, 11, 13, false);
+    c2.restore();
+  }
+}
+
+/* ============================================================
+   THE ARROW.  It leaves the bow at the angle you aimed and it
+   falls as it flies, so a far shot is arched, not aimed flat.
+   ============================================================ */
+const ARROW_SPEED = 6.2, ARROW_GRAV = 0.115;
+class Arrow {
+  constructor(x, y, vx, vy, dmg) {
+    this.x = x; this.y = y; this.vx = vx; this.vy = vy;
+    this.dmg = dmg || 4;
+    this.life = 3.2; this.dead = false; this.t = 0; this.hit = new Set();
+    this.friendly = true;
+  }
+  update(dt) {
+    this.t += dt; this.life -= dt;
+    const s = dt * 60;
+    this.x += this.vx * s; this.y += this.vy * s;
+    this.vy += ARROW_GRAV * s;
+    for (const en of G.enemies) {
+      if (en.dead || this.hit.has(en)) continue;
+      if (!rectsOverlap({ x: this.x - 3, y: this.y - 3, w: 6, h: 6 }, en.box())) continue;
+      this.hit.add(en);
+      en.hurt(this.dmg, this.x - this.vx * 4, this.y - this.vy * 4);
+      G.hitStop(0.03);
+      this.dead = true;
+      return;
+    }
+    if (Math.random() < 0.5) G.particles.push(new Particle({
+      x: this.x, y: this.y, vx: rr(-0.2, 0.2), vy: rr(-0.2, 0.2), life: rr(0.1, 0.24),
+      col: '#e8dcc0', col2: '#8a7a5c', size: 1, grav: 0
+    }));
+    if (G.room.solidPx(this.x, this.y) || this.life <= 0) {
+      this.dead = true;
+      for (let i = 0; i < 5; i++) G.particles.push(new Particle({
+        x: this.x, y: this.y, vx: rr(-1, 1), vy: rr(-1, 0.4), life: rr(0.2, 0.5),
+        col: '#e8dcc0', col2: '#5a4326', size: 1, grav: 0.2
+      }));
+    }
+  }
+  draw(c2) {
+    const a = Math.atan2(this.vy, this.vx);
+    c2.save();
+    c2.translate(Math.round(this.x), Math.round(this.y));
+    c2.rotate(a);
+    c2.fillStyle = '#8a6a3a'; c2.fillRect(-7, 0, 10, 1);
+    c2.fillStyle = '#cfd8e6'; c2.fillRect(3, -1, 4, 2);
+    c2.fillStyle = '#e8dcc0'; c2.fillRect(-8, -2, 3, 1); c2.fillRect(-8, 1, 3, 1);
     c2.restore();
   }
 }

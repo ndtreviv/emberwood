@@ -109,7 +109,8 @@ function packSave() {
     v: 1, used: true,
     tutorialDone: G.tutorialDone,
     unlocked: G.unlocked, cleared: G.cleared.slice(), level: G.level,
-    xp: G.xp | 0, prestige: G.prestige | 0,
+    xp: G.xp | 0, prestige: G.prestige | 0, rubies: G.rubies | 0,
+    arrows: G.arrows | 0, boosts: G.boosts ? G.boosts.slice() : [],
     buffDone: Object.assign({}, G.buffDone || {}), buffTier: G.buffTier | 0,
     account: Object.assign({}, G.account || {}),
     levelState: ls, roomFlags: packFlags(G.roomFlags), flags: G.flags,
@@ -152,6 +153,9 @@ function applySave(d) {
   G.unlocked = Math.max(1, d.unlocked || 1);
   G.cleared = (d.cleared || []).slice();
   G.xp = Math.max(0, d.xp | 0);
+  G.rubies = Math.max(0, d.rubies | 0);
+  G.arrows = Math.max(0, d.arrows | 0);
+  G.boosts = (d.boosts || []).slice();
   G.prestige = clamp(d.prestige | 0, 0, PRESTIGE_MAX);
   G.buffDone = d.buffDone || {};
   G.buffTier = clamp(d.buffTier | 0, 0, G.prestige);
@@ -420,6 +424,8 @@ G.coinScale = function () {
   const lv = World.LEVELS[G.level];
   /* the scarab charm pays a quarter more on every kill */
   return ((lv && lv.coinScale) || 1) * (G.hasArtifact('scarab') ? 1.25 : 1)
+         * (G.hasArtifact('coinclasp') ? 1.1 : 1)
+         * (G.boostLeft && G.boostLeft('coin') > 0 ? 2 : 1)
          * (G.hasArtifact('pharaohcrook') ? 2 : 1);
 };
 G.purse = function () { return G.codes.admin ? INF : String(G.player.coins); };
@@ -984,6 +990,7 @@ function frame(now) {
     else if (G.state === 'title') updateTitle(dt);
     else if (G.state === 'wardrobe') updateWardrobe(dt);
     else if (G.state === 'archipelago') updateArchipelago(dt);
+    else if (G.state === 'store') updateStore(dt);
     else if (G.state === 'files') updateFiles(dt);
     else if (G.state === 'profile') updateProfile(dt);
     else if (G.state === 'map') updateMap(dt);
@@ -1052,6 +1059,7 @@ function startGame(slot) {
   G.roomFlags = {}; G.flags = {}; G.levelState = {};
   G.unlocked = 1; G.cleared = []; G.level = 0;
   G.xp = 0; G.prestige = 0; G.buffDone = {}; G.buffTier = 0;
+  G.rubies = 0; G.arrows = 0; G.boosts = [];
   G.account = newAccount();
   G.trans = null;
   G.tutorialDone = false;
@@ -1229,6 +1237,7 @@ function updatePlay(dt) {
   G.bannerT = Math.max(0, G.bannerT - dt);
   G.lockedMsgT = Math.max(0, G.lockedMsgT - dt);
   G.xpGainT = Math.max(0, (G.xpGainT || 0) - dt);
+  updateBoosts(dt);
   if (G.xpGainT <= 0) G.xpGain = 0;
   updateRelicShow(dt);
   G.flashAmt = Math.max(0, G.flashAmt - dt * 2.2);
@@ -1712,6 +1721,8 @@ G.onBossDead = function () {
   const b = G.boss;
   if (b && G.giveXp) G.giveXp(Math.round((b.maxHp || 100) * 0.75 * G.xpScale()),
                               G.player.cx, G.player.cy);
+  /* and it leaves rubies, by how hard it was to bring down */
+  if (b && G.giveRubies) G.giveRubies(rubiesFor(b.maxHp || 0), G.player.cx, G.player.cy);
   /* an island keeper is a thing apart: it pays in shards, not in realms */
   if (G.isleRun) { G.onIsleBossDead(); G.state = 'victory'; G.victoryT = 0; return; }
   G.state = 'victory'; G.victoryT = 0;
@@ -2243,6 +2254,365 @@ function drawArchipelago() {
 }
 
 /* ============================================================
+   THE ITEM SHOP.  Five pages, reached from the chart.  Coins buy
+   most of it, rubies buy the boxes, and the shards of the
+   Archipelago buy the page that is kept for them.
+   ============================================================ */
+const STORE_BOX = { x: 6, y: 6, w: 372, h: 204 };
+const STORE_TABS = ['ITEMS', 'LIMITED', 'ARTIFACTS', 'CLOTHES', 'SHARDS'];
+const STORE_ROWS = 5;
+function storeTabRect(i) { return { x: STORE_BOX.x + 8 + i * 72, y: STORE_BOX.y + 20, w: 69, h: 14 }; }
+function storeRowRect(i) { return { x: STORE_BOX.x + 8, y: STORE_BOX.y + 42 + i * 26, w: STORE_BOX.w - 16, h: 24 }; }
+function storeBuyRect(i) { const r = storeRowRect(i); return { x: r.x + r.w - 62, y: r.y + 4, w: 56, h: 16 }; }
+function storePageRect(d) { return { x: d < 0 ? STORE_BOX.x + 8 : STORE_BOX.x + 40, y: STORE_BOX.y + 180, w: 26, h: 16 }; }
+function storeBackRect() { return { x: STORE_BOX.x + STORE_BOX.w - 62, y: STORE_BOX.y + 180, w: 54, h: 16 }; }
+
+/* the three boxes, and what each one is likely to hold */
+const BOXES = [
+  { key: 'box1', name: 'WORN CASKET', rubies: 10,
+    odds: { 2: 0.84, 3: 0.15, 4: 0.01, 5: 0 } },
+  { key: 'box2', name: 'SEALED CASKET', rubies: 50,
+    odds: { 2: 0.55, 3: 0.40, 4: 0.05, 5: 0 } },
+  { key: 'box3', name: 'KINGS CASKET', rubies: 100,
+    odds: { 2: 0.30, 3: 0.58, 4: 0.10, 5: 0.02 } }
+];
+/* how long a booster runs, and what it doubles */
+const BOOST_SECS = 600;
+G.boostLeft = function (kind) {
+  const list = G.boosts || [];
+  let best = 0;
+  for (const b of list) if (b.kind === kind) best = Math.max(best, b.t);
+  return best;
+};
+G.addBoost = function (kind, secs) {
+  G.boosts = G.boosts || [];
+  const had = G.boosts.find(b => b.kind === kind);
+  if (had) had.t += secs; else G.boosts.push({ kind: kind, t: secs });
+};
+function updateBoosts(dt) {
+  if (!G.boosts || !G.boosts.length) return;
+  for (const b of G.boosts) b.t -= dt;
+  G.boosts = G.boosts.filter(b => b.t > 0);
+}
+
+/* ---------- what each page holds ---------- */
+function storeItemRows() {
+  return [
+    { name: 'AN ARROW', desc: 'ONE ARROW FOR THE LONGBOW', coins: 1000,
+      buy: () => { G.arrows = (G.arrows | 0) + 1; } },
+    { name: 'TEN ARROWS', desc: 'A SHEAF OF TEN, AT THE SAME PRICE EACH', coins: 10000,
+      buy: () => { G.arrows = (G.arrows | 0) + 10; } },
+    { name: 'FIFTY ARROWS', desc: 'A QUIVER OF FIFTY, AT THE SAME PRICE EACH', coins: 50000,
+      buy: () => { G.arrows = (G.arrows | 0) + 50; } },
+    { name: '2X EXPERIENCE', desc: 'TWICE THE EXPERIENCE FOR TEN MINUTES', coins: 5000,
+      buy: () => { G.addBoost('xp', BOOST_SECS); } },
+    { name: '2X COINS', desc: 'TWICE THE COINS FOR TEN MINUTES', coins: 5000,
+      buy: () => { G.addBoost('coin', BOOST_SECS); } }
+  ];
+}
+/* the artifacts, dearest first, with the three caskets at the head */
+function storeArtifactRows() {
+  const rows = BOXES.map(b => ({
+    name: b.name, desc: 'ONE ARTIFACT, THE BETTER BOX THE BETTER ODDS',
+    rubies: b.rubies, box: b.key,
+    buy: () => G.openBox(b.key)
+  }));
+  const order = ARTIFACTS.slice().sort((a, b) => b.rank - a.rank);
+  for (const a of order) {
+    if (a.rank < 2) continue;
+    rows.push({ name: a.name, desc: a.desc, coins: RANK_PRICE[a.rank],
+                rank: a.rank, art: a.key,
+                owned: () => G.ownsArtifact(a.key),
+                buy: () => G.giveArtifact(a.key) });
+  }
+  return rows;
+}
+function storeClothRows() {
+  return SUIT_KEYS.map(k => {
+    const su = SUITS[k];
+    return { name: su.name, desc: 'CUT TO THE PATTERN OF ' + su.realm, coins: su.cost,
+             suit: k, need: su.need,
+             owned: () => !!(G.wardrobe && G.wardrobe.owned[k]),
+             buy: () => { G.wardrobe.owned[k] = 1; G.profile.suit = k; applyProfile(); } };
+  });
+}
+/* the page kept for shards: what an islander comes back with */
+function storeShardRows() {
+  return [
+    { name: 'TWENTY ARROWS', desc: 'PAID FOR IN SHARDS OF ANY KIND', shards: 4,
+      buy: () => { G.arrows = (G.arrows | 0) + 20; } },
+    { name: 'TEN RUBIES', desc: 'THE ISLANDS TRADE THEM FOR SHARDS', shards: 12,
+      buy: () => { G.rubies = (G.rubies | 0) + 10; } },
+    { name: '2X EXPERIENCE', desc: 'TWICE THE EXPERIENCE FOR TEN MINUTES', shards: 3,
+      buy: () => { G.addBoost('xp', BOOST_SECS); } },
+    { name: 'A WORN CASKET', desc: 'ONE ARTIFACT, PAID FOR IN SHARDS', shards: 20,
+      buy: () => G.openBox('box1') },
+    { name: 'FIFTY ARROWS', desc: 'PAID FOR IN SHARDS OF ANY KIND', shards: 9,
+      buy: () => { G.arrows = (G.arrows | 0) + 50; } }
+  ];
+}
+/* The limited page turns over with the day.  Three things off the other
+   pages, each at a third off, and a clock on how long they stand. */
+function storeDayKey() { return Math.floor(Date.now() / 86400000); }
+function storeLimitedRows() {
+  const rng = new RNG(storeDayKey() * 7919 + 13);
+  const pool = storeItemRows().concat(storeArtifactRows().filter(r => r.coins && r.rank && r.rank <= 3));
+  const out = [];
+  const taken = {};
+  for (let k = 0; k < 3 && pool.length; k++) {
+    let i = rng.i(0, pool.length - 1), guard = 0;
+    while (taken[i] && guard++ < 40) i = rng.i(0, pool.length - 1);
+    taken[i] = 1;
+    const src = pool[i];
+    out.push(Object.assign({}, src, {
+      coins: src.coins ? Math.round(src.coins * 0.66 / 100) * 100 : src.coins,
+      was: src.coins, limited: true
+    }));
+  }
+  return out;
+}
+function storeRows() {
+  switch (G.storeTab) {
+    case 0: return storeItemRows();
+    case 1: return storeLimitedRows();
+    case 2: return storeArtifactRows();
+    case 3: return storeClothRows();
+    default: return storeShardRows();
+  }
+}
+/* how many shards of all five kinds you hold together */
+G.shardTotal = function () {
+  let n = 0;
+  for (const t of ISLE_TYPES) n += G.shardsOf(t.shard);
+  return n;
+};
+/* and taking them, the biggest pile first */
+G.spendShards = function (n) {
+  if (G.shardTotal() < n) return false;
+  const a = archi();
+  let left = n;
+  while (left > 0) {
+    let best = null;
+    for (const t of ISLE_TYPES) if (!best || (a.shards[t.shard] | 0) > (a.shards[best] | 0)) best = t.shard;
+    if (!best || (a.shards[best] | 0) <= 0) return false;
+    const take = Math.min(left, a.shards[best] | 0);
+    a.shards[best] -= take;
+    left -= take;
+  }
+  return true;
+};
+/* ---------- a casket ---------- */
+G.openBox = function (key) {
+  const box = BOXES.find(b => b.key === key);
+  if (!box) return false;
+  /* the roll: a rank first, then one of that rank you do not already own */
+  const r = Math.random();
+  let acc = 0, rank = 2;
+  for (const k of [5, 4, 3, 2]) {
+    acc += box.odds[k] || 0;
+    if (r < acc) { rank = k; break; }
+  }
+  const pick = (want) => {
+    const pool = ARTIFACTS.filter(a => a.rank === want && !G.ownsArtifact(a.key));
+    return pool.length ? pool[ri(0, pool.length - 1)] : null;
+  };
+  let got = pick(rank);
+  /* nothing of that rank left, so walk down until something is */
+  for (let k = rank - 1; !got && k >= 2; k--) got = pick(k);
+  for (let k = rank + 1; !got && k <= 5; k++) got = pick(k);
+  if (!got) { G.storeMsg = 'YOU HOLD EVERY ARTIFACT ALREADY'; G.storeMsgT = 2.6; Snd.uiBad(); return false; }
+  G.giveArtifact(got.key);
+  G.storeMsg = got.name + '  -  ' + RANK_NAME[got.rank];
+  G.storeMsgT = 4;
+  Snd.unlock(); G.flash(0.5);
+  return true;
+};
+
+function openStore(from) {
+  G.state = 'store';
+  G.storeFrom = from || 'map';
+  if (G.storeTab === undefined) G.storeTab = 0;
+  G.storePage = 0; G.storeSel = -1; G.storeMsgT = 0; G.storeT = 0;
+  G.particles.length = 0;
+  Snd.ui();
+}
+function storeClose() {
+  Snd.ui();
+  openMap(false);
+}
+function storeAfford(row) {
+  if (row.owned && row.owned()) return false;
+  if (row.need && (G.prestige | 0) < row.need) return false;
+  if (row.shards !== undefined) return G.shardTotal() >= row.shards;
+  if (row.rubies !== undefined) return (G.rubies | 0) >= row.rubies;
+  return G.codes.admin || G.player.coins >= (row.coins || 0);
+}
+function storeBuy(row) {
+  if (row.owned && row.owned()) { G.storeMsg = 'YOU HOLD IT ALREADY'; G.storeMsgT = 2; Snd.uiBad(); return; }
+  if (row.need && (G.prestige | 0) < row.need) {
+    G.storeMsg = 'PRESTIGE ' + PRESTIGE_MARK[row.need] + ' OPENS IT'; G.storeMsgT = 2.4; Snd.uiBad(); return;
+  }
+  if (row.shards !== undefined) {
+    if (!G.spendShards(row.shards)) { G.storeMsg = 'IT ASKS ' + row.shards + ' SHARDS'; G.storeMsgT = 2.2; Snd.uiBad(); return; }
+  } else if (row.rubies !== undefined) {
+    if ((G.rubies | 0) < row.rubies) { G.storeMsg = 'IT ASKS ' + row.rubies + ' RUBIES'; G.storeMsgT = 2.2; Snd.uiBad(); return; }
+    G.rubies -= row.rubies;
+  } else {
+    const cost = row.coins || 0;
+    if (!G.codes.admin && G.player.coins < cost) { G.storeMsg = 'IT ASKS ' + shortCoin(cost) + ' COINS'; G.storeMsgT = 2.2; Snd.uiBad(); return; }
+    if (!G.codes.admin) G.player.coins -= cost;
+  }
+  const said = G.storeMsgT;
+  row.buy();
+  if (G.storeMsgT === said) { G.storeMsg = row.name + ' IS YOURS'; G.storeMsgT = 2.4; }
+  Snd.buy(); G.flash(0.25);
+  G.saveGame();
+}
+function updateStore(dt) {
+  G.storeT += dt;
+  G.storeMsgT = Math.max(0, G.storeMsgT - dt);
+  G.flashAmt = Math.max(0, G.flashAmt - dt * 2.2);
+  if (G.settingsOpen) { updateSettings(); return; }
+  for (let i = 0; i < STORE_TABS.length; i++) if (Input.tap(storeTabRect(i))) {
+    G.storeTab = i; G.storePage = 0; Snd.ui();
+  }
+  const rows = storeRows();
+  const pages = Math.max(1, Math.ceil(rows.length / STORE_ROWS));
+  G.storePage = clamp(G.storePage, 0, pages - 1);
+  for (const d of [-1, 1]) if (Input.tap(storePageRect(d))) {
+    G.storePage = clamp(G.storePage + d, 0, pages - 1); Snd.ui();
+  }
+  if (Input.hit('ArrowRight')) G.storePage = clamp(G.storePage + 1, 0, pages - 1);
+  if (Input.hit('ArrowLeft')) G.storePage = clamp(G.storePage - 1, 0, pages - 1);
+  if (Input.tap(storeBackRect()) || Input.hit('Escape')) { storeClose(); return; }
+  G.storeSel = -1;
+  const show = rows.slice(G.storePage * STORE_ROWS, (G.storePage + 1) * STORE_ROWS);
+  show.forEach((row, i) => {
+    if (Input.over(storeRowRect(i))) G.storeSel = i;
+    if (Input.tap(storeRowRect(i)) || Input.tap(storeBuyRect(i))) storeBuy(row);
+  });
+  for (const pa of G.particles) pa.update(dt);
+  G.particles = G.particles.filter(x => !x.dead);
+}
+function drawStore() {
+  ctx.drawImage(Art.map.bg, 0, 0);
+  for (const pa of G.particles) pa.draw(ctx);
+  const B = STORE_BOX;
+  panel(ctx, B.x, B.y, B.w, B.h);
+  drawText(ctx, 'THE ITEM SHOP', B.x + 10, B.y + 7, '#f2e2b8', 1, 'left', '#000000');
+  /* the three purses */
+  let px = B.x + B.w - 10;
+  px -= drawText(ctx, String(G.shardTotal()), px - textWidth(String(G.shardTotal())), B.y + 7, '#8fd0e8', 1, 'left') + 4;
+  drawShard(ctx, px - 4, B.y + 10, 4, ISLE_TYPES[0], 1); px -= 12;
+  px -= drawText(ctx, String(G.rubies | 0), px - textWidth(String(G.rubies | 0)), B.y + 7, '#ff5a7a', 1, 'left') + 4;
+  ctx.fillStyle = '#ff5a7a';
+  ctx.fillRect(px - 7, B.y + 8, 5, 5); px -= 12;
+  drawText(ctx, G.codes.admin ? INF : shortCoin(G.player.coins),
+           px, B.y + 7, '#ffe98a', 1, 'right');
+  /* the five pages */
+  STORE_TABS.forEach((name, i) => {
+    const r = storeTabRect(i), on = G.storeTab === i, hot = Input.over(r);
+    ctx.fillStyle = on ? 'rgba(74,56,34,0.96)' : (hot ? '#332c4c' : 'rgba(24,18,12,0.86)');
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.fillStyle = on ? '#ffd04a' : '#5b4a34';
+    ctx.fillRect(r.x, r.y, r.w, 1);
+    drawText(ctx, name, r.x + r.w / 2, r.y + 4, on ? '#ffeec0' : '#a9b3c9', 1, 'center');
+  });
+  const rows = storeRows();
+  const pages = Math.max(1, Math.ceil(rows.length / STORE_ROWS));
+  const show = rows.slice(G.storePage * STORE_ROWS, (G.storePage + 1) * STORE_ROWS);
+  show.forEach((row, i) => {
+    const r = storeRowRect(i), hot = G.storeSel === i;
+    const owned = row.owned && row.owned();
+    const can = storeAfford(row);
+    ctx.fillStyle = hot ? 'rgba(74,56,34,0.94)' : 'rgba(24,18,12,0.86)';
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.fillStyle = owned ? '#6fc46a' : (row.rank ? RANK_COL[row.rank] : (can ? '#8a6a3a' : '#5b4a34'));
+    ctx.fillRect(r.x, r.y, r.w, 1);
+    /* a swatch: the cloth for a suit, a gem for an artifact, a box for a box */
+    if (row.suit) {
+      const su = SUITS[row.suit];
+      ctx.fillStyle = su.dark; ctx.fillRect(r.x + 4, r.y + 4, 16, 16);
+      ctx.fillStyle = su.base; ctx.fillRect(r.x + 5, r.y + 5, 14, 10);
+      ctx.fillStyle = su.light; ctx.fillRect(r.x + 5, r.y + 5, 14, 3);
+      ctx.fillStyle = su.trim; ctx.fillRect(r.x + 5, r.y + 15, 14, 2);
+    } else if (row.box) {
+      const k = BOXES.findIndex(b => b.key === row.box);
+      const col = ['#6b5030', '#8a7a5c', '#c6a23f'][k] || '#6b5030';
+      ctx.fillStyle = '#2a1f12'; ctx.fillRect(r.x + 4, r.y + 6, 16, 13);
+      ctx.fillStyle = col; ctx.fillRect(r.x + 5, r.y + 7, 14, 11);
+      ctx.fillStyle = '#ffeec0'; ctx.fillRect(r.x + 11, r.y + 7, 2, 11);
+    } else if (row.rank) {
+      ctx.fillStyle = RANK_COL[row.rank];
+      ctx.beginPath();
+      ctx.moveTo(r.x + 12, r.y + 4); ctx.lineTo(r.x + 19, r.y + 12);
+      ctx.lineTo(r.x + 12, r.y + 20); ctx.lineTo(r.x + 5, r.y + 12);
+      ctx.closePath(); ctx.fill();
+    } else {
+      ctx.fillStyle = '#8a6a3a'; ctx.fillRect(r.x + 6, r.y + 6, 12, 12);
+      ctx.fillStyle = '#e8dcc0'; ctx.fillRect(r.x + 8, r.y + 8, 8, 8);
+    }
+    /* the line is cut to the room before the price, so the two never meet */
+    const room = r.w - 90;
+    drawText(ctx, fitText(row.name, room), r.x + 24, r.y + 4,
+             owned ? '#9be89a' : '#ffeec0', 1, 'left');
+    drawText(ctx, fitText(row.rank ? (RANK_NAME[row.rank] + ' - ' + row.desc) : row.desc, room),
+             r.x + 24, r.y + 14, '#8a94a6', 1, 'left');
+    /* the price, or what stands in its way */
+    const br = storeBuyRect(i), bhot = Input.over(br);
+    let label, col;
+    if (owned) { label = 'OWNED'; col = '#6fc46a'; }
+    else if (row.need && (G.prestige | 0) < row.need) { label = 'LOCKED'; col = '#c9403a'; }
+    else if (row.shards !== undefined) { label = row.shards + ' SH'; col = can ? '#8fd0e8' : '#c9403a'; }
+    else if (row.rubies !== undefined) { label = row.rubies + ' RU'; col = can ? '#ff8b9a' : '#c9403a'; }
+    else { label = shortCoin(row.coins || 0); col = can ? '#ffe98a' : '#c9403a'; }
+    ctx.fillStyle = owned ? 'rgba(24,40,20,0.9)' : (bhot && can ? 'rgba(74,56,34,0.96)' : 'rgba(14,10,20,0.8)');
+    ctx.fillRect(br.x, br.y, br.w, br.h);
+    ctx.fillStyle = can && !owned ? '#8a6a3a' : '#3a3350';
+    ctx.fillRect(br.x, br.y, br.w, 1);
+    drawText(ctx, label, br.x + br.w / 2, br.y + 5, col, 1, 'center');
+    /* what it used to cost, on the page that is cut down */
+    if (row.limited && row.was) drawText(ctx, shortCoin(row.was), br.x - 4, br.y + 5, '#7a6448', 1, 'right');
+  });
+  /* the pages, and the way out */
+  if (pages > 1) {
+    for (const d of [-1, 1]) {
+      const r = storePageRect(d), can = d < 0 ? G.storePage > 0 : G.storePage < pages - 1;
+      ctx.fillStyle = can ? 'rgba(58,44,28,0.9)' : 'rgba(34,26,18,0.6)';
+      ctx.fillRect(r.x, r.y, r.w, r.h);
+      drawText(ctx, d < 0 ? '<' : '>', r.x + r.w / 2, r.y + 5, can ? '#ffeec0' : '#5b4a34', 1, 'center');
+    }
+    drawText(ctx, (G.storePage + 1) + '/' + pages, storePageRect(1).x + 34, B.y + 185, '#a9b3c9', 1, 'left');
+  }
+  /* how long a booster has left */
+  const xpLeft = G.boostLeft('xp'), cLeft = G.boostLeft('coin');
+  if (xpLeft > 0 || cLeft > 0) {
+    const bits = [];
+    if (xpLeft > 0) bits.push('2X XP ' + Math.ceil(xpLeft / 60) + 'M');
+    if (cLeft > 0) bits.push('2X COINS ' + Math.ceil(cLeft / 60) + 'M');
+    drawText(ctx, bits.join('   '), B.x + B.w / 2, B.y + 185, '#9be89a', 1, 'center');
+  }
+  const back = storeBackRect(), bh = Input.over(back);
+  ctx.fillStyle = bh ? 'rgba(74,56,34,0.96)' : 'rgba(34,26,16,0.9)';
+  ctx.fillRect(back.x, back.y, back.w, back.h);
+  ctx.fillStyle = bh ? '#ffd04a' : '#b8862f';
+  ctx.fillRect(back.x, back.y, back.w, 1);
+  drawText(ctx, 'BACK', back.x + back.w / 2, back.y + 5, '#ffeec0', 1, 'center');
+  if (G.storeMsgT > 0) {
+    ctx.save(); ctx.globalAlpha = Math.min(1, G.storeMsgT * 2);
+    ctx.fillStyle = 'rgba(8,6,16,0.86)';
+    ctx.fillRect(B.x + 4, B.y + B.h - 20, B.w - 8, 14);
+    drawText(ctx, G.storeMsg, B.x + B.w / 2, B.y + B.h - 17, '#ffd04a', 1, 'center', '#2a1a10');
+    ctx.restore();
+  }
+  if (G.settingsOpen) drawSettings();
+  if (G.flashAmt > 0) {
+    ctx.save(); ctx.globalAlpha = Math.min(1, G.flashAmt); ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, VW, VH); ctx.restore();
+  }
+}
+
+/* ============================================================
    THE WARDROBE.  Clothes cut to the pattern of each realm, sold
    for coins out of whichever file you last played.
    ============================================================ */
@@ -2659,21 +3029,91 @@ const ARTIFACTS = [
   { key: 'ankh', rank: 2, name: 'COPPER ANKH', short: 'ANKH', desc: 'ONE HEART MORE' },
   { key: 'eye', rank: 2, name: 'THE STONE EYE', short: 'STONE EYE',
     desc: 'HIDDEN GROUND GIVES OFF A SHIMMER' },
-  { key: 'scarab', rank: 1, name: 'SCARAB CHARM', short: 'SCARAB',
+  { key: 'scarab', rank: 2, name: 'SCARAB CHARM', short: 'SCARAB',
     desc: 'EVERY KILL PAYS A QUARTER MORE' },
-  { key: 'frostbead', rank: 1, name: 'FROST BEAD', short: 'FROST BEAD',
+  { key: 'frostbead', rank: 2, name: 'FROST BEAD', short: 'FROST BEAD',
     desc: 'FIRE BURNS HALF AS LONG' },
-  { key: 'emberchip', rank: 1, name: 'EMBER CHIP', short: 'EMBER CHIP',
+  { key: 'emberchip', rank: 2, name: 'EMBER CHIP', short: 'EMBER CHIP',
     desc: 'THE BLADE BITES ONE POINT DEEPER' },
-  { key: 'feather', rank: 1, name: 'FEATHER TOKEN', short: 'FEATHER',
+  { key: 'feather', rank: 2, name: 'FEATHER TOKEN', short: 'FEATHER',
     desc: 'YOU JUMP HIGHER' },
-  { key: 'saltvial', rank: 1, name: 'SALT VIAL', short: 'SALT VIAL',
-    desc: 'THE DASH RETURNS A THIRD SOONER' }
+  { key: 'saltvial', rank: 2, name: 'SALT VIAL', short: 'SALT VIAL',
+    desc: 'THE DASH RETURNS A THIRD SOONER' },
+  /* ---- the bow, and the things the shop keeps beside it ---- */
+  { key: 'bow', rank: 5, name: 'THE LONGBOW', short: 'LONGBOW',
+    desc: 'HOLD THE SWORD TO DRAW IT AND LOOSE AN ARROW' },
+  /* four more of the super rare */
+  { key: 'heartstone', rank: 3, name: 'THE HEARTSTONE', short: 'HEARTSTONE',
+    desc: 'TWO HEARTS MORE ON YOUR LIFE BAR' },
+  { key: 'runeplate', rank: 3, name: 'RUNE PLATE', short: 'RUNE PLATE',
+    desc: 'EVERY BLOW AGAINST YOU TAKES ONE POINT LESS' },
+  { key: 'scholarseal', rank: 3, name: 'THE SCHOLARS SEAL', short: 'SEAL',
+    desc: 'EVERY KILL PAYS HALF AGAIN THE EXPERIENCE' },
+  { key: 'deepquiver', rank: 3, name: 'THE DEEP QUIVER', short: 'QUIVER',
+    desc: 'AN ARROW IN THREE COSTS YOU NOTHING' },
+  /* four more of the rare */
+  { key: 'tidecharm', rank: 2, name: 'TIDE CHARM', short: 'TIDE CHARM',
+    desc: 'YOU SWIM A THIRD FASTER' },
+  { key: 'windvane', rank: 2, name: 'THE WIND VANE', short: 'WIND VANE',
+    desc: 'THE GALE REACHES HALF AGAIN AS FAR' },
+  { key: 'coinclasp', rank: 2, name: 'COIN CLASP', short: 'COIN CLASP',
+    desc: 'EVERY KILL PAYS A TENTH MORE AGAIN' },
+  { key: 'flintnock', rank: 2, name: 'FLINT NOCK', short: 'FLINT NOCK',
+    desc: 'AN ARROW BITES HALF AGAIN AS DEEP' }
 ];
 const ARTIFACT_SLOTS = 3;
 function artifactBy(key) { for (const a of ARTIFACTS) if (a.key === key) return a; return null; }
-const RANK_COL = ['#a89270', '#c9a06a', '#b9c2d0', '#e0b040', '#ff8be0'];
-const RANK_NAME = ['', 'COMMON', 'RARE', 'ROYAL', 'MYTHIC'];
+/* common, rare, super rare, legendary, mythic: stone, cyan, violet, gold, rose */
+const RANK_COL = ['#a89270', '#c9a06a', '#7fc4d8', '#b07ae0', '#f0c93a', '#ff5ad0'];
+const RANK_NAME = ['', 'COMMON', 'RARE', 'SUPER RARE', 'LEGENDARY', 'MYTHIC'];
+/* what the shop asks for one, by its rank */
+const RANK_PRICE = [0, 5000, 20000, 50000, 100000, 250000];
+
+/* ============================================================
+   MONEY, WRITTEN SHORT.  A shop row has no room for six noughts,
+   so a thousand is 1K and a million is 1MIL.
+   ============================================================ */
+/* as much of a line as will stand in the room given, and no more */
+function fitText(str, room) {
+  str = String(str);
+  if (textWidth(str) <= room) return str;
+  while (str.length > 1 && textWidth(str + '.') > room) str = str.slice(0, -1);
+  return str + '.';
+}
+function shortCoin(n) {
+  n = Math.round(n || 0);
+  if (n >= 1000000) {
+    const m = n / 1000000;
+    return (m >= 10 || m === Math.floor(m) ? Math.round(m) : Math.round(m * 10) / 10) + 'MIL';
+  }
+  if (n >= 1000) {
+    const k = n / 1000;
+    return (k >= 10 || k === Math.floor(k) ? Math.round(k) : Math.round(k * 10) / 10) + 'K';
+  }
+  return String(n);
+}
+
+/* ============================================================
+   RUBIES.  A guardian leaves them, and only the boxes take them.
+   The harder the guardian, the more it leaves.
+   ============================================================ */
+G.rubies = 0;
+G.giveRubies = function (n, x, y) {
+  n = Math.max(0, Math.round(n));
+  if (!n) return;
+  G.rubies = (G.rubies | 0) + n;
+  if (x !== undefined) G.texts.push(new FloatText(x, y - 26, '+' + n + ' RUBIES', '#ff5a7a'));
+  G.banner('+' + n + ' RUBIES', 2.6);
+};
+/* one ruby for every so much a guardian carries, so the deeper it lies the
+   more it leaves: the wyrm of the first realm pays five and the pharaoh of
+   the last pays a hundred */
+function rubiesFor(maxHp) {
+  const lo = 48, hi = 20400;                  /* the wyrm, and the pharaoh */
+  const f = clamp((Math.max(0, maxHp) - lo) / (hi - lo), 0, 1);
+  /* a curve, not a line, so the middle realms are not all worth the same */
+  return clamp(Math.round(5 + Math.pow(f, 0.62) * 95), 5, 100);
+}
 
 G.hasArtifact = function (key) {
   const a = G.artifacts;
@@ -2707,7 +3147,8 @@ G.applyArtifacts = function () {
   if (!p) return;
   /* the ankh is the only one that changes a stored number */
   const want = 6 + (p.up.heart || 0) * 2 +
-               (G.hasArtifact('ankh') ? 2 : 0) + (G.hasArtifact('sunheart') ? 8 : 0);
+               (G.hasArtifact('ankh') ? 2 : 0) + (G.hasArtifact('sunheart') ? 8 : 0) +
+               (G.hasArtifact('heartstone') ? 4 : 0);
   if (p.maxHp !== want) {
     const gain = want - p.maxHp;
     p.maxHp = want;
@@ -2997,6 +3438,11 @@ function mapLookRect() {
 function mapGearRect() { return { x: VW - 30, y: VH - 26, w: 24, h: 22 }; }
 /* the four ways to walk a realm: plain, then bronze, silver and gold */
 function mapBuffRect(t) { return { x: VW - 128 + t * 24, y: 37, w: 22, h: 14 }; }
+/* the item shop, under the third realm of the first chapter */
+function mapStoreRect() {
+  const n = World.LEVELS[World.CHAPTERS[0].levels[2]].node;
+  return { x: n.x - 30, y: n.y + 46, w: 60, h: 14 };
+}
 /* the footer line shares its strip with the cog, so it stops short of it */
 function mapFootX() { return (mapGearRect().x - 4) / 2; }
 /* the same pair of corner buttons on both maps */
@@ -3117,6 +3563,9 @@ function updateMap(dt) {
   G.overLookIcon = Input.over(lbtn);
   if (G.questsOpen) { updateQuests(dt); return; }
   if (G.tutorialDone && Input.tap(lbtn)) { Snd.ui(); openProfile('map'); return; }
+  const sbtn = mapStoreRect();
+  G.overStoreIcon = G.tutorialDone && Input.over(sbtn);
+  if (G.tutorialDone && Input.tap(sbtn)) { openStore('map'); return; }
   if (Input.tap(qbtn)) { G.questsOpen = true; G.questSel = -1; G.questMsgT = 0; Snd.ui(); return; }
   if (Input.tap(cbtn) || Input.actHit('codes')) {
     G.codesOpen = true; G.codeBuf = ''; G.codeMsgT = 0; Snd.ui(); return;
@@ -3289,6 +3738,13 @@ function drawMap() {
     ctx.fillRect(lr.x, lr.y, lr.w, 1); ctx.fillRect(lr.x, lr.y + lr.h - 1, lr.w, 1);
     ctx.fillRect(lr.x, lr.y, 1, lr.h); ctx.fillRect(lr.x + lr.w - 1, lr.y, 1, lr.h);
     drawText(ctx, 'PROFILE', lr.x + lr.w / 2, lr.y + 4, '#ffeec0', 1, 'center');
+    const sr = mapStoreRect(), sh = G.overStoreIcon;
+    ctx.fillStyle = sh ? 'rgba(74,56,34,0.94)' : 'rgba(48,36,22,0.88)';
+    ctx.fillRect(sr.x, sr.y, sr.w, sr.h);
+    ctx.fillStyle = sh ? '#ffd04a' : '#b8862f';
+    ctx.fillRect(sr.x, sr.y, sr.w, 1); ctx.fillRect(sr.x, sr.y + sr.h - 1, sr.w, 1);
+    ctx.fillRect(sr.x, sr.y, 1, sr.h); ctx.fillRect(sr.x + sr.w - 1, sr.y, 1, sr.h);
+    drawText(ctx, 'SHOP', sr.x + sr.w / 2, sr.y + 4, '#ffeec0', 1, 'center');
   }
   if (G.player) {
     ctx.drawImage(Art.item.coin[Math.floor(G.mapT / 0.09) % 8], 6, VH - 28);
@@ -3851,6 +4307,40 @@ function drawTorch(c2, x, y, seedT) {
     col: '#ffb638', col2: '#8a2a10', size: rr(1, 2), grav: -0.02, type: 'fire'
   }));
 }
+/* One sprite out of a set.  A room may name an index the set does not have:
+   an island picks one of three where only two were ever drawn.  A missing
+   prop must never take the whole frame down, so the nearest one stands in. */
+const NO_PROP = { c: null, ax: 0, ay: 0 };
+function propAt(set, idx) {
+  if (!set) return NO_PROP;
+  if (!Array.isArray(set)) return set || NO_PROP;
+  if (!set.length) return NO_PROP;
+  return set[clamp(idx | 0, 0, set.length - 1)] || NO_PROP;
+}
+/* The arc a drawn arrow would take.  It is walked forward with the same
+   numbers the arrow itself uses, so the dots are where it will really go,
+   and it stops at the first rock in the way. */
+function drawBowArc(c2) {
+  const p = G.player;
+  if (!p || p.dead || !p.bowReady || p.chargeT <= 0.12) return;
+  const a = G.aim(p.cx, p.cy - 6);
+  const pull = clamp(p.chargeT / CHARGE_FULL, 0.35, 1);
+  const sp = ARROW_SPEED * (0.55 + pull * 0.45);
+  let x = p.cx + a.x * 8, y = p.cy - 6 + a.y * 8;
+  let vx = a.x * sp, vy = a.y * sp - 0.8;
+  c2.save();
+  for (let i = 0; i < 90; i++) {
+    x += vx; y += vy; vy += ARROW_GRAV;
+    if (G.room.solidPx(x, y)) break;
+    if (i % 3) continue;
+    const k = 1 - i / 90;
+    c2.globalAlpha = 0.25 + k * 0.55;
+    c2.fillStyle = pull >= 0.99 ? '#ffeec0' : '#cfd8e6';
+    const r = i < 6 ? 2 : 1;
+    c2.fillRect(Math.round(x) - (r > 1 ? 1 : 0), Math.round(y) - (r > 1 ? 1 : 0), r, r);
+  }
+  c2.restore();
+}
 function drawDecor(layer, camX, camY) {
   const room = G.room;
   const wind = G.t * 1.15;
@@ -3860,22 +4350,22 @@ function drawDecor(layer, camX, camY) {
     if (d.y < camY - 160 || d.y > camY + VH + 160) continue;
     switch (d.kind) {
       case 'tree': {
-        const t = Art.prop.trees[d.idx];
+        const t = propAt(Art.prop.trees, d.idx);
         blitSway(ctx, t.c, d.x, d.y, d.sway, wind * 0.6 + d.phase, t.ax, t.ay, 10, d.scale || 1, d.alpha);
         break;
       }
       case 'giant': {
-        const t = Art.prop.giant[d.idx];
+        const t = propAt(Art.prop.giant, d.idx);
         blitSway(ctx, t.c, d.x, d.y, d.sway, wind * 0.45 + d.phase, t.ax, t.ay, 18, d.scale || 1, d.alpha);
         break;
       }
-      case 'fern': { const s = Art.prop.fern[d.idx]; blitSway(ctx, s.c, d.x, d.y, d.sway, wind * 1.1 + d.phase, s.ax, s.ay, 6, 1, d.alpha); break; }
-      case 'pine': { const s = Art.prop.pine[d.idx]; blitSway(ctx, s.c, d.x, d.y, d.sway * 0.6, wind * 0.5 + d.phase, s.ax, s.ay, 10, d.scale || 1, d.alpha); break; }
-      case 'cactus': { const s = Art.prop.cactus[d.idx]; blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
+      case 'fern': { const s = propAt(Art.prop.fern, d.idx); blitSway(ctx, s.c, d.x, d.y, d.sway, wind * 1.1 + d.phase, s.ax, s.ay, 6, 1, d.alpha); break; }
+      case 'pine': { const s = propAt(Art.prop.pine, d.idx); blitSway(ctx, s.c, d.x, d.y, d.sway * 0.6, wind * 0.5 + d.phase, s.ax, s.ay, 10, d.scale || 1, d.alpha); break; }
+      case 'cactus': { const s = propAt(Art.prop.cactus, d.idx); blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
       case 'palm': { const s = Art.prop.palm[d.idx || 0]; blitSway(ctx, s.c, d.x, d.y, d.sway, wind * 0.5 + d.phase, s.ax, s.ay, 10); break; }
-      case 'house': { const s = Art.prop.house[d.idx]; blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
+      case 'house': { const s = propAt(Art.prop.house, d.idx); blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
       case 'tumbleweed': {
-        const s = Art.prop.tumbleweed[d.idx];
+        const s = propAt(Art.prop.tumbleweed, d.idx);
         /* it rolls, and it turns as it rolls */
         const span = 240;
         const roll = ((G.t * (d.drift || 18) + d.phase * 40) % span);
@@ -3916,7 +4406,7 @@ function drawDecor(layer, camX, camY) {
         ctx.restore();
         break;
       }
-      case 'bone': { const s = Art.prop.bone[d.idx]; blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
+      case 'bone': { const s = propAt(Art.prop.bone, d.idx); blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
       case 'sphinx': {
         const s = Art.prop.sphinx;
         blit(ctx, s.c, d.x, d.y, s.ax, s.ay);
@@ -3932,7 +4422,7 @@ function drawDecor(layer, camX, camY) {
         break;
       }
       case 'nest': {
-        const s = Art.prop.nest[d.idx];
+        const s = propAt(Art.prop.nest, d.idx);
         blit(ctx, s.c, d.x, d.y, s.ax, s.ay);
         if (d.bird) {
           /* the bird sits on the rim and shuffles its wings now and then */
@@ -3942,15 +4432,15 @@ function drawDecor(layer, camX, camY) {
         }
         break;
       }
-      case 'bush': { const s = Art.prop.bush[d.idx]; blitSway(ctx, s.c, d.x, d.y, d.sway, wind + d.phase, s.ax, s.ay, 5); break; }
-      case 'tuft': { const s = Art.prop.tuft[d.idx]; blitSway(ctx, s.c, d.x, d.y, d.sway, wind * 1.3 + d.phase, s.ax, s.ay, 5); break; }
-      case 'flower': { const s = Art.prop.flower[d.idx]; blitSway(ctx, s.c, d.x, d.y, d.sway, wind * 1.2 + d.phase, s.ax, s.ay, 6); break; }
-      case 'reed': { const s = Art.prop.reed[d.idx]; blitSway(ctx, s.c, d.x, d.y, d.sway, wind * 1.5 + d.phase, s.ax, s.ay, 7); break; }
-      case 'mushroom': { const s = Art.prop.mushroom[d.idx]; blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
-      case 'rock': { const s = Art.prop.rock[d.idx]; blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
-      case 'stal': { const s = Art.prop.stal[d.idx]; blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
+      case 'bush': { const s = propAt(Art.prop.bush, d.idx); blitSway(ctx, s.c, d.x, d.y, d.sway, wind + d.phase, s.ax, s.ay, 5); break; }
+      case 'tuft': { const s = propAt(Art.prop.tuft, d.idx); blitSway(ctx, s.c, d.x, d.y, d.sway, wind * 1.3 + d.phase, s.ax, s.ay, 5); break; }
+      case 'flower': { const s = propAt(Art.prop.flower, d.idx); blitSway(ctx, s.c, d.x, d.y, d.sway, wind * 1.2 + d.phase, s.ax, s.ay, 6); break; }
+      case 'reed': { const s = propAt(Art.prop.reed, d.idx); blitSway(ctx, s.c, d.x, d.y, d.sway, wind * 1.5 + d.phase, s.ax, s.ay, 7); break; }
+      case 'mushroom': { const s = propAt(Art.prop.mushroom, d.idx); blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
+      case 'rock': { const s = propAt(Art.prop.rock, d.idx); blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
+      case 'stal': { const s = propAt(Art.prop.stal, d.idx); blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
       case 'crystal': {
-        const s = Art.prop.crystal[d.idx];
+        const s = propAt(Art.prop.crystal, d.idx);
         ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.16 + Math.sin(G.t * 1.6 + d.x) * 0.06;
         ctx.fillStyle = ['#59c9e8', '#a86fe0', '#5ce09a'][d.idx];
         ctx.beginPath(); ctx.arc(Math.round(d.x), Math.round(d.y - 10), 20, 0, TAU); ctx.fill();
@@ -3990,7 +4480,7 @@ function drawDecor(layer, camX, camY) {
         break;
       }
       case 'support': { const s = Art.prop.support; blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
-      case 'column': { const s = Art.prop.column[d.idx]; blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
+      case 'column': { const s = propAt(Art.prop.column, d.idx); blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
       case 'statue': { const s = Art.prop.statue; blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
       case 'brazier': {
         const s = Art.prop.brazier;
@@ -4010,24 +4500,24 @@ function drawDecor(layer, camX, camY) {
         break;
       }
       case 'puff': {
-        const c = Art.prop.puff[d.idx];
+        const c = propAt(Art.prop.puff, d.idx);
         const dx = Math.sin(G.t * 0.12 + d.phase) * d.drift * 4;
         ctx.save(); ctx.globalAlpha = d.layer === 2 ? 0.5 : 0.75;
         ctx.drawImage(c, Math.round(d.x - 32 + dx), Math.round(d.y - 15));
         ctx.restore();
         break;
       }
-      case 'coral': { const s = Art.prop.coral[d.idx]; blitSway(ctx, s.c, d.x, d.y, d.sway, wind * 0.5 + d.phase, s.ax, s.ay, 6); break; }
-      case 'kelp': { const s = Art.prop.kelp[d.idx]; blitSway(ctx, s.c, d.x, d.y, d.sway * 2.4, wind * 0.9 + d.phase, s.ax, s.ay, 8); break; }
-      case 'pillar': { const s = Art.prop.pillar[d.idx]; blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
+      case 'coral': { const s = propAt(Art.prop.coral, d.idx); blitSway(ctx, s.c, d.x, d.y, d.sway, wind * 0.5 + d.phase, s.ax, s.ay, 6); break; }
+      case 'kelp': { const s = propAt(Art.prop.kelp, d.idx); blitSway(ctx, s.c, d.x, d.y, d.sway * 2.4, wind * 0.9 + d.phase, s.ax, s.ay, 8); break; }
+      case 'pillar': { const s = propAt(Art.prop.pillar, d.idx); blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
       case 'shroom': {
-        const s = Art.prop.shroom[d.idx];
+        const s = propAt(Art.prop.shroom, d.idx);
         blitSway(ctx, s.c, d.x, d.y, d.sway, wind * 0.7 + d.phase, s.ax, s.ay, 8, 1, d.layer === 2 ? 0.92 : 1);
         break;
       }
       case 'rail': { const s = Art.prop.rail; blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
       case 'cart': { const s = Art.prop.cart; blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
-      case 'ore': { const s = Art.prop.ore[d.idx]; blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
+      case 'ore': { const s = propAt(Art.prop.ore, d.idx); blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
       case 'lantern': {
         const s = Art.prop.lantern;
         blit(ctx, s.c, d.x, d.y, s.ax, s.ay);
@@ -4284,6 +4774,7 @@ function drawWorld() {
     G.player.draw(ctx);
     drawSlash(ctx, G.player);
   }
+  drawBowArc(ctx);
   for (const pr of G.projectiles) pr.draw(ctx);
   for (const wv of G.waves) wv.draw(ctx);
   for (const pa of G.particles) pa.draw(ctx);
@@ -4442,6 +4933,22 @@ function drawHUD() {
       drawText(ctx, '+' + G.xpGain, rx + 44, ry, '#8fd0e8', 1, 'left', '#000000');
       ctx.restore();
     }
+  }
+  /* the quiver, when you carry a bow, and the boosters while they run */
+  if (G.hasArtifact('bow')) {
+    const qx = VW - 96, qy = 20;
+    ctx.fillStyle = 'rgba(10,8,18,0.55)'; ctx.fillRect(qx - 4, qy - 2, 46, 11);
+    ctx.save();
+    ctx.fillStyle = '#8a6a3a'; ctx.fillRect(qx, qy + 3, 8, 1);
+    ctx.fillStyle = '#cfd8e6'; ctx.fillRect(qx + 8, qy + 2, 3, 3);
+    ctx.restore();
+    drawText(ctx, String(G.arrows | 0), qx + 14, qy, (G.arrows | 0) > 0 ? '#e8dcc0' : '#c9403a', 1, 'left');
+  }
+  {
+    const bits = [];
+    if (G.boostLeft('xp') > 0) bits.push('2X XP ' + Math.ceil(G.boostLeft('xp') / 60) + 'M');
+    if (G.boostLeft('coin') > 0) bits.push('2X COIN ' + Math.ceil(G.boostLeft('coin') / 60) + 'M');
+    if (bits.length) drawText(ctx, bits.join('  '), VW - 30, 34, '#9be89a', 1, 'right', '#000000');
   }
   /* and the button that gives it all back, once the hundredth is passed */
   if (G.canPrestige()) {
@@ -5378,6 +5885,9 @@ function xpFor(e) {
   return Math.max(1, Math.round(6 + Math.sqrt(hp) * 3 + dmg * 2));
 }
 G.giveXp = function (n, x, y) {
+  /* the scholar's seal reads half again out of every kill */
+  if (G.hasArtifact && G.hasArtifact('scholarseal')) n *= 1.5;
+  if (G.boostLeft && G.boostLeft('xp') > 0) n *= 2;
   n = Math.max(0, Math.round(n));
   if (!n) return;
   const was = G.level0();
@@ -6971,6 +7481,7 @@ function render() {
   else if (G.state === 'title') { drawTitle(); drawCursor(); }
   else if (G.state === 'wardrobe') { drawWardrobe(); drawCursor(); }
   else if (G.state === 'archipelago') { drawArchipelago(); drawCursor(); }
+  else if (G.state === 'store') { drawStore(); drawCursor(); }
   else if (G.state === 'files') { drawFiles(); drawCursor(); }
   else if (G.state === 'profile') { drawProfile(); drawCursor(); }
   else if (G.state === 'map') { drawMap(); drawCursor(); }

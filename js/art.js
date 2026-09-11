@@ -2023,6 +2023,7 @@ function sunSprite(r0, col, glow) {
 
 /* draw a sprite with a wind sway: slices shift more the higher they are */
 function blitSway(c2, img, x, y, amp, phase, anchorX, anchorY, slices, scale, alpha) {
+  if (!img) return;
   slices = slices || 8;
   scale = scale || 1;
   const sh2 = img.height / slices;

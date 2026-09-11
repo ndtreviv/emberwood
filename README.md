@@ -726,6 +726,65 @@ skip an island to reach the next one either.
 
 The smithing table opens from either archipelago screen.
 
+## The item shop
+
+**SHOP** on the chart opens it. Five pages, and the purse along the top shows all three
+currencies: **coins**, **rubies** and **shards**.
+
+Every price is written short: **1K** for a thousand, **250K** for a quarter of a million,
+**1MIL** for a million. Only the shard page writes its prices plain, in shards.
+
+| Page | What it sells |
+| --- | --- |
+| **ITEMS** | Arrows at **1K each**, in ones, tens and fifties. **2X EXPERIENCE** and **2X COINS**, ten minutes apiece, **5K** each |
+| **LIMITED** | Three things off the other pages at **a third off**, turning over with the day |
+| **ARTIFACTS** | The three caskets, then all twenty artifacts, dearest first |
+| **CLOTHES** | Every suit the wardrobe sells, the three prestige regalia included |
+| **SHARDS** | Arrows, rubies and boosters, paid for in the shards of the Archipelago |
+
+### What the artifacts cost
+
+| Rank | Price | How many |
+| --- | --- | --- |
+| **MYTHIC** | 250K | 1 — the Longbow |
+| **LEGENDARY** | 100K | 3 |
+| **SUPER RARE** | 50K | 5 |
+| **RARE** | 20K | 11 |
+
+### Rubies and caskets
+
+**A guardian leaves rubies**, and how many depends on how hard it was to bring down. The
+Ember Wyrm of the first realm leaves **5**. The Pharaoh of the last leaves **100**. Every
+guardian between them falls on a curve between the two.
+
+Rubies buy nothing but caskets, and a casket holds one artifact you do not own yet:
+
+| Casket | Rubies | Rare | Super rare | Legendary | Mythic |
+| --- | --- | --- | --- | --- | --- |
+| **Worn** | 10 | 84% | 15% | **1%** | — |
+| **Sealed** | 50 | 55% | 40% | 5% | — |
+| **King's** | 100 | 30% | 58% | **10%** | **2%** |
+
+Only the King's Casket can hold **the Longbow**.
+
+## The longbow
+
+A **mythic** artifact, 250K in the shop or 2% out of a King's Casket. Wear it in a pouch
+slot and it changes what holding the sword does.
+
+- **Hold the sword button** — `Space` on a keyboard, the **CUT** button on a phone — and you
+  draw it. Let go and the arrow flies.
+- It **aims with the same crosshair the dash uses**: the cursor on a desktop, the draggable
+  reticle on a phone.
+- **The arc is drawn while you hold**, walked forward with the arrow's own numbers, so the
+  dots show where it will really land. It stops at the first rock in the way.
+- The longer you draw, the faster it leaves. An arrow **falls as it flies**, so a far shot
+  is arched, not aimed flat.
+- Every shot spends **one arrow**. The **Deep Quiver** keeps one in three back.
+
+Carrying the bow takes the place of the gale: a hold looses an arrow instead. Put the bow
+away and the gale comes back.
+
 ## The wardrobe
 
 **THE WARDROBE** on the profile page opens a shop of clothes, one suit cut to the pattern of
