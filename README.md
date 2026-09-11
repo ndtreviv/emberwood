@@ -28,10 +28,25 @@ made of, and each part turns green once it is finished:
 ```
 FILE 2                          FILE 1
    100%                            26%
-REALMS   9/9                    REALMS   3/9
-PAPERS  18/18                   PAPERS   5/18
-UPGRADES 118/118                UPGRADES 21/118
+REALMS   15/15                  REALMS   3/15
+PAPERS   30/30                  PAPERS   5/30
+UPGRADES 65/65                  UPGRADES 21/65
 ```
+
+### Past a hundred
+
+The buffed runs a prestige opens are worth a hundred more each. Take **every realm** on a
+run and the file climbs a whole century:
+
+| Every realm taken on | The file reads | The number turns |
+| --- | --- | --- |
+| the bronze run | **200%** | bronze |
+| the silver run | **300%** | silver |
+| the gold run | **400%** | gold |
+
+The bar runs the whole four hundred, with a mark at every century. A card that has begun a
+buffed run trades its coin line for the three counts, each in its own metal. Partial progress
+counts: half of the bronze run reads about 150%.
 
 The game writes the file whenever you enter an area, buy an upgrade, find a paper, redeem
 a code, kill a guardian or leave a realm. **ERASE** on a file asks once, then wipes it.
@@ -234,6 +249,7 @@ cut, which carries straight through a hit.
 | --- | --- |
 | **Your picture** | Ten small landscapes, one from each kind of country the game holds. It hangs in a round frame |
 | **Your border** | A ring of brick round the picture: four darknesses of stone, and three of beaten metal a prestige opens |
+| **Your tint** | Four plates beside the picture: **NO TINT**, **BRONZE TINT**, **SILVER TINT** and **GOLDEN TINT**. A tint strikes the whole landscape in that metal. The ones you have not earned carry a padlock |
 | **Your name** | Up to twelve letters. Type it, or tap it out on the built-in keyboard |
 | **Your rank** | The mark of a prestige, the level, and a bar that fills as you fight |
 | | The mark sits on a small plate of its own metal, corners cut, so it reads as a button |
@@ -315,8 +331,21 @@ which sits between bronze and silver.
 ### Prestige
 
 Pass level 100 and earn one more point of experience, and a **PRESTIGE** button appears on
-the play screen. **Nothing happens until you press it.** Press it and your levels go back to
-one and the mark stays.
+the play screen. **Nothing happens until you press it.**
+
+A prestige gives back everything you were carrying:
+
+| It takes | It keeps |
+| --- | --- |
+| Your levels, back to one | The mark, and every mark before it |
+| Your purse, back to nothing | Your hair, clothes, shirt, suit and mantle |
+| Every upgrade, back to none — hearts back to three | Your name, picture, border and tint |
+| The pouch, emptied of every artifact | Every suit you have bought |
+| Your tickets, and the `admin` state | Every realm you have cleared, and every buffed run you have taken |
+| Every quest you had claimed, so they may be earned again | Every paper found, and the shards of the Archipelago |
+
+The realms you have cleared stay cleared. They have to: the buffed runs are walked against
+that record, and the file percentage is counted from it.
 
 There are **three marks**, written as Roman numerals on a plate of their own metal and shown
 **before** the level. The plate has its corners cut away and a light along its crown, so it

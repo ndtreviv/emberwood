@@ -236,12 +236,39 @@ function slotTally(d) {
     upgrades: have, upgradesMax: cap
   };
 }
-/* 100% is every realm cleared, every paper found and every upgrade maxed */
+/* how many of the realms a file has taken on a buffed run of one tier */
+function slotBuffCount(d, tier) {
+  const done = (d && d.buffDone) || {};
+  let n = 0;
+  for (let i = 0; i < World.LEVELS.length; i++) if (done[tier + ':' + i]) n++;
+  return n;
+}
+/* The first hundred is every realm cleared, every paper found and every
+   upgrade maxed.  After that each buffed run of the whole game is worth a
+   hundred more: bronze carries a finished file to 200, silver to 300 and
+   gold to 400. */
+/* a function, not a constant: the count of marks is declared further down */
+function filePctMax() { return 100 * (1 + PRESTIGE_MAX); }
 function slotPercent(d) {
   if (!d) return 0;
   const t = slotTally(d);
   const f = (t.realms / t.realmsMax + t.papers / t.papersMax + t.upgrades / t.upgradesMax) / 3;
-  return Math.round(clamp(f, 0, 1) * 100);
+  let pct = Math.round(clamp(f, 0, 1) * 100);
+  for (let tier = 1; tier <= PRESTIGE_MAX; tier++)
+    pct += Math.round(slotBuffCount(d, tier) / World.LEVELS.length * 100);
+  return Math.min(filePctMax(), pct);
+}
+/* which metal a file has reached: none, then bronze, silver and gold */
+function fileTier(pct) {
+  if (pct >= 400) return 3;
+  if (pct >= 300) return 2;
+  if (pct >= 200) return 1;
+  return 0;
+}
+/* what colour a file writes its number and its percentage in */
+function fileTierCol(pct) {
+  const t = fileTier(pct);
+  return t ? PRESTIGE_COL[t] : (pct >= 100 ? '#ffd04a' : '#ffeec0');
 }
 
 /* ---------- effects ---------- */
@@ -2949,7 +2976,7 @@ function mapLookRect() {
 }
 function mapGearRect() { return { x: VW - 30, y: VH - 26, w: 24, h: 22 }; }
 /* the four ways to walk a realm: plain, then bronze, silver and gold */
-function mapBuffRect(t) { return { x: VW - 128 + t * 24, y: 32, w: 22, h: 14 }; }
+function mapBuffRect(t) { return { x: VW - 128 + t * 24, y: 37, w: 22, h: 14 }; }
 /* the footer line shares its strip with the cog, so it stops short of it */
 function mapFootX() { return (mapGearRect().x - 4) / 2; }
 /* the same pair of corner buttons on both maps */
@@ -3150,18 +3177,20 @@ function drawMap() {
   /* chapter ribbon */
   const last = G.chapter >= World.finalPage();
   const cur = last ? World.FINAL : World.CHAPTERS[G.chapter];
+  /* The ribbon is tall enough for both lines: the name stands at twice the
+     size and the subtitle sits clear underneath it, not across it. */
   ctx.fillStyle = 'rgba(58,44,28,0.9)';
-  ctx.fillRect(50, 4, VW - 100, 24);
+  ctx.fillRect(50, 3, VW - 100, 30);
   ctx.fillStyle = '#b8862f';
-  ctx.fillRect(50, 4, VW - 100, 1); ctx.fillRect(50, 27, VW - 100, 1);
-  drawText(ctx, last ? 'THE LAST MAP' : cur.name, VW / 2, 7, '#ffeec0', 2, 'center', '#2a1a10');
-  drawText(ctx, chapterUnlocked(G.chapter) ? cur.sub : (last ? cur.sub : 'SEALED'), VW / 2, 19,
+  ctx.fillRect(50, 3, VW - 100, 1); ctx.fillRect(50, 32, VW - 100, 1);
+  drawText(ctx, last ? 'THE LAST MAP' : cur.name, VW / 2, 6, '#ffeec0', 2, 'center', '#2a1a10');
+  drawText(ctx, chapterUnlocked(G.chapter) ? cur.sub : (last ? cur.sub : 'SEALED'), VW / 2, 22,
            chapterUnlocked(G.chapter) ? '#d8c49a' : '#a89270', 1, 'center');
   /* page dots */
   const pages = World.mapPages();
   for (let c = 0; c < pages; c++) {
     ctx.fillStyle = c === G.chapter ? '#ffeec0' : (chapterUnlocked(c) ? '#b8862f' : '#7a6448');
-    ctx.fillRect(Math.round(VW / 2 - pages * 4 + c * 8), 31, 5, 3);
+    ctx.fillRect(Math.round(VW / 2 - pages * 4 + c * 8), 36, 5, 3);
   }
   /* paging arrows */
   for (const dir of [-1, 1]) {
@@ -3219,7 +3248,7 @@ function drawMap() {
   }
   /* the tier picker, once a prestige has opened one */
   if ((G.prestige | 0) > 0) {
-    drawText(ctx, 'THE RUN', mapBuffRect(0).x - 6, 36, '#5a4326', 1, 'right', '#ebdcb6');
+    drawText(ctx, 'THE RUN', mapBuffRect(0).x - 6, 41, '#5a4326', 1, 'right', '#ebdcb6');
     for (let t = 0; t <= PRESTIGE_MAX; t++) {
       const r = mapBuffRect(t), open = t <= (G.prestige | 0);
       const on = (G.buffTier | 0) === t, hot = open && Input.over(r);
@@ -5017,12 +5046,13 @@ function updateFiles(dt) {
 function drawFiles() {
   ctx.drawImage(Art.map.bg, 0, 0);
   for (const pa of G.particles) pa.draw(ctx);
+  /* tall enough for both lines, so the one does not sit across the other */
   ctx.fillStyle = 'rgba(58,44,28,0.9)';
-  ctx.fillRect(50, 4, VW - 100, 24);
+  ctx.fillRect(50, 3, VW - 100, 30);
   ctx.fillStyle = '#b8862f';
-  ctx.fillRect(50, 4, VW - 100, 1); ctx.fillRect(50, 27, VW - 100, 1);
-  drawText(ctx, 'CHOOSE A FILE', VW / 2, 5, '#ffeec0', 2, 'center', '#2a1a10');
-  drawText(ctx, 'THREE SEPARATE JOURNEYS', VW / 2, 20, '#d8c49a', 1, 'center');
+  ctx.fillRect(50, 3, VW - 100, 1); ctx.fillRect(50, 32, VW - 100, 1);
+  drawText(ctx, 'CHOOSE A FILE', VW / 2, 6, '#ffeec0', 2, 'center', '#2a1a10');
+  drawText(ctx, 'THREE SEPARATE JOURNEYS', VW / 2, 22, '#d8c49a', 1, 'center');
 
   for (let i = 0; i < SLOTS; i++) {
     const r = fileRect(i), d = slotOf(i), hot = G.fileSel === i;
@@ -5032,7 +5062,9 @@ function drawFiles() {
     ctx.fillStyle = hot ? '#ffd04a' : '#b8862f';
     ctx.fillRect(r.x, r.y, r.w, 1); ctx.fillRect(r.x, r.y + r.h - 1, r.w, 1);
     ctx.fillRect(r.x, r.y, 1, r.h); ctx.fillRect(r.x + r.w - 1, r.y, 1, r.h);
-    drawText(ctx, 'FILE ' + (i + 1), r.x + 6, r.y + 6, '#ffeec0', 1, 'left');
+    /* the number takes the metal of whatever the file has finished */
+    drawText(ctx, 'FILE ' + (i + 1), r.x + 6, r.y + 6,
+             d ? fileTierCol(pct) : '#ffeec0', 1, 'left');
     if (G.slot === i && d) drawText(ctx, 'LAST', r.x + r.w - 6, r.y + 6, '#9be89a', 1, 'right');
 
     if (!d) {
@@ -5040,13 +5072,18 @@ function drawFiles() {
       drawText(ctx, hot ? 'CLICK TO BEGIN' : '', r.x + r.w / 2, r.y + 62, '#d8c49a', 1, 'center');
       continue;
     }
-    /* the bar of how far this file has gone */
-    drawText(ctx, pct + '%', r.x + r.w / 2, r.y + 20, pct >= 100 ? '#ffd04a' : '#ffeec0', 2, 'center');
+    /* the bar of how far this file has gone, the whole four hundred of it */
+    drawText(ctx, pct + '%', r.x + r.w / 2, r.y + 20, fileTierCol(pct), 2, 'center');
     const bw = r.w - 16, bx = r.x + 8, by = r.y + 40;
     ctx.fillStyle = '#2a1f12'; ctx.fillRect(bx - 1, by - 1, bw + 2, 7);
     ctx.fillStyle = '#4a3826'; ctx.fillRect(bx, by, bw, 5);
-    ctx.fillStyle = pct >= 100 ? '#ffd04a' : '#6fc46a';
-    ctx.fillRect(bx, by, Math.round(bw * pct / 100), 5);
+    ctx.fillStyle = pct >= 100 ? fileTierCol(pct) : '#6fc46a';
+    const pmax = filePctMax();
+    ctx.fillRect(bx, by, Math.round(bw * clamp(pct, 0, pmax) / pmax), 5);
+    /* a mark at every hundred, where the next metal begins */
+    ctx.fillStyle = '#2a1f12';
+    for (let m = 100; m < pmax; m += 100)
+      ctx.fillRect(bx + Math.round(bw * m / pmax), by, 1, 5);
 
     /* the three things the percentage is made of, each shown against its total */
     const t = slotTally(d);
@@ -5054,7 +5091,21 @@ function drawFiles() {
     drawText(ctx, 'REALMS ' + t.realms + '/' + t.realmsMax, r.x + 8, r.y + 52, part(t.realms, t.realmsMax), 1, 'left');
     drawText(ctx, 'PAPERS ' + t.papers + '/' + t.papersMax, r.x + 8, r.y + 62, part(t.papers, t.papersMax), 1, 'left');
     drawText(ctx, 'UPGRADES ' + t.upgrades + '/' + t.upgradesMax, r.x + 8, r.y + 72, part(t.upgrades, t.upgradesMax), 1, 'left');
-    drawText(ctx, 'COINS ' + (d.codes && d.codes.admin ? INF : (d.coins || 0)), r.x + 8, r.y + 82, '#e0d0aa', 1, 'left');
+    /* and what the buffed runs have taken, when any of them have begun */
+    const runs = [1, 2, 3].map(k => slotBuffCount(d, k));
+    if (runs.some(n => n > 0)) {
+      /* the three counts on one line, each in the metal of its own run */
+      let rx = r.x + 8;
+      rx += drawText(ctx, 'RUNS ', rx, r.y + 82, '#e0d0aa', 1, 'left');
+      for (let k = 1; k <= PRESTIGE_MAX; k++) {
+        const n = runs[k - 1], all = n >= World.LEVELS.length;
+        rx += drawText(ctx, String(n), rx, r.y + 82,
+                       all ? PRESTIGE_COL[k] : '#8a7a5c', 1, 'left');
+        if (k < PRESTIGE_MAX) rx += drawText(ctx, '/', rx, r.y + 82, '#7a6448', 1, 'left');
+      }
+    } else {
+      drawText(ctx, 'COINS ' + (d.codes && d.codes.admin ? INF : (d.coins || 0)), r.x + 8, r.y + 82, '#e0d0aa', 1, 'left');
+    }
 
     const er = fileEraseRect(i);
     const armed = G.eraseArm === i;
@@ -5331,8 +5382,29 @@ G.giveXp = function (n, x, y) {
 G.doPrestige = function () {
   if (!G.canPrestige()) return false;
   G.prestige = (G.prestige | 0) + 1;
+  /* A prestige gives back everything you were carrying.  The levels go, the
+     purse goes, every upgrade goes, the pouch empties and the tickets go.
+     What you look like stays: the clothes, the mantle, the hair, and the
+     name, picture, border and tint on your profile.  What you have already
+     taken stays too, since the buffed runs are walked against that record
+     and the file percentage is counted from it. */
   G.xp = 0;
   G.buffTier = 0;
+  const p = G.player;
+  if (p) {
+    p.coins = 0;
+    for (const k in p.up) p.up[k] = 0;
+    p.maxHp = 6; p.hp = 6;
+    p.burnT = 0; p.burnAcc = 0;
+  }
+  G.artifacts = { owned: {}, slots: [null, null, null] };
+  G.codes.tickets = 0;
+  G.codes.admin = false;
+  G.quests = { claimed: {}, daily: null };
+  G.relicSeen = {}; G.relicShow = null;
+  /* every realm begins again from its own start */
+  G.levelState = {}; G.roomFlags = {}; G.flags = {};
+  try { G.applyArtifacts(); } catch (e) { console.error('artifacts', e); }
   Snd.unlock(); G.flash(1); G.shake(9);
   G.banner('PRESTIGE ' + PRESTIGE_MARK[G.prestige], 4);
   for (let i = 0; i < 140; i++) G.particles.push(new Particle({
@@ -5400,7 +5472,13 @@ const BORDERS = [
   { name: 'SILVER', base: '#cfd8e6', dark: '#8a95a8', light: '#ffffff', need: 2, shine: true },
   { name: 'GOLD', base: '#f0c93a', dark: '#a8862a', light: '#fff4c0', need: 3, shine: true }
 ];
-function newAccount() { return { name: 'WANDERER', avatar: 0, border: 1 }; }
+/* a portrait may be struck in a metal, once a prestige has opened it */
+const TINTS = [{ name: 'PLAIN', label: 'NO TINT', need: 0 },
+               { name: 'BRONZE', label: 'BRONZE TINT', need: 1 },
+               { name: 'SILVER', label: 'SILVER TINT', need: 2 },
+               { name: 'GOLD', label: 'GOLDEN TINT', need: 3 }];
+function tintOwned(i) { return (TINTS[i] ? TINTS[i].need : 99) <= (G.prestige | 0); }
+function newAccount() { return { name: 'WANDERER', avatar: 0, border: 1, tint: 0 }; }
 function borderOwned(i) { return (BORDERS[i] ? BORDERS[i].need : 99) <= (G.prestige | 0); }
 function accountName() {
   const n = (G.account && G.account.name) || '';
@@ -5559,15 +5637,18 @@ function profDoneRect() { return { x: PROF_BOX.x + 262, y: PROF_BOX.y + PROF_BOX
 function profRandomRect() { return { x: PROF_BOX.x + 174, y: PROF_BOX.y + PROF_BOX.h - 24, w: 80, h: 16 }; }
 function profPreviewSpot() { return { cx: PROF_BOX.x + 84, base: PROF_BOX.y + 170, scale: 1.4 }; }
 
-/* ---------- the PROFILE page ---------- */
+/* ---------- the PROFILE page ----------
+   Three columns: the picture on the left with its two arrow rows, the four
+   tint plates beside it, and the name, the rank and the buttons to the
+   right of those. */
 const PORTRAIT = 48, FRAME = 8;
 function profFaceRect() {
-  return { x: PROF_BOX.x + 16, y: PROF_BOX.y + 42,
+  return { x: PROF_BOX.x + 6, y: PROF_BOX.y + 34,
            w: PORTRAIT + FRAME * 2, h: PORTRAIT + FRAME * 2 };
 }
 /* The two arrow rows reach a little wider than the picture, so the name of
    the picture and the name of the border both sit clear between them. */
-const PIC_ROW_PAD = 12, PIC_ARROW_W = 16;
+const PIC_ROW_PAD = 6, PIC_ARROW_W = 16;
 function profPicArrow(dir) {
   const f = profFaceRect();
   return { x: dir < 0 ? f.x - PIC_ROW_PAD : f.x + f.w + PIC_ROW_PAD - PIC_ARROW_W,
@@ -5578,9 +5659,23 @@ function profEdgeArrow(dir) {
   return { x: dir < 0 ? f.x - PIC_ROW_PAD : f.x + f.w + PIC_ROW_PAD - PIC_ARROW_W,
            y: f.y + f.h + 22, w: PIC_ARROW_W, h: 14 };
 }
-function profNameRect() { return { x: PROF_BOX.x + 118, y: PROF_BOX.y + 50, w: 168, h: 18 }; }
-function profWardRect() { return { x: PROF_BOX.x + 118, y: PROF_BOX.y + 128, w: 110, h: 18 }; }
-function profPrestigeRect() { return { x: PROF_BOX.x + 236, y: PROF_BOX.y + 128, w: 104, h: 18 }; }
+/* the four tint plates, stacked beside the picture */
+function profTintRect(i) {
+  return { x: PROF_BOX.x + 82, y: PROF_BOX.y + 40 + i * 19, w: 94, h: 17 };
+}
+function profNameRect() { return { x: PROF_BOX.x + 182, y: PROF_BOX.y + 40, w: 152, h: 18 }; }
+function profWardRect() { return { x: PROF_BOX.x + 182, y: PROF_BOX.y + 118, w: 74, h: 18 }; }
+function profPrestigeRect() { return { x: PROF_BOX.x + 260, y: PROF_BOX.y + 118, w: 74, h: 18 }; }
+/* a small padlock, for a tint no prestige has opened yet */
+function drawSmallLock(c2, x, y, col) {
+  c2.fillStyle = col;
+  c2.fillRect(x + 2, y, 4, 1);
+  c2.fillRect(x + 1, y + 1, 1, 2);
+  c2.fillRect(x + 6, y + 1, 1, 2);
+  c2.fillRect(x, y + 3, 8, 5);
+  c2.fillStyle = '#12101c';
+  c2.fillRect(x + 3, y + 5, 2, 2);
+}
 /* The picture is a round one, so the frame is a ring of brick round it.
    The bricks are laid in courses that run round the ring, and each one is
    cut to the two circles that bound it. */
@@ -5628,9 +5723,11 @@ function drawPortraitFrame(c2, r, idx, t) {
   c2.restore();
 }
 /* the picture itself, cut to a circle */
-function drawPortrait(c2, r, avatar) {
+function drawPortrait(c2, r, avatar, tint) {
   const cc = portraitCircle(r);
-  const img = Art.portrait && Art.portrait[clamp(avatar | 0, 0, Art.portrait.length - 1)];
+  const i = clamp(avatar | 0, 0, (Art.portrait || []).length - 1);
+  const set = (tint | 0) > 0 && Art.portraitTint && Art.portraitTint[tint | 0];
+  const img = (set && set[i]) || (Art.portrait && Art.portrait[i]);
   if (!img) return;
   c2.save();
   c2.beginPath();
@@ -5767,6 +5864,17 @@ function updateProfileFace() {
       else { Snd.uiBad(); G.profMsg = 'A PRESTIGE OPENS IT'; G.profMsgT = 2; }
     }
   }
+  /* the four tint plates, each one picked outright */
+  for (let i = 0; i < TINTS.length; i++) {
+    if (!Input.tap(profTintRect(i))) continue;
+    if (!tintOwned(i)) {
+      Snd.uiBad();
+      G.profMsg = 'PRESTIGE ' + PRESTIGE_MARK[TINTS[i].need] + ' OPENS IT';
+      G.profMsgT = 2.2;
+      continue;
+    }
+    a.tint = i; changed = true; Snd.ui();
+  }
   if (Input.tap(profNameRect())) {
     G.nameEdit = true; G.nameKeyHit = null; Snd.ui();
   }
@@ -5810,7 +5918,7 @@ function drawProfileFace() {
   const f = profFaceRect();
   /* the picture, and the frame of brick or metal round it */
   drawPortraitFrame(ctx, f, a.border, G.profT);
-  drawPortrait(ctx, f, a.avatar);
+  drawPortrait(ctx, f, a.avatar, a.tint);
   for (const [rect, label, dir] of [[profPicArrow(-1), '<', -1], [profPicArrow(1), '>', 1],
                                     [profEdgeArrow(-1), '<', -1], [profEdgeArrow(1), '>', 1]]) {
     const hot = Input.over(rect);
@@ -5823,6 +5931,30 @@ function drawProfileFace() {
            f.x + f.w / 2, profPicArrow(-1).y + 4, '#a9b3c9', 1, 'center');
   drawText(ctx, BORDERS[clamp(a.border | 0, 0, BORDERS.length - 1)].name,
            f.x + f.w / 2, profEdgeArrow(-1).y + 4, '#a9b3c9', 1, 'center');
+  /* the four tint plates: the one you wear is lit, the shut ones carry a lock */
+  const tn = clamp(a.tint | 0, 0, TINTS.length - 1);
+  for (let i = 0; i < TINTS.length; i++) {
+    const tr = profTintRect(i), own = tintOwned(i), on = tn === i;
+    const hot = own && Input.over(tr);
+    ctx.fillStyle = on ? 'rgba(74,56,34,0.96)' : (hot ? '#332c4c' : (own ? '#211c32' : '#1a1626'));
+    ctx.fillRect(tr.x, tr.y, tr.w, tr.h);
+    ctx.fillStyle = on ? (i ? PRESTIGE_COL[i] : '#ffd04a') : (own ? '#3a3350' : '#2a2438');
+    ctx.fillRect(tr.x, tr.y, tr.w, 1); ctx.fillRect(tr.x, tr.y + tr.h - 1, tr.w, 1);
+    ctx.fillRect(tr.x, tr.y, 1, tr.h); ctx.fillRect(tr.x + tr.w - 1, tr.y, 1, tr.h);
+    /* a scrap of the metal itself, so you can see what it does */
+    if (i) {
+      const m = METAL[i];
+      ctx.fillStyle = m.dark; ctx.fillRect(tr.x + 4, tr.y + 4, 9, 9);
+      ctx.fillStyle = own ? m.mid : '#3a3350'; ctx.fillRect(tr.x + 5, tr.y + 5, 7, 7);
+      ctx.fillStyle = own ? m.light : '#4a4368'; ctx.fillRect(tr.x + 5, tr.y + 5, 7, 2);
+    } else {
+      ctx.fillStyle = '#3a3350'; ctx.fillRect(tr.x + 4, tr.y + 4, 9, 9);
+      ctx.fillStyle = own ? '#8fa0b8' : '#4a4368'; ctx.fillRect(tr.x + 5, tr.y + 5, 7, 7);
+    }
+    drawText(ctx, TINTS[i].label, tr.x + 16, tr.y + 5,
+             own ? (on ? '#ffeec0' : '#c9d4e8') : '#5b6480', 1, 'left');
+    if (!own) drawSmallLock(ctx, tr.x + tr.w - 10, tr.y + 5, '#7f8aa3');
+  }
 
   /* the name */
   const nr = profNameRect(), nameHot = Input.over(nr);
@@ -5834,10 +5966,10 @@ function drawProfileFace() {
   drawText(ctx, 'CLICK TO CHANGE YOUR NAME', nr.x, nr.y + 21, '#6d7994', 1, 'left');
 
   /* the rank: the mark of a prestige, then the level, then the bar */
-  const ry = PROF_BOX.y + 84;
+  const ry = PROF_BOX.y + 74;
   drawText(ctx, 'LEVEL', nr.x, ry + 3, '#a9b3c9', 1, 'left');
   drawRank(ctx, nr.x + 34, ry, 2, 'left');
-  const bw = 200, by = ry + 18;
+  const bw = nr.w, by = ry + 20;
   ctx.fillStyle = '#12101c'; ctx.fillRect(nr.x, by, bw, 7);
   ctx.fillStyle = rankColour(n);
   ctx.fillRect(nr.x + 1, by + 1, Math.round((bw - 2) * G.levelFrac()), 5);
@@ -5852,7 +5984,7 @@ function drawProfileFace() {
   ctx.fillRect(wr.x, wr.y, wr.w, wr.h);
   ctx.fillStyle = wh ? '#ffd04a' : '#b8862f';
   ctx.fillRect(wr.x, wr.y, wr.w, 1);
-  drawText(ctx, 'THE WARDROBE', wr.x + wr.w / 2, wr.y + 6, '#ffeec0', 1, 'center');
+  drawText(ctx, 'WARDROBE', wr.x + wr.w / 2, wr.y + 6, '#ffeec0', 1, 'center');
   const pgr = profPrestigeRect(), ph = Input.over(pgr), can = G.canPrestige();
   ctx.fillStyle = can ? (ph ? '#6a4a1c' : '#4a3414') : 'rgba(24,20,30,0.9)';
   ctx.fillRect(pgr.x, pgr.y, pgr.w, pgr.h);
@@ -5861,11 +5993,11 @@ function drawProfileFace() {
   drawText(ctx, pr >= PRESTIGE_MAX ? 'PRESTIGE III' : ('PRESTIGE ' + PRESTIGE_MARK[pr + 1]),
            pgr.x + pgr.w / 2, pgr.y + 6, can ? '#ffeec0' : '#6d7994', 1, 'center');
   drawText(ctx, pr >= PRESTIGE_MAX ? 'ALL THREE MARKS ARE YOURS'
-                                   : 'GIVE BACK YOUR LEVELS FOR THE MARK',
+                                   : 'YOU KEEP ONLY YOUR LOOK',
            nr.x, pgr.y + 22, '#6d7994', 1, 'left');
   if (G.profMsgT > 0) {
     ctx.save(); ctx.globalAlpha = Math.min(1, G.profMsgT * 2);
-    drawText(ctx, G.profMsg, PROF_BOX.x + PROF_BOX.w / 2, PROF_BOX.y + PROF_BOX.h - 22,
+    drawText(ctx, G.profMsg, PROF_BOX.x + PROF_BOX.w / 2, PROF_BOX.y + PROF_BOX.h - 34,
              '#ffd04a', 1, 'center', '#2a1a10');
     ctx.restore();
   }
@@ -5874,10 +6006,8 @@ function drawProfile() {
   ctx.drawImage(Art.map.bg, 0, 0);
   for (const pa of G.particles) pa.draw(ctx);
   panel(ctx, PROF_BOX.x, PROF_BOX.y, PROF_BOX.w, PROF_BOX.h);
+  /* the corner stays empty: the page says your name and your rank already */
   drawText(ctx, 'YOUR PROFILE', PROF_BOX.x + 12, PROF_BOX.y + 7, '#f2e2b8', 1, 'left', '#000000');
-  drawText(ctx, accountName(), PROF_BOX.x + PROF_BOX.w - 52, PROF_BOX.y + 7,
-           rankColour(G.level0()), 1, 'right');
-  drawRank(ctx, PROF_BOX.x + PROF_BOX.w - 12, PROF_BOX.y + 7, 1, 'right');
   /* the two tabs */
   PROF_TABS.forEach((name, i) => {
     const r = profTabRect(i), on = G.profTab === i, hot = Input.over(r);

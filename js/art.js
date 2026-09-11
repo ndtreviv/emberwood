@@ -5201,7 +5201,13 @@ Art.steps = function () {
                     thrust: frames(4, (i, n) => soldierFrame('thrust', i, n)) };
   });
   push('THE REALM', () => {
-    Art.portrait = AVATAR_KEYS.map(k => avatarSprite(k).canvas());
+    const portraitPix = AVATAR_KEYS.map(k => avatarSprite(k));
+    Art.portrait = portraitPix.map(g => g.canvas());
+    /* the same ten landscapes struck in each of the three metals */
+    Art.portraitTint = [null,
+                        portraitPix.map(g => tintMetal(g, METAL[1]).canvas()),
+                        portraitPix.map(g => tintMetal(g, METAL[2]).canvas()),
+                        portraitPix.map(g => tintMetal(g, METAL[3]).canvas())];
     Art.map.bg = mapBackground().canvas();
     Art.map.tutorial = mapNodeSprite('tutorial').canvas();
     Art.prop.sign = prop(signSprite(), 10, 26);
