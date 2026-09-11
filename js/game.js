@@ -3158,11 +3158,20 @@ G.applyArtifacts = function () {
 function pouchRect() { return { x: VW - 26, y: 30, w: 22, h: 22 }; }
 const POUCH_BOX = { x: 32, y: 12, w: 320, h: 192 };
 function pouchSlotRect(i) { return { x: POUCH_BOX.x + 32 + i * 86, y: POUCH_BOX.y + 32, w: 70, h: 54 }; }
+/* Eight to a page, in two columns of four.  There are twenty artifacts now,
+   and all of them at once ran off the foot of the panel. */
+const POUCH_PER_PAGE = 8;
 function pouchListRect(i) {
   return { x: POUCH_BOX.x + 12 + (i % 2) * 150, y: POUCH_BOX.y + 96 + Math.floor(i / 2) * 19,
            w: 146, h: 17 };
 }
+/* the two arrows live up in the header, beside the close button, where the
+   footer line cannot reach them */
+function pouchPageRect(d) {
+  return { x: POUCH_BOX.x + POUCH_BOX.w - (d < 0 ? 94 : 68), y: POUCH_BOX.y + 4, w: 24, h: 16 };
+}
 function ownedArtifacts() { return ARTIFACTS.filter(a => G.artifacts.owned[a.key]); }
+function pouchPages() { return Math.max(1, Math.ceil(ownedArtifacts().length / POUCH_PER_PAGE)); }
 function updatePouch(dt) {
   G.pouchT = (G.pouchT || 0) + dt;
   const closeR = { x: POUCH_BOX.x + POUCH_BOX.w - 24, y: POUCH_BOX.y + 4, w: 20, h: 16 };
@@ -3171,8 +3180,16 @@ function updatePouch(dt) {
     G.pouchOpen = false; Snd.ui(); Snd.musicLevel(0.34, 0.4); return;
   }
   G.pouchSel = -1; G.pouchSlotSel = -1;
+  const pages = pouchPages();
+  G.pouchPage = clamp(G.pouchPage | 0, 0, pages - 1);
+  for (const d of [-1, 1]) if (Input.tap(pouchPageRect(d))) {
+    G.pouchPage = clamp(G.pouchPage + d, 0, pages - 1); Snd.ui();
+  }
+  if (Input.hit('ArrowRight')) G.pouchPage = clamp(G.pouchPage + 1, 0, pages - 1);
+  if (Input.hit('ArrowLeft')) G.pouchPage = clamp(G.pouchPage - 1, 0, pages - 1);
   for (let i = 0; i < ARTIFACT_SLOTS; i++) if (Input.over(pouchSlotRect(i))) G.pouchSlotSel = i;
-  const own = ownedArtifacts();
+  const all = ownedArtifacts();
+  const own = all.slice(G.pouchPage * POUCH_PER_PAGE, (G.pouchPage + 1) * POUCH_PER_PAGE);
   for (let i = 0; i < own.length; i++) if (Input.over(pouchListRect(i))) G.pouchSel = i;
   let slotTap = -1, listTap = -1;
   for (let i = 0; i < ARTIFACT_SLOTS; i++) if (Input.tap(pouchSlotRect(i))) slotTap = i;
@@ -3226,20 +3243,25 @@ function drawPouch() {
     ctx.fillRect(r.x, r.y, 1, r.h); ctx.fillRect(r.x + r.w - 1, r.y, 1, r.h);
     if (key) {
       const img = Art.item.artifact[key];
-      ctx.save();
-      ctx.translate(r.x + r.w / 2, r.y + r.h / 2 - 4);
-      ctx.scale(2, 2);
-      ctx.drawImage(img, -8, -8);
-      ctx.restore();
+      if (img) {
+        ctx.save();
+        ctx.translate(r.x + r.w / 2, r.y + r.h / 2 - 4);
+        ctx.scale(2, 2);
+        ctx.drawImage(img, -8, -8);
+        ctx.restore();
+      }
       drawText(ctx, artifactBy(key).short, r.x + r.w / 2, r.y + r.h - 10, '#ffeec0', 1, 'center');
     } else {
       drawText(ctx, 'EMPTY', r.x + r.w / 2, r.y + r.h / 2 - 3, '#6d5a38', 1, 'center');
     }
   }
 
-  /* everything found so far */
-  const own = ownedArtifacts();
-  if (!own.length) {
+  /* everything found so far, a page at a time */
+  const all = ownedArtifacts();
+  const pages = pouchPages();
+  const page = clamp(G.pouchPage | 0, 0, pages - 1);
+  const own = all.slice(page * POUCH_PER_PAGE, (page + 1) * POUCH_PER_PAGE);
+  if (!all.length) {
     drawText(ctx, 'YOU CARRY NOTHING YET. LOOK UNDER THE SAND.',
              B.x + B.w / 2, B.y + 110, '#a89270', 1, 'center');
   }
@@ -3251,11 +3273,23 @@ function drawPouch() {
     ctx.fillRect(r.x, r.y, r.w, r.h);
     ctx.fillStyle = inSlot ? '#6fc46a' : RANK_COL[a.rank];
     ctx.fillRect(r.x, r.y, r.w, 1);
-    ctx.drawImage(Art.item.artifact[a.key], r.x + 2, r.y + 1);
-    drawText(ctx, a.short, r.x + 21, r.y + 5, inSlot ? '#9be89a' : '#ebdcb6', 1, 'left');
-    drawText(ctx, inSlot ? 'WORN' : RANK_NAME[a.rank], r.x + r.w - 5, r.y + 5,
-             inSlot ? '#9be89a' : RANK_COL[a.rank], 1, 'right');
+    if (Art.item.artifact[a.key]) ctx.drawImage(Art.item.artifact[a.key], r.x + 2, r.y + 1);
+    /* the rank is written first, and the name takes what room is left, so
+       the two never sit on top of one another */
+    const tag = inSlot ? 'WORN' : RANK_NAME[a.rank];
+    drawText(ctx, tag, r.x + r.w - 5, r.y + 5, inSlot ? '#9be89a' : RANK_COL[a.rank], 1, 'right');
+    drawText(ctx, fitText(a.short, r.w - 30 - textWidth(tag)), r.x + 21, r.y + 5,
+             inSlot ? '#9be89a' : '#ebdcb6', 1, 'left');
   });
+  if (pages > 1) {
+    for (const d of [-1, 1]) {
+      const r = pouchPageRect(d), can = d < 0 ? page > 0 : page < pages - 1;
+      ctx.fillStyle = can ? 'rgba(58,44,28,0.9)' : 'rgba(34,26,18,0.6)';
+      ctx.fillRect(r.x, r.y, r.w, r.h);
+      drawText(ctx, d < 0 ? '<' : '>', r.x + r.w / 2, r.y + 5, can ? '#ffeec0' : '#5b4a34', 1, 'center');
+    }
+    drawText(ctx, (page + 1) + '/' + pages, pouchPageRect(1).x + 28, B.y + 9, '#a9b3c9', 1, 'left');
+  }
 
   /* the line at the foot says what the thing under the cursor does */
   let foot = 'CLICK A FIND TO WEAR IT. CLICK A SLOT TO TAKE IT OFF.';
@@ -3438,10 +3472,10 @@ function mapLookRect() {
 function mapGearRect() { return { x: VW - 30, y: VH - 26, w: 24, h: 22 }; }
 /* the four ways to walk a realm: plain, then bronze, silver and gold */
 function mapBuffRect(t) { return { x: VW - 128 + t * 24, y: 37, w: 22, h: 14 }; }
-/* the item shop, under the third realm of the first chapter */
+/* the item shop, directly under the profile button */
 function mapStoreRect() {
-  const n = World.LEVELS[World.CHAPTERS[0].levels[2]].node;
-  return { x: n.x - 30, y: n.y + 46, w: 60, h: 14 };
+  const l = mapLookRect();
+  return { x: l.x, y: l.y + 17, w: l.w, h: l.h };
 }
 /* the footer line shares its strip with the cog, so it stops short of it */
 function mapFootX() { return (mapGearRect().x - 4) / 2; }

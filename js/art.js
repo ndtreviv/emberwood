@@ -3906,6 +3906,78 @@ function artifactIcon(key) {
     g.disc(5, 11, 3, gold);
     g.disc(5, 11, 1.8, goldL);
     g.set(4, 10, C('#ffffff'));
+  } else if (key === 'bow') {
+    /* the longbow, strung, with an arrow on the string */
+    g.thick(11, 2, 13, 8, 2, C('#7a5230'));
+    g.thick(13, 8, 11, 14, 2, C('#7a5230'));
+    g.thick(11, 2, 12, 4, 1, C('#a0703c'));
+    g.line(11, 2, 11, 14, C('#e8dcc0'));
+    g.rect(2, 8, 9, 1, C('#8a6a3a'));
+    g.poly([[11, 6], [14, 8.5], [11, 11]], C('#cfd8e6'));
+    g.rect(2, 7, 2, 1, C('#f2e8d0')); g.rect(2, 9, 2, 1, C('#f2e8d0'));
+  } else if (key === 'heartstone') {
+    /* a red stone cut as a heart */
+    g.poly([[8, 14], [2, 7], [3, 4], [5.6, 3], [8, 5], [10.4, 3], [13, 4], [14, 7]], C('#8f2028'));
+    g.poly([[8, 12], [4, 7], [5, 5], [6.6, 4.6], [8, 6.4], [9.4, 4.6], [11, 5], [12, 7]], C('#e8433f'));
+    g.poly([[7, 7], [9, 5.6], [10, 7], [8, 9]], C('#ff9a8a'));
+    g.set(6, 6, C('#ffffff'));
+  } else if (key === 'runeplate') {
+    /* a plate of iron with a rune cut into it */
+    g.poly([[8, 1], [14, 4], [14, 10], [8, 15], [2, 10], [2, 4]], C('#4a5160'));
+    g.poly([[8, 3], [12, 5], [12, 9.6], [8, 13], [4, 9.6], [4, 5]], C('#8a94a6'));
+    g.rect(7, 5, 2, 6, C('#dff0ff'));
+    g.rect(5, 7, 6, 2, C('#dff0ff'));
+    g.set(6, 4, C('#ffffff'));
+  } else if (key === 'scholarseal') {
+    /* a wax seal on a rolled page */
+    g.rect(2, 4, 12, 9, C('#e8dcc0'));
+    g.rect(2, 4, 12, 1, C('#fff6e0'));
+    g.rect(2, 12, 12, 1, C('#b2a279'));
+    for (let k = 0; k < 3; k++) g.rect(4, 6 + k * 2, 8 - k * 2, 1, C('#8a7a5c'));
+    g.disc(11, 11, 3.4, C('#8f2028'));
+    g.disc(11, 11, 2.4, C('#c9403a'));
+    g.set(10, 10, C('#ff9a8a'));
+  } else if (key === 'deepquiver') {
+    /* a quiver with three arrows in it */
+    g.rect(4, 6, 8, 9, C('#5a3a1e'));
+    g.rect(4, 6, 8, 1, C('#8a6a3a'));
+    g.rect(4, 14, 8, 1, C('#3a2410'));
+    for (let k = 0; k < 3; k++) {
+      g.rect(5 + k * 2, 1, 1, 6, C('#8a6a3a'));
+      g.rect(4 + k * 2, 1, 3, 1, C('#e8dcc0'));
+    }
+    g.rect(3, 9, 10, 1, C('#3a2410'));
+  } else if (key === 'tidecharm') {
+    /* a shell on a thong */
+    g.ell(8, 10, 6, 5, C('#3f8f8a'));
+    g.ell(8, 10, 4.6, 3.8, C('#6fc4bc'));
+    for (let k = -2; k <= 2; k++) g.line(8, 6, 8 + k * 2.6, 14, C('#2a6a66'));
+    g.ell(8, 5, 2, 1.6, C('#c8b98c'));
+    g.set(7, 8, C('#dff0ff'));
+  } else if (key === 'windvane') {
+    /* a vane turning on a spindle */
+    g.rect(7, 3, 2, 12, C('#8a94a6'));
+    g.poly([[8, 3], [14, 6], [8, 8]], C('#dff0ff'));
+    g.poly([[8, 8], [2, 11], [8, 13]], C('#8fd0ff'));
+    g.disc(8, 8, 1.6, C('#f0c93a'));
+    g.set(7, 4, C('#ffffff'));
+  } else if (key === 'coinclasp') {
+    /* a clasp holding a coin */
+    g.disc(8, 9, 5.4, C('#9c7418'));
+    g.disc(8, 9, 4.4, gold);
+    g.disc(8, 9, 2.4, goldL);
+    g.thick(3, 5, 13, 5, 2, C('#8a94a6'));
+    g.rect(3, 3, 3, 4, C('#cfd8e6'));
+    g.rect(10, 3, 3, 4, C('#cfd8e6'));
+    g.set(6, 7, C('#ffffff'));
+  } else if (key === 'flintnock') {
+    /* a flint arrowhead, bound to a shaft */
+    g.poly([[8, 1], [12, 9], [8, 7], [4, 9]], C('#5b6480'));
+    g.poly([[8, 3], [10.6, 8], [8, 6.6], [5.4, 8]], C('#a9b3c9'));
+    g.rect(7, 7, 2, 8, C('#8a6a3a'));
+    g.rect(6, 9, 4, 1, C('#c9403a'));
+    g.rect(6, 11, 4, 1, C('#c9403a'));
+    g.set(7, 4, C('#ffffff'));
   } else {
     /* the stone eye */
     g.ell(8, 8, 7, 5, C('#8a8474'));
@@ -5100,9 +5172,14 @@ Art.steps = function () {
     Art.ui.pouch = pouchIconSprite().canvas();
     Art.item.sandstep = sandstepSprite().canvas();
     Art.item.artifact = {};
-    for (const k of ['ring', 'scarab', 'frostbead', 'emberchip', 'feather', 'saltvial', 'ankh', 'eye',
-                     'sunheart', 'riddlestone', 'pharaohcrook'])
-      Art.item.artifact[k] = artifactIcon(k).canvas();
+    /* Every artifact the game knows, read off the table itself rather than
+       copied out beside it.  A hand-written list drifted once, and the
+       artifact with no face took the whole frame down with it. */
+    const artKeys = (typeof ARTIFACTS !== 'undefined' && ARTIFACTS.length)
+      ? ARTIFACTS.map(a => a.key)
+      : ['ring', 'scarab', 'frostbead', 'emberchip', 'feather', 'saltvial', 'ankh', 'eye',
+         'sunheart', 'riddlestone', 'pharaohcrook'];
+    for (const a of artKeys) Art.item.artifact[a] = artifactIcon(a).canvas();
     Art.item.chest = [relicChestSprite(false).canvas(), relicChestSprite(true).canvas()];
     Art.prop.pine = [];
     for (let i = 0; i < 3; i++) { const q = pineSprite(1301 + i); Art.prop.pine.push(prop(q, q.w / 2, q.h)); }

@@ -659,6 +659,9 @@ A pouch hangs at the top right of the screen, under the chart. Click it and it o
 It has **three slots**. Whatever sits in a slot works; whatever sits loose in the pouch does
 nothing. Click a find to wear it, click a slot to take it off.
 
+There are twenty artifacts, so the list runs **eight to a page**. The two arrows sit in the
+header beside the close button.
+
 | Artifact | Rank | What it does |
 | --- | --- | --- |
 | The Pharaoh's Ring | Royal | Walk through quicksand and powdered snow |
@@ -728,8 +731,8 @@ The smithing table opens from either archipelago screen.
 
 ## The item shop
 
-**SHOP** on the chart opens it. Five pages, and the purse along the top shows all three
-currencies: **coins**, **rubies** and **shards**.
+**SHOP** on the chart, directly under **PROFILE**, opens it. Five pages, and the purse along
+the top shows all three currencies: **coins**, **rubies** and **shards**.
 
 Every price is written short: **1K** for a thousand, **250K** for a quarter of a million,
 **1MIL** for a million. Only the shard page writes its prices plain, in shards.
