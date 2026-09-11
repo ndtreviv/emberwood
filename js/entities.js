@@ -2984,10 +2984,11 @@ const GUARDIANS = {
     attacks: ['volley', 'sweep', 'summon', 'grab'], shots: 9, spread: 2.4, minion: 'Jelly', brood: 3,
     maxHit: 2, regen: 0.00175,
     proj: { col: '#c9a8ff', col2: '#4a1f6b', dmg: 3, grav: 0.01, snd: 'gulp' } },
-  /* three hearts a hit, from the jaws, the body and the spit alike */
+  /* The leviathan lands half what it used to.  The jaws, the body and the
+     spit all still hurt, but a hit no longer takes most of a short bar. */
   leviathan: { art: 'leviathan', title: 'THE LEVIATHAN', hp: 104, scale: 2.4,
     attacks: ['charge', 'aimed', 'swallow', 'strike', 'bite'], shots: 3, spread: 0.5,
-    strikeCol: '#8fd0c0', touch: 6, dmgMul: 3,
+    strikeCol: '#8fd0c0', touch: 6, dmgMul: 1.5,
     proj: { col: '#8fd0c0', col2: '#1d5a5a', dmg: 6, grav: 0, home: 1.6, snd: 'gulp' } },
   forgefiend: { art: 'forgefiend', title: 'THE FORGEFIEND', hp: 120, scale: 1.5,
     attacks: ['slam', 'forge', 'aimed'], shots: 3, spread: 0.34,
@@ -4533,6 +4534,77 @@ function drawHeroShine(c2, img, x, y, ax, ay, flip) {
   c2.globalAlpha = 0.5;
   blit(c2, img, x, y, ax, ay, flip, 1, 1, 0);
   c2.restore();
+}
+
+/* ============================================================
+   THE PINK ORB.  Deep in the throat of the thing that swallowed
+   you hangs a knot of its own flesh.  Cut it and the beast
+   outside loses a tenth of everything it has.
+   ============================================================ */
+class GulletOrb extends Enemy {
+  constructor(x, y) {
+    super({ x: x, y: y, w: 18, h: 18, hp: 1, damage: 0, coinDrop: 0, blood: '#ff7ab8' });
+    this.kbScale = 0;
+    this.t = 0; this.homeY = y;
+    this.struck = false;
+  }
+  /* it hangs and pulses; it does not walk and it does not chase */
+  update(dt) {
+    this.t += dt;
+    this.y = this.homeY + Math.sin(this.t * 1.7) * 3;
+    if (Math.random() < dt * 14) G.particles.push(new Particle({
+      x: this.cx + rr(-9, 9), y: this.cy + rr(-9, 9), vx: rr(-0.3, 0.3), vy: rr(-0.7, -0.1),
+      life: rr(0.3, 0.8), col: '#ffb8d8', col2: '#c0407a', size: rr(1, 2.2), grav: -0.01
+    }));
+  }
+  /* any blow at all bursts it: it is a weak spot, not a creature */
+  hurt(n, fx, fy) {
+    void n; void fx; void fy;
+    if (this.dead || this.struck) return false;
+    this.struck = true;
+    this.kill();
+    return true;
+  }
+  kill() {
+    if (this.dead) return;
+    this.dead = true;
+    Snd.boom(); G.shake(9); G.flash(0.4); G.hitStop(0.1);
+    for (let i = 0; i < 60; i++) G.particles.push(new Particle({
+      x: this.cx, y: this.cy, vx: rr(-4, 4), vy: rr(-4, 2), life: rr(0.4, 1.1),
+      col: rpick(['#ffb8d8', '#ff7ab8', '#ffffff']), col2: '#c0407a',
+      size: rr(1, 3.2), grav: 0.08, drag: 0.93
+    }));
+    if (G.strikeSwallower) G.strikeSwallower();
+  }
+  draw(c2) {
+    if (this.dead) return;
+    const r = 9 + Math.sin(this.t * 4.2) * 0.9;
+    const x = Math.round(this.cx), y = Math.round(this.cy);
+    c2.save();
+    /* a light around it, so it reads as the one thing worth cutting */
+    c2.globalCompositeOperation = 'lighter';
+    c2.globalAlpha = 0.20 + Math.sin(this.t * 3) * 0.07;
+    c2.fillStyle = '#ff7ab8';
+    c2.beginPath(); c2.arc(x, y, r + 8, 0, TAU); c2.fill();
+    c2.restore();
+    c2.fillStyle = '#c0407a';
+    c2.beginPath(); c2.arc(x, y, r, 0, TAU); c2.fill();
+    c2.fillStyle = '#ff7ab8';
+    c2.beginPath(); c2.arc(x, y, r - 2, 0, TAU); c2.fill();
+    c2.fillStyle = '#ffb8d8';
+    c2.beginPath(); c2.arc(x - 2, y - 2, r * 0.45, 0, TAU); c2.fill();
+    c2.fillStyle = '#ffffff';
+    c2.fillRect(x - 4, y - 5, 2, 2);
+    /* the veins that hold it to the roof of the throat */
+    c2.strokeStyle = '#8a2a58';
+    c2.lineWidth = 1;
+    c2.beginPath();
+    for (let k = -1; k <= 1; k++) {
+      c2.moveTo(x + k * 4, y - r);
+      c2.lineTo(x + k * 6 + Math.sin(this.t * 2 + k) * 2, y - r - 10);
+    }
+    c2.stroke();
+  }
 }
 
 /* ---------- the Mother Spore ---------- */

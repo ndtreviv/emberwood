@@ -229,6 +229,18 @@ poorer.
 time, then 33, then 40, and 46 from the fourth onward. The shelves narrow and split for the
 first three visits, which is as far as they can go and still be climbed.
 
+### The pink orb
+
+About half way up the throat, off to one side of the climb, hangs a **knot of the beast's
+own flesh**: a pink orb that pulses, throws off motes, and holds to the roof by three veins.
+It is the one pink thing in a blue-grey shaft, and it cannot hurt you.
+
+**Cut it and the Leviathan outside loses a tenth of everything it has.** Any blow does it —
+a swing, a roll cut, a gale. It bursts on the first one and pays once, and the wound is
+still there when you climb out at the top. Being swallowed is now worth something.
+
+One orb hangs for each time you are taken, so a second swallowing offers a second tenth.
+
 ## Getting hit
 
 A struck creature turns white for a moment and is shoved back along the line of the blow.
@@ -511,9 +523,9 @@ The three of the Sunken Depths stand **two and a half times weaker** than they w
 Warden 2,520, the Kraken Maw 1,936 and the Leviathan 5,408. That is about one, one and two
 minutes of steady hitting, so the chapter keeps its climb without holding anyone up.
 
-The Warden and the Leviathan still hit **three times as hard**, in everything they do — the
-spit, the touch, the shockwave and the arms alike. The Warden's shockwave costs six hearts
-and every part of the Leviathan nine.
+The **Tide Warden** still hits three times as hard in everything it does, so its shockwave
+costs six hearts. The **Leviathan** hits half again rather than three times over: its jaws,
+its body and its spit all cost **four and a half hearts**, down from nine.
 
 The **Kraken Maw** is the exception, and it asks for skill rather than hearts:
 
@@ -523,7 +535,7 @@ The **Kraken Maw** is the exception, and it asks for skill rather than hearts:
 A **parry** is worth double, two and a half times, and triple across the three realms. See
 **Parrying** below.
 
-The **Leviathan** costs three hearts a hit, from its body, its spit and its jaws alike. Its
+The **Leviathan** strikes with its body, its spit and its jaws alike. Its
 jaws open where you stand, hang there a moment, and snap. Step out of them in time and they
 close on nothing.
 

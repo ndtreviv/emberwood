@@ -713,6 +713,8 @@ G.enterRoom = function (id, spawn) {
       case 'mummy': tough(new Mummy(sp.x, sp.y)); break;
       case 'soldier': tough(new Soldier(sp.x, sp.y)); break;
       case 'idol': G.enemies.push(new Idol(sp.x, sp.y)); break;
+      /* the weak spot in the throat: one to a visit, and gone once cut */
+      case 'gulletOrb': if (!G.orbCut) G.enemies.push(new GulletOrb(sp.x, sp.y)); break;
       case 'relicChest': if (!G.flags['chest_' + (G.vaultKey || id)]) G.items.push(new RelicChest(sp.x, sp.y, sp.pool)); break;
       case 'guardian': {
         const bt = clamp(G.buffTier | 0, 0, PRESTIGE_MAX);
@@ -791,10 +793,28 @@ G.swallowInto = function (boss) {
   G.swallowed = {
     roomId: G.roomId, level: G.level,
     bossHp: boss ? boss.hp : null,
+    bossMax: boss ? boss.maxHp : null,
     x: G.player.cx, y: G.player.y + G.player.h
   };
+  G.orbCut = false;
   G.banner(G.gulletVisits > 1 ? 'SWALLOWED AGAIN' : 'SWALLOWED WHOLE', 2.6);
   G.trans = { t: 0, phase: 'out', dur: 0.5, id: 'gullet', exit: null, swallow: true };
+};
+/* Cutting the orb in the throat.  It takes a tenth of everything the thing
+   outside has, and the wound is still there when you climb out. */
+G.strikeSwallower = function () {
+  const sw = G.swallowed;
+  G.orbCut = true;
+  if (!sw || sw.bossHp === null) {
+    G.banner('NOTHING OUT THERE FELT IT', 2.4);
+    return;
+  }
+  const max = sw.bossMax || sw.bossHp;
+  const bite = Math.max(1, Math.round(max * 0.1));
+  sw.bossHp = Math.max(1, sw.bossHp - bite);
+  G.banner('A TENTH OF IT IS GONE', 3);
+  G.texts.push(new FloatText(G.player.cx, G.player.cy - 18, '-' + bite, '#ff7ab8'));
+  G.saveGame();
 };
 /* cut your way out at the top, and the fight picks up where it left off */
 G.escapeGullet = function () {
@@ -1041,7 +1061,7 @@ function startGame(slot) {
   G.quests = { claimed: {}, daily: null }; G.comboBest = 0; G.questsOpen = false;
   G.artifacts = { owned: {}, slots: [null, null, null] };
   G.pouchOpen = false; G.wardrobe = { owned: {} };
-  G.buried = null; G.surfacing = null; G.vaultKey = null;
+  G.buried = null; G.surfacing = null; G.vaultKey = null; G.orbCut = false;
   G.archipelago = newArchipelago(); G.isleRun = null;
   G.profile = { hair: 0, hairCol: 0, outfit: 0, tee: 0, cape: 'none', suit: 'none' };
   G.gulletVisits = 0;

@@ -772,6 +772,15 @@ function buildGullet(seed, visits) {
     if (i % 3 === 0) room.decor.push({ kind: 'crystal', idx: rng.i(0, 2), x: (l.x + l.w - 1) * TILE, y: (l.y - 1) * TILE, layer: 1 });
   });
 
+  /* A knot of the beast's own flesh hangs about half way up the throat,
+     off to one side of the climb.  Cut it and the thing outside loses a
+     tenth of everything it has. */
+  {
+    const mid = ledges[Math.floor(ledges.length / 2)];
+    room.spawns.push({ type: 'gulletOrb',
+                       x: (mid.x + Math.floor(mid.w / 2)) * TILE + 8,
+                       y: (mid.y - 3) * TILE });
+  }
   /* the acid starts under the first shelf and climbs hard after you */
   room.acid = { y: (H - 2) * TILE, rate: gulletAcidRate(visits || 0) };
   return room;
