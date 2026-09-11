@@ -739,7 +739,7 @@ Every price is written short: **1K** for a thousand, **250K** for a quarter of a
 
 | Page | What it sells |
 | --- | --- |
-| **ITEMS** | Arrows at **1K each**, in ones, tens and fifties. **2X EXPERIENCE** and **2X COINS**, ten minutes apiece, **5K** each |
+| **ITEMS** | Arrows: **1K** for one, **8K** for ten, **35K** for fifty — the more you take the less each costs. **2X EXPERIENCE** and **2X COINS**, ten minutes apiece, **5K** each |
 | **LIMITED** | Three things off the other pages at **a third off**, turning over with the day |
 | **ARTIFACTS** | The three caskets, then all twenty artifacts, dearest first |
 | **CLOTHES** | Every suit the wardrobe sells, the three prestige regalia included |
@@ -793,6 +793,22 @@ slot and it changes what holding the sword does.
 
 Carrying the bow takes the place of the gale: a hold looses an arrow instead. Put the bow
 away and the gale comes back.
+
+### Fire arrows
+
+With the bow in hand the **Emberheart stops throwing its fire along the ground**. It goes
+into the arrow instead.
+
+- The shaft burns, trails fire, and carries a light of its own through a dark room.
+- **Whatever it strikes catches fire**, and burns for four seconds at the arrow's own damage
+  every second — about twice again what the hit itself took.
+- The fire neither shoves a creature nor stuns it. It simply eats at it.
+- **Water puts it out**, the same as it does for you.
+- A creature that burns to death pays its coins and its experience exactly as one cut down
+  by a blade does.
+
+Without the Emberheart the arrows are plain. Put the bow away and the fire goes back to
+running along the ground.
 
 ## The wardrobe
 

@@ -1343,7 +1343,7 @@ function updatePlay(dt) {
   for (const hz of G.hazards) hz.update(dt);
   if (p.dead && G.state === 'play') { G.breakCombo(); G.state = 'dead'; G.deathT = 0; G.stats.deaths++; Snd.musicLevel(0.08, 1.2); }
 
-  for (const e of G.enemies) if (!e.dead) { e.update(dt); e.applyKnock(dt); }
+  for (const e of G.enemies) if (!e.dead) { e.update(dt); e.applyKnock(dt); e.updateBurning(dt); }
   const before = G.enemies.length;
   G.enemies = G.enemies.filter(e => !e.dead);
   G.stats.kills += before - G.enemies.length;
@@ -2300,9 +2300,9 @@ function storeItemRows() {
   return [
     { name: 'AN ARROW', desc: 'ONE ARROW FOR THE LONGBOW', coins: 1000, pic: 'arrow1',
       buy: () => { G.arrows = (G.arrows | 0) + 1; } },
-    { name: 'TEN ARROWS', desc: 'A SHEAF OF TEN, AT THE SAME PRICE EACH', coins: 10000, pic: 'arrow10',
+    { name: 'TEN ARROWS', desc: 'A SHEAF OF TEN, AT EIGHT HUNDRED EACH', coins: 8000, pic: 'arrow10',
       buy: () => { G.arrows = (G.arrows | 0) + 10; } },
-    { name: 'FIFTY ARROWS', desc: 'A QUIVER OF FIFTY, AT THE SAME PRICE EACH', coins: 50000, pic: 'arrow50',
+    { name: 'FIFTY ARROWS', desc: 'A QUIVER OF FIFTY, AT SEVEN HUNDRED EACH', coins: 35000, pic: 'arrow50',
       buy: () => { G.arrows = (G.arrows | 0) + 50; } },
     { name: '2X EXPERIENCE', desc: 'TWICE THE EXPERIENCE FOR TEN MINUTES', coins: 5000, pic: 'xpVial',
       buy: () => { G.addBoost('xp', BOOST_SECS); } },

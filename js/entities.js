@@ -351,8 +351,13 @@ class Player {
     const a = G.aim(this.cx, this.cy - 6);
     const pull = clamp(this.chargeT / CHARGE_FULL, 0.35, 1);
     const sp = ARROW_SPEED * (0.55 + pull * 0.45);
+    /* The emberheart no longer throws its fire along the ground while a bow
+       is carried.  It goes into the arrow instead: the shaft burns, and so
+       does whatever it strikes. */
+    const fiery = this.up.emberheart > 0;
     G.projectiles.push(new Arrow(this.cx + a.x * 8, this.cy - 6 + a.y * 8,
-                                 a.x * sp, a.y * sp - 0.8, this.arrowDmg));
+                                 a.x * sp, a.y * sp - 0.8, this.arrowDmg, fiery));
+    if (fiery) Snd.fire();
     /* the deep quiver keeps an arrow back now and then */
     if (!(G.hasArtifact('deepquiver') && Math.random() < 0.34)) G.arrows = Math.max(0, (G.arrows | 0) - 1);
     this.atkT = 0.001; this.atkHit = new Set(); this.atkCd = 0.26;
@@ -756,7 +761,9 @@ class Player {
     }
     this.atkT = 0.001; this.atkHit = new Set(); this.atkCd = 0.34;
     Snd.swing();
-    if (this.up.emberheart > 0 && G.room.mode === 'side') {
+    /* a bow in hand takes the emberheart's fire for its arrows, so the swing
+       throws none along the ground */
+    if (this.up.emberheart > 0 && G.room.mode === 'side' && !this.bowReady) {
       G.waves.push(new Wave(this.cx + this.face * 12, this.cy, this.face, this.atkDmg));
       Snd.fire();
     }
@@ -1752,6 +1759,41 @@ class Enemy {
     }
     const decay = Math.pow(0.02, dt);
     this.kbX *= decay; this.kbY *= decay;
+  }
+  /* Fire clings to a creature and eats at it.  Water puts it out, and the
+     burn pays its kill the same way a blade does. */
+  ignite(sec, dps) {
+    if (this.dead) return;
+    const fresh = !(this.burnT > 0);
+    this.burnT = Math.max(this.burnT || 0, sec);
+    this.burnDps = Math.max(this.burnDps || 0, dps || 2);
+    if (fresh) Snd.fire();
+  }
+  updateBurning(dt) {
+    if (this.dead || !(this.burnT > 0)) return;
+    if (this.inWater) {
+      this.burnT = 0; this.burnAcc = 0;
+      for (let i = 0; i < 8; i++) G.particles.push(new Particle({
+        x: this.cx + rr(-5, 5), y: this.cy + rr(-6, 6), vx: rr(-0.8, 0.8), vy: rr(-1.4, -0.2),
+        life: rr(0.2, 0.5), col: '#dfe8f4', col2: '#8fd0ff', size: rr(1, 2.2), grav: -0.02
+      }));
+      return;
+    }
+    this.burnT = Math.max(0, this.burnT - dt);
+    this.burnAcc = (this.burnAcc || 0) + dt;
+    /* it bites twice a second, and it neither shoves nor stuns */
+    while (this.burnAcc >= 0.5) {
+      this.burnAcc -= 0.5;
+      this.hp -= Math.max(1, Math.round(this.burnDps * 0.5));
+      this.flash = Math.max(this.flash, 0.06);
+      if (this.hp <= 0) { this.hp = 0; this.kill(); return; }
+    }
+    if (Math.random() < dt * 30) G.particles.push(new Particle({
+      x: this.cx + rr(-this.w / 2, this.w / 2), y: this.y - rr(0, this.h),
+      vx: rr(-0.4, 0.4), vy: rr(-2, -0.6), life: rr(0.2, 0.5),
+      col: rpick(['#ffd06a', '#ff7a2a', '#fff0b0']), col2: '#8a2410',
+      size: rr(1, 2.4), grav: -0.02, type: 'fire'
+    }));
   }
   box() { return { x: this.x - this.w / 2, y: this.y - this.h, w: this.w, h: this.h }; }
   get cx() { return this.x; }
@@ -4556,9 +4598,10 @@ class Wave {
    ============================================================ */
 const ARROW_SPEED = 6.2, ARROW_GRAV = 0.115;
 class Arrow {
-  constructor(x, y, vx, vy, dmg) {
+  constructor(x, y, vx, vy, dmg, fiery) {
     this.x = x; this.y = y; this.vx = vx; this.vy = vy;
     this.dmg = dmg || 4;
+    this.fiery = !!fiery;
     this.life = 3.2; this.dead = false; this.t = 0; this.hit = new Set();
     this.friendly = true;
   }
@@ -4572,19 +4615,31 @@ class Arrow {
       if (!rectsOverlap({ x: this.x - 3, y: this.y - 3, w: 6, h: 6 }, en.box())) continue;
       this.hit.add(en);
       en.hurt(this.dmg, this.x - this.vx * 4, this.y - this.vy * 4);
+      /* a burning arrow leaves the fire behind in whatever it strikes */
+      if (this.fiery && en.ignite) en.ignite(4, this.dmg);
       G.hitStop(0.03);
       this.dead = true;
       return;
     }
-    if (Math.random() < 0.5) G.particles.push(new Particle({
+    /* the trail: a thread of smoke, or a tail of fire */
+    if (this.fiery) {
+      for (let i = 0; i < 2; i++) G.particles.push(new Particle({
+        x: this.x + rr(-2, 2), y: this.y + rr(-2, 2),
+        vx: -this.vx * 0.1 + rr(-0.3, 0.3), vy: -this.vy * 0.1 + rr(-0.6, -0.1),
+        life: rr(0.16, 0.4), col: rpick(['#fff0b0', '#ffd06a', '#ff7a2a']), col2: '#8a2410',
+        size: rr(1, 2.6), grav: -0.02, type: 'fire'
+      }));
+    } else if (Math.random() < 0.5) G.particles.push(new Particle({
       x: this.x, y: this.y, vx: rr(-0.2, 0.2), vy: rr(-0.2, 0.2), life: rr(0.1, 0.24),
       col: '#e8dcc0', col2: '#8a7a5c', size: 1, grav: 0
     }));
     if (G.room.solidPx(this.x, this.y) || this.life <= 0) {
       this.dead = true;
-      for (let i = 0; i < 5; i++) G.particles.push(new Particle({
-        x: this.x, y: this.y, vx: rr(-1, 1), vy: rr(-1, 0.4), life: rr(0.2, 0.5),
-        col: '#e8dcc0', col2: '#5a4326', size: 1, grav: 0.2
+      for (let i = 0; i < (this.fiery ? 14 : 5); i++) G.particles.push(new Particle({
+        x: this.x, y: this.y, vx: rr(-1.4, 1.4), vy: rr(-1.4, 0.4), life: rr(0.2, 0.6),
+        col: this.fiery ? rpick(['#ffd06a', '#ff7a2a']) : '#e8dcc0',
+        col2: this.fiery ? '#8a2410' : '#5a4326', size: rr(1, 2.2),
+        grav: this.fiery ? -0.01 : 0.2, type: this.fiery ? 'fire' : 'rect'
       }));
     }
   }
@@ -4593,9 +4648,20 @@ class Arrow {
     c2.save();
     c2.translate(Math.round(this.x), Math.round(this.y));
     c2.rotate(a);
-    c2.fillStyle = '#8a6a3a'; c2.fillRect(-7, 0, 10, 1);
-    c2.fillStyle = '#cfd8e6'; c2.fillRect(3, -1, 4, 2);
-    c2.fillStyle = '#e8dcc0'; c2.fillRect(-8, -2, 3, 1); c2.fillRect(-8, 1, 3, 1);
+    if (this.fiery) {
+      /* a light around a burning shaft, so it reads as alight in the dark */
+      c2.save();
+      c2.globalCompositeOperation = 'lighter';
+      c2.globalAlpha = 0.3 + Math.sin(this.t * 22) * 0.1;
+      c2.fillStyle = '#ff7a2a';
+      c2.beginPath(); c2.arc(2, 0, 7, 0, TAU); c2.fill();
+      c2.restore();
+    }
+    c2.fillStyle = this.fiery ? '#5a2a10' : '#8a6a3a'; c2.fillRect(-7, 0, 10, 1);
+    c2.fillStyle = this.fiery ? '#ffd06a' : '#cfd8e6'; c2.fillRect(3, -1, 4, 2);
+    if (this.fiery) { c2.fillStyle = '#fff0b0'; c2.fillRect(5, -1, 2, 2); }
+    c2.fillStyle = this.fiery ? '#ff7a2a' : '#e8dcc0';
+    c2.fillRect(-8, -2, 3, 1); c2.fillRect(-8, 1, 3, 1);
     c2.restore();
   }
 }
