@@ -669,9 +669,13 @@ of the gorge.
 ### Shards
 
 You buy your way outward with shards of that spoke's own kind. The first island of every
-spoke is open. After that the price climbs: **four shards for the second, six for the third,
-and forty from the twentieth onward**. An island opens only when the shards are on hand. A
-short purse buys nothing, and you cannot skip one island to reach the next.
+spoke is open from the start — it has to be, since it is where the first shards of that kind
+come from. After that the price climbs: **four shards for the second, six for the third, and
+forty from the twentieth onward**.
+
+**The shards are always paid.** An island opens only when they are on hand, they are taken
+out of your store when it opens, and **no code opens one** — `admin` included. You cannot
+skip an island to reach the next one either.
 
 - Every creature you kill on an island leaves **one to four shard parts**.
 - **Three parts** make one whole shard at the **smithing table**, and the forge takes
@@ -795,7 +799,8 @@ Each code works once. Rewards climb sharply with the realm:
 | Tickets | `ITEMUPGRADE` — 1 | `SPOREUPGRADE` — 1 | `ABYSSUPGRADE` — 2 | `MOLTENUPGRADE` — 4 |
 
 Typing `admin` opens every realm, maxes every upgrade at the full nine-realm caps, hands
-you all three relics, sets your purse to the infinity mark, and turns the hero gold.
+you all three relics, sets your purse to the infinity mark, and turns the hero gold. It does
+**not** open the islands of the Archipelago: those are paid for in shards by everyone.
 
 A **ticket** buys any one shop upgrade for nothing. Rows you can cover with a ticket read
 FREE. Relics are excluded — those you pay for.

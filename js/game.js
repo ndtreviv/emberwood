@@ -1835,10 +1835,10 @@ G.buyIsle = function (t, idx) {
   if (idx !== isleOpened(t.key) || idx < 1 || idx >= ISLES_PER_TYPE) return false;
   const cost = isleCost(idx);
   const held = G.shardsOf(t.shard);
-  if (!G.codes.admin) {
-    if (held < cost) return false;
-    a.shards[t.shard] = held - cost;
-  }
+  /* The shards are always paid.  No code and no purse opens an island: the
+     only way out along a spoke is to earn the shards of that spoke. */
+  if (held < cost) return false;
+  a.shards[t.shard] = held - cost;
   a.opened[t.key] = idx + 1;
   G.archMsg = 'THE ISLAND OPENS'; G.archMsgT = 2;
   Snd.unlock(); G.flash(0.35);
@@ -2149,7 +2149,7 @@ function drawArchipelago() {
       drawText(ctx, 'ISLAND ' + (idx + 1), r.cx, r.y - 12, isOpen ? '#ffeec0' : '#8a94a6', 1, 'center', '#0a1420');
       if (isNext) {
         const cost = isleCost(idx);
-        const can = G.shardsOf(t.shard) >= cost || G.codes.admin;
+        const can = G.shardsOf(t.shard) >= cost;
         drawShard(ctx, r.cx - 12, r.y + 62, 5, t, 1);
         drawText(ctx, String(cost) + ' TO OPEN', r.cx - 3, r.y + 58,
                  can ? '#9be89a' : '#c9403a', 1, 'left', '#0a1420');
