@@ -5446,17 +5446,45 @@ const PRESTIGE_MARK = ['', 'I', 'II', 'III'];
 const PRESTIGE_COL = ['', '#c68e3f', '#cfd8e6', '#f0c93a'];
 const PRESTIGE_NAME = ['', 'BRONZE', 'SILVER', 'GOLD'];
 /* the mark and the number, written together, as they go everywhere */
+/* The mark of a prestige, on a small plate of its own metal.  The corners
+   are cut away by a pixel or two, so it reads as a button rather than as a
+   block of colour. */
+function prestigeBadgeSize(pr, sc) {
+  const h = Math.round(GH * sc + 4 * sc);
+  /* the first mark takes a square plate; the wider marks stretch it */
+  return { w: Math.max(h, Math.round(textWidth(PRESTIGE_MARK[pr] || 'I') * sc + 6 * sc)), h: h };
+}
+function drawPrestigeBadge(c2, x, y, pr, sc) {
+  const mark = PRESTIGE_MARK[pr];
+  if (!mark) return 0;
+  const col = C(PRESTIGE_COL[pr]);
+  const b = prestigeBadgeSize(pr, sc);
+  x = Math.round(x); y = Math.round(y);
+  const cut = Math.max(1, Math.round(sc));        /* how deep each corner cuts */
+  /* the plate: a block with its four corners taken off */
+  c2.fillStyle = css(col);
+  c2.fillRect(x + cut, y, b.w - cut * 2, b.h);
+  c2.fillRect(x, y + cut, b.w, b.h - cut * 2);
+  /* a light along the crown and a shadow along the foot, so it stands up */
+  c2.fillStyle = css(sh(col, 0.45));
+  c2.fillRect(x + cut, y, b.w - cut * 2, Math.max(1, Math.round(sc)));
+  c2.fillStyle = css(sh(col, -0.42));
+  c2.fillRect(x + cut, y + b.h - Math.max(1, Math.round(sc)), b.w - cut * 2, Math.max(1, Math.round(sc)));
+  /* the numeral, in an ink dark enough for bronze, silver and gold alike */
+  drawText(c2, mark, x + b.w / 2, y + Math.round((b.h - GH * sc) / 2), '#2a1c08', sc, 'center');
+  return b.w;
+}
 function drawRank(c2, x, y, scale, align) {
   const n = G.level0(), pr = G.prestige | 0;
-  let w = 0;
   const sc = scale || 1;
   const mark = PRESTIGE_MARK[pr];
-  if (mark) w += textWidth(mark) * sc + 3 * sc;
-  w += textWidth(String(n)) * sc;
+  const gap = Math.round(3 * sc);
+  const bw = mark ? prestigeBadgeSize(pr, sc).w : 0;
+  const w = textWidth(String(n)) * sc + (mark ? bw + gap : 0);
   let cx = align === 'center' ? x - w / 2 : (align === 'right' ? x - w : x);
   if (mark) {
-    drawText(c2, mark, cx, y, PRESTIGE_COL[pr], sc, 'left', '#1a1206');
-    cx += textWidth(mark) * sc + 3 * sc;
+    /* the plate stands a little taller than the number beside it */
+    cx += drawPrestigeBadge(c2, cx, y - Math.round(2 * sc), pr, sc) + gap;
   }
   drawText(c2, String(n), cx, y, rankColour(n), sc, 'left', '#1a1206');
   return w;
@@ -5809,8 +5837,6 @@ function drawProfileFace() {
   const ry = PROF_BOX.y + 84;
   drawText(ctx, 'LEVEL', nr.x, ry + 3, '#a9b3c9', 1, 'left');
   drawRank(ctx, nr.x + 34, ry, 2, 'left');
-  if (pr > 0) drawText(ctx, 'PRESTIGE ' + PRESTIGE_MARK[pr] + '  -  ' + PRESTIGE_NAME[pr],
-                       nr.x + 96, ry + 3, PRESTIGE_COL[pr], 1, 'left');
   const bw = 200, by = ry + 18;
   ctx.fillStyle = '#12101c'; ctx.fillRect(nr.x, by, bw, 7);
   ctx.fillStyle = rankColour(n);

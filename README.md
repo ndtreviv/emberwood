@@ -236,6 +236,7 @@ cut, which carries straight through a hit.
 | **Your border** | A ring of brick round the picture: four darknesses of stone, and three of beaten metal a prestige opens |
 | **Your name** | Up to twelve letters. Type it, or tap it out on the built-in keyboard |
 | **Your rank** | The mark of a prestige, the level, and a bar that fills as you fight |
+| | The mark sits on a small plate of its own metal, corners cut, so it reads as a button |
 | **THE WARDROBE** | The way into the shop of clothes |
 | **PRESTIGE** | Give back your levels for the mark. It waits until you pass level 100 |
 
@@ -317,7 +318,9 @@ Pass level 100 and earn one more point of experience, and a **PRESTIGE** button 
 the play screen. **Nothing happens until you press it.** Press it and your levels go back to
 one and the mark stays.
 
-There are **three marks**, written as Roman numerals and shown **before** the level:
+There are **three marks**, written as Roman numerals on a plate of their own metal and shown
+**before** the level. The plate has its corners cut away and a light along its crown, so it
+reads as a button rather than as a block of colour.
 
 | Mark | Colour | What it opens |
 | --- | --- | --- |
