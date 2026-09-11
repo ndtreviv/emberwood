@@ -340,6 +340,20 @@ G.redeem = function (raw) {
     G.saveGame();
     return;
   }
+  /* Rubies, handed over outright.  It may be used again and again. */
+  if (RUBY_CODES[name] !== undefined) {
+    const n = RUBY_CODES[name];
+    G.rubies = (G.rubies | 0) + n;
+    G.codeMsg = '+' + n + ' RUBIES'; G.codeMsgOk = true; G.codeMsgT = 4;
+    Snd.unlock(); G.flash(0.4);
+    if (G.state === 'play' && G.player) for (let i = 0; i < 40; i++) G.particles.push(new Particle({
+      x: G.player.cx, y: G.player.cy, vx: rr(-3, 3), vy: rr(-3.4, 1), life: rr(0.4, 1.1),
+      col: rpick(['#ff5a7a', '#ff8ba8', '#ffffff']), col2: '#8f1028',
+      size: rr(1, 2.8), grav: 0.06, drag: 0.94
+    }));
+    G.saveGame();
+    return;
+  }
   /* Three codes that hand over levels outright.  Each one may be used again
      and again, until the hundredth level. */
   if (XP_CODES[name] !== undefined) {
@@ -6266,6 +6280,8 @@ function buffBar(tier, level) {
 }
 /* what each of the three level codes hands over */
 const XP_CODES = { XP10: 10, XP50: 50, XP100: 100 };
+/* and the codes that hand over rubies */
+const RUBY_CODES = { RUBY10: 10 };
 const PRESTIGE_MARK = ['', 'I', 'II', 'III'];
 /* bronze reads brown, so it is never taken for the gold beside it */
 const PRESTIGE_COL = ['', '#b07536', '#cfd8e6', '#f0c93a'];

@@ -923,6 +923,7 @@ A few codes need no paper at all:
 | `XP10` | Hands you **ten levels** |
 | `XP50` | Hands you **fifty levels** |
 | `XP100` | Hands you **a hundred levels**, so you stand at the top |
+| `RUBY10` | Hands you **ten rubies**, which buy caskets |
 | `ADMIN` | Opens everything |
 
 The three level codes may be used **again and again** until the hundredth level, and then
