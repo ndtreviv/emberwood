@@ -120,6 +120,11 @@ const World = { rooms: {}, };
 function decorate(room, rng, opt) {
   const surf = opt.surface;    /* array of ground tile y per column, -1 = none */
   const W = room.w;
+  /* How thick the green lies.  One is the ordinary wood.  A room that asks
+     for more gets more of everything that grows, and nothing else: the
+     stones and the water are left where they are. */
+  const lush = opt.lush || 1;
+  const more = (p, cap) => Math.min(cap === undefined ? 0.92 : cap, p * lush);
 
   /* background tree line — dense forest, drawn behind everything */
   for (let x = 2; x < W - 2; x += 1) {
@@ -163,7 +168,8 @@ function decorate(room, rng, opt) {
   }
   /* a few trees in front of the player for depth */
   for (let x = 6; x < W - 6; x += 1) {
-    if (!rng.bool(opt.treeChance * 0.16)) continue;
+    /* these stand over the hero, so they thicken far less than the rest */
+    if (!rng.bool(opt.treeChance * 0.16 * Math.min(1.6, lush))) continue;
     const gy = surf[x]; if (gy < 0) continue;
     if (room.wet(x, gy) || room.wet(x, gy + 1)) continue;
     room.decor.push({ kind: 'tree', idx: 6 + rng.i(0, 2),
@@ -176,12 +182,15 @@ function decorate(room, rng, opt) {
     if (gy < 0) continue;
     const y = gy * TILE;
     if (room.get(x, gy) !== T_GRASS && room.get(x, gy) !== T_ROCKTOP) continue;
-    if (rng.bool(0.55)) room.decor.push({ kind: 'tuft', idx: rng.i(0, 3), x: x * TILE + rng.r(0, 14), y: y + 1, layer: 1, sway: rng.r(0.8, 1.8), phase: rng.r(0, TAU) });
-    if (rng.bool(0.16)) room.decor.push({ kind: 'flower', idx: rng.i(0, 4), x: x * TILE + rng.r(2, 12), y: y + 1, layer: 1, sway: rng.r(0.6, 1.4), phase: rng.r(0, TAU) });
-    if (rng.bool(0.09)) room.decor.push({ kind: 'bush', idx: rng.i(0, 2), x: x * TILE + rng.r(0, 14), y: y + 2, layer: 1, sway: rng.r(0.7, 1.6), phase: rng.r(0, TAU) });
-    if (rng.bool(0.05)) room.decor.push({ kind: 'mushroom', idx: rng.i(0, 2), x: x * TILE + rng.r(2, 12), y: y + 1, layer: 1, sway: 0, phase: 0 });
+    if (rng.bool(more(0.55))) room.decor.push({ kind: 'tuft', idx: rng.i(0, 3), x: x * TILE + rng.r(0, 14), y: y + 1, layer: 1, sway: rng.r(0.8, 1.8), phase: rng.r(0, TAU) });
+    if (rng.bool(more(0.16, 0.6))) room.decor.push({ kind: 'flower', idx: rng.i(0, 4), x: x * TILE + rng.r(2, 12), y: y + 1, layer: 1, sway: rng.r(0.6, 1.4), phase: rng.r(0, TAU) });
+    if (rng.bool(more(0.09, 0.44))) room.decor.push({ kind: 'bush', idx: rng.i(0, 2), x: x * TILE + rng.r(0, 14), y: y + 2, layer: 1, sway: rng.r(0.7, 1.6), phase: rng.r(0, TAU) });
+    if (rng.bool(more(0.05, 0.3))) room.decor.push({ kind: 'mushroom', idx: rng.i(0, 2), x: x * TILE + rng.r(2, 12), y: y + 1, layer: 1, sway: 0, phase: 0 });
     if (rng.bool(0.05)) room.decor.push({ kind: 'rock', idx: rng.i(0, 2), x: x * TILE + rng.r(2, 12), y: y + 2, layer: 1, sway: 0, phase: 0 });
-    if (rng.bool(opt.fernChance || 0)) room.decor.push({ kind: 'fern', idx: rng.i(0, 2), x: x * TILE + rng.r(0, 14), y: y + 2, layer: rng.bool(0.7) ? 1 : 2, sway: rng.r(0.9, 1.9), phase: rng.r(0, TAU) });
+    if (rng.bool(more(opt.fernChance || 0))) room.decor.push({ kind: 'fern', idx: rng.i(0, 2), x: x * TILE + rng.r(0, 14), y: y + 2, layer: rng.bool(0.7) ? 1 : 2, sway: rng.r(0.9, 1.9), phase: rng.r(0, TAU) });
+    /* a second tuft to the tile where the green lies thick, set off from the
+       first, so the ground reads as undergrowth and not as a row of studs */
+    if (lush > 1 && rng.bool(more(0.28))) room.decor.push({ kind: 'tuft', idx: rng.i(0, 3), x: x * TILE + rng.r(0, 14), y: y + 2, layer: rng.bool(0.6) ? 1 : 2, sway: rng.r(0.8, 1.8), phase: rng.r(0, TAU) });
     /* reeds at the water's edge */
     if (room.get(x + 1, gy) === T_WATER || room.get(x - 1, gy) === T_WATER)
       if (rng.bool(0.6)) room.decor.push({ kind: 'reed', idx: rng.i(0, 2), x: x * TILE + rng.r(0, 14), y: y + 2, layer: 1, sway: rng.r(1.2, 2.4), phase: rng.r(0, TAU) });
@@ -278,7 +287,8 @@ function buildForest(id, name, seed, opt) {
   decorate(room, rng, { surface: surf, treeChance: opt.treeChance || 0.5,
                         vineChance: opt.vineChance || 0.02,
                         giantChance: opt.giantChance || 0,
-                        fernChance: opt.fernChance || 0 });
+                        fernChance: opt.fernChance || 0,
+                        lush: opt.lush || 1 });
   return room;
 }
 
@@ -1700,9 +1710,12 @@ function dryFlatTile(room, want) {
    ============================================================ */
 World.build = function () {
   /* --- the glade you start in --- */
+  /* The glade is the first wood anybody walks, so it is the thickest.  Its
+     tree line stands almost shoulder to shoulder, the giants come twice as
+     often, and the floor is deep in fern and tuft. */
   const glade = buildForest('glade', 'EMBERWOOD GLADE', 4711, {
-    w: 132, h: 22, base: 14, treeChance: 0.42, vineChance: 0.10,
-    giantChance: 0.16, fernChance: 0.22,
+    w: 132, h: 22, base: 14, treeChance: 0.96, vineChance: 0.24,
+    giantChance: 0.32, fernChance: 0.60, lush: 2.2,
     steps: [{ x: 58, d: -2 }, { x: 96, d: -2 }],
     streams: [{ x: 30, w: 14, depth: 3, log: true }, { x: 82, w: 11, depth: 2, log: false }],
     platforms: [

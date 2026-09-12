@@ -257,8 +257,8 @@ function slotBuffCount(d, tier) {
 }
 /* The first hundred is every realm cleared, every paper found and every
    upgrade maxed.  After that each buffed run of the whole game is worth a
-   hundred more: iron carries a finished file to 200, bronze to 300, silver
-   to 400 and gold to 500. */
+   hundred more: bronze carries a finished file to 200, silver to 300 and
+   gold to 400. */
 /* a function, not a constant: the count of marks is declared further down */
 function filePctMax() { return 100 * (1 + PRESTIGE_MAX); }
 function slotPercent(d) {
@@ -271,7 +271,7 @@ function slotPercent(d) {
   return Math.min(filePctMax(), pct);
 }
 /* Which metal a file has reached.  Every hundred past the first is one
-   metal further up: two hundred is iron, and the top is gold. */
+   metal further up: two hundred is bronze, and the top is gold. */
 function fileTier(pct) {
   return clamp(Math.floor(pct / 100) - 1, 0, PRESTIGE_MAX);
 }
@@ -453,6 +453,19 @@ G.coinScale = function () {
          * (G.boostLeft && G.boostLeft('coin') > 0 ? 2 : 1);
 };
 G.purse = function () { return shortCoin(G.player.coins); };
+/* The one road out of the purse.  A trillion is far too large a number for
+   a short form to show a small buy against: spend a quarter of a million
+   out of 1T and the purse still reads 1T.  So the coins that leave are
+   written beside it for a moment, and the going is seen even where the
+   number itself cannot move. */
+G.coinSpend = 0; G.coinSpendT = 0;
+G.spendCoins = function (n) {
+  n = Math.max(0, Math.round(n || 0));
+  if (!n || !G.player) return;
+  G.player.coins = Math.max(0, G.player.coins - n);
+  G.coinSpend += n;
+  G.coinSpendT = 1.8;
+};
 G.spawnCoin = function (x, y, vx, vy, still, si, value) {
   const c = new Coin(x, y, vx, vy, still, value);
   if (si !== undefined) c.si = si;
@@ -1304,8 +1317,10 @@ function updatePlay(dt) {
   G.bannerT = Math.max(0, G.bannerT - dt);
   G.lockedMsgT = Math.max(0, G.lockedMsgT - dt);
   G.xpGainT = Math.max(0, (G.xpGainT || 0) - dt);
+  G.coinSpendT = Math.max(0, (G.coinSpendT || 0) - dt);
   updateBoosts(dt);
   if (G.xpGainT <= 0) G.xpGain = 0;
+  if (G.coinSpendT <= 0) G.coinSpend = 0;
   updateRelicShow(dt);
   G.flashAmt = Math.max(0, G.flashAmt - dt * 2.2);
   G.shakeAmt = Math.max(0, G.shakeAmt - dt * 26);
@@ -1948,7 +1963,7 @@ G.forgeShard = function (shard, n) {
   if (n <= 0) return 0;
   a.parts[shard] -= n * SHARD_PARTS;
   a.shards[shard] = (a.shards[shard] | 0) + n;
-  G.player.coins -= n * FORGE_COST;
+  G.spendCoins(n * FORGE_COST);
   Snd.buy(); G.flash(0.2);
   G.saveGame();
   return n;
@@ -2764,7 +2779,7 @@ function storeBuy(row) {
   /* it went through, so now it is paid for */
   if (row.shards !== undefined) G.spendShards(row.shards);
   else if (row.rubies !== undefined) G.rubies -= row.rubies;
-  else G.player.coins -= cost;
+  else G.spendCoins(cost);
   if (G.storeMsgT === said) { G.storeMsg = row.name + ' IS YOURS'; G.storeMsgT = 2.4; }
   Snd.buy(); G.flash(0.25);
   G.saveGame();
@@ -2990,7 +3005,7 @@ function updateWardrobe(dt) {
       G.wardMsgT = 1.4;
       Snd.buy(); G.saveGame();
     } else if (G.player.coins >= suit.cost) {
-      G.player.coins -= suit.cost;
+      G.spendCoins(suit.cost);
       G.wardrobe.owned[key] = 1;
       G.profile.suit = key;
       applyProfile();
@@ -5587,7 +5602,13 @@ function drawHUD() {
   }
   /* coins */
   ctx.drawImage(Art.item.coin[Math.floor(G.t / 0.09) % 8], 32, 17);
-  drawText(ctx, G.purse(), 46, 19, '#ffe98a', 1, 'left', '#000000');
+  const pw = drawText(ctx, G.purse(), 46, 19, '#ffe98a', 1, 'left', '#000000');
+  /* what has just gone out of it, for a moment after it goes */
+  if (G.coinSpendT > 0 && G.coinSpend > 0) {
+    ctx.save(); ctx.globalAlpha = Math.min(1, G.coinSpendT);
+    drawText(ctx, '-' + shortCoin(G.coinSpend), 46 + pw + 4, 19, '#ff8b6a', 1, 'left', '#000000');
+    ctx.restore();
+  }
   /* The rank, beside the purse: the mark of a prestige, the level, and a
      thin bar that fills as you fight. */
   {
@@ -6520,7 +6541,7 @@ function drawCodes() {
    a prestige, and keep the mark.
    ============================================================ */
 const LEVEL_MAX = 100;
-const PRESTIGE_MAX = 4;
+const PRESTIGE_MAX = 3;
 const XP_BASE = 46, XP_POW = 1.4;
 /* what it costs to go from level n to level n + 1 */
 function xpStep(n) { return Math.round(XP_BASE * Math.pow(n, XP_POW)); }
@@ -6678,17 +6699,15 @@ const BORDERS = [
   { name: 'GREY STONE', base: '#6b6760', dark: '#454340', light: '#8f8a80', need: 0 },
   { name: 'DARK STONE', base: '#4a4744', dark: '#2c2b2a', light: '#6a6660', need: 0 },
   { name: 'BLACK STONE', base: '#2e2d2c', dark: '#1a1a19', light: '#484644', need: 0 },
-  { name: 'IRON', base: '#7d838c', dark: '#3f444c', light: '#b8bec7', need: 1, shine: true },
-  { name: 'BRONZE', base: '#a66a28', dark: '#5e3a10', light: '#d4a05c', need: 2, shine: true },
-  { name: 'SILVER', base: '#cfd8e6', dark: '#8a95a8', light: '#ffffff', need: 3, shine: true },
-  { name: 'GOLD', base: '#f0c93a', dark: '#a8862a', light: '#fff4c0', need: 4, shine: true }
+  { name: 'BRONZE', base: '#a66a28', dark: '#5e3a10', light: '#d4a05c', need: 1, shine: true },
+  { name: 'SILVER', base: '#cfd8e6', dark: '#8a95a8', light: '#ffffff', need: 2, shine: true },
+  { name: 'GOLD', base: '#f0c93a', dark: '#a8862a', light: '#fff4c0', need: 3, shine: true }
 ];
 /* a portrait may be struck in a metal, once a prestige has opened it */
 const TINTS = [{ name: 'PLAIN', label: 'NO TINT', need: 0 },
-               { name: 'IRON', label: 'IRON TINT', need: 1 },
-               { name: 'BRONZE', label: 'BRONZE TINT', need: 2 },
-               { name: 'SILVER', label: 'SILVER TINT', need: 3 },
-               { name: 'GOLD', label: 'GOLDEN TINT', need: 4 }];
+               { name: 'BRONZE', label: 'BRONZE TINT', need: 1 },
+               { name: 'SILVER', label: 'SILVER TINT', need: 2 },
+               { name: 'GOLD', label: 'GOLDEN TINT', need: 3 }];
 function tintOwned(i) { return (TINTS[i] ? TINTS[i].need : 99) <= (G.prestige | 0); }
 function newAccount() { return { name: 'WANDERER', avatar: 0, border: 1, tint: 0 }; }
 function borderOwned(i) { return (BORDERS[i] ? BORDERS[i].need : 99) <= (G.prestige | 0); }
@@ -6698,13 +6717,13 @@ function accountName() {
 }
 /* ---------- the buffed runs a prestige opens ---------- */
 /* A prestige lets you walk every realm you have already cleared a second
-   time, harder.  Iron first, then bronze, then silver, then gold: the order
-   holds however high your prestige stands. */
-const BUFF_HP = [1, 2, 3.6, 6.4, 10];
-const BUFF_DMG = [1, 1.35, 1.8, 2.35, 3];
+   time, harder.  Bronze first, then silver, then gold: the order holds
+   however high your prestige stands. */
+const BUFF_HP = [1, 3, 6, 10];
+const BUFF_DMG = [1, 1.6, 2.2, 3];
 /* A guardian already carries many times what a creature does, so a buffed
    run lifts it by less.  Ten times over would make a fight of half an hour. */
-const BUFF_BOSS = [1, 1.6, 2.4, 3.5, 5];
+const BUFF_BOSS = [1, 2, 3.2, 5];
 function buffKey(tier, level) { return tier + ':' + level; }
 function buffCleared(tier, level) {
   if (tier <= 0) return !!G.cleared[level];
@@ -6735,12 +6754,10 @@ const XP_CODES = { XP10: 10, XP50: 50, XP100: 100 };
 /* and the codes that hand over rubies */
 const RUBY_CODES = { RUBY10: 10 };
 /* The mark of a prestige, cut from bare lines rather than the letter I. */
-const PRESTIGE_MARK = ['', '|', '||', '|||', '||||'];
-/* Iron first, then bronze, silver and gold.  Bronze reads brown, so it is
-   never taken for the gold above it, and iron reads a cold grey, so it is
-   never taken for the silver. */
-const PRESTIGE_COL = ['', '#9aa4b2', '#b07536', '#cfd8e6', '#f0c93a'];
-const PRESTIGE_NAME = ['', 'IRON', 'BRONZE', 'SILVER', 'GOLD'];
+const PRESTIGE_MARK = ['', '|', '||', '|||'];
+/* bronze reads brown, so it is never taken for the gold beside it */
+const PRESTIGE_COL = ['', '#b07536', '#cfd8e6', '#f0c93a'];
+const PRESTIGE_NAME = ['', 'BRONZE', 'SILVER', 'GOLD'];
 /* the mark and the number, written together, as they go everywhere */
 /* The mark of a prestige, on a small plate of its own metal.  The corners
    are cut away by a pixel or two, so it reads as a button rather than as a
@@ -6769,11 +6786,13 @@ function drawPrestigeBadge(c2, x, y, pr, sc) {
   c2.fillRect(x + cut, y, b.w - cut * 2, px);
   c2.fillStyle = css(sh(col, -0.42));
   c2.fillRect(x + cut, y + b.h - px, b.w - cut * 2, px);
-  /* The numeral: one line to each mark, a pixel wide with a pixel between,
-     cut in an ink dark enough for every one of the four metals. */
+  /* The numeral: one line to each mark, cut in an ink dark enough for
+     bronze, silver and gold alike.  A line is as wide as the plate's own
+     pixel, and the gap between two of them is a single pixel however large
+     the plate is drawn, so the lines stand as close as they can. */
   const n = mark.length;
-  const pitch = px * 2;
-  const span = n * pitch - px;
+  const pitch = px + 1;
+  const span = n * pitch - 1;
   const lx = x + Math.round((b.w - span) / 2);
   const ly = y + px * 2, lh = b.h - px * 4;
   c2.fillStyle = '#241a0a';
@@ -6801,7 +6820,7 @@ function drawRank(c2, x, y, scale, align) {
    once the tutorial is done, and from the chart after that.
    ============================================================ */
 G.profile = { hair: 0, hairCol: 0, outfit: 0, tee: 0, cape: 'none', suit: 'none' };
-const CAPE_ORDER = ['wood', 'tide', 'ember', 'pIron', 'pBronze', 'pSilver', 'pGold'];
+const CAPE_ORDER = ['wood', 'tide', 'ember', 'pBronze', 'pSilver', 'pGold'];
 /* A mantle is earned: the first three by finishing a chapter, the last
    three by taking a prestige. */
 function capeUnlocked(key) {
@@ -6829,6 +6848,22 @@ G.heroShines = function () {
 };
 function applyProfile() {
   const p = G.profile;
+  /* A look saved against a table that has since changed must not reach the
+     hero.  Anything the tables no longer know is put back to the plain one
+     rather than drawn, and every index is held inside its own list. */
+  if (p.cape !== 'none' && !CAPES[p.cape]) p.cape = 'none';
+  if (p.suit && p.suit !== 'none' && !SUITS[p.suit]) p.suit = 'none';
+  p.hairCol = clamp(p.hairCol | 0, 0, HAIR_COLS.length - 1);
+  p.hair = clamp(p.hair | 0, 0, HAIR_STYLES.length - 1);
+  p.outfit = clamp(p.outfit | 0, 0, OUTFITS.length - 1);
+  p.tee = clamp(p.tee | 0, 0, TEE_COLS.length - 1);
+  if (G.account) {
+    G.account.border = clamp(G.account.border | 0, 0, BORDERS.length - 1);
+    G.account.tint = clamp(G.account.tint | 0, 0, TINTS.length - 1);
+    G.account.avatar = clamp(G.account.avatar | 0, 0, Math.max(0, AVATAR_KEYS.length - 1));
+    if (!borderOwned(G.account.border)) G.account.border = 1;
+    if (!tintOwned(G.account.tint)) G.account.tint = 0;
+  }
   if (p.cape !== 'none' && !capeUnlocked(p.cape)) p.cape = 'none';
   if (!hairUnlocked(p.hairCol)) p.hairCol = 0;
   if (p.suit && p.suit !== 'none' && !suitUnlocked(p.suit)) p.suit = 'none';
@@ -7728,7 +7763,7 @@ function updateShop(dt) {
   const useTicket = !it.relic && it.key !== 'tonic' && G.codes.tickets > 0 && !G.codes.admin;
   if (!useTicket && p.coins < cost) { Snd.uiBad(); G.shopWarn = 0.6; return; }
   if (useTicket) { G.codes.tickets--; G.banner('TICKET SPENT', 1.4); }
-  else p.coins -= cost;
+  else G.spendCoins(cost);
   Snd.buy();
   if (it.key === 'heart') { p.up.heart = (p.up.heart || 0) + 1; p.maxHp += 2; p.hp = p.maxHp; }
   else if (it.key === 'tonic') p.heal(p.maxHp);
@@ -8158,7 +8193,8 @@ function drawTitle() {
     ctx.rotate(T.t * (hov ? 1.1 : 0.25));
     ctx.drawImage(Art.ui.gear, -11, -11);
     ctx.restore();
-    if (hov) drawText(ctx, 'SETTINGS', VW - 17, 32, '#ffeec0', 1, 'center', '#2a1a10');
+    /* The cog names itself: it lights up and turns faster under the pointer,
+       and the title screen is quieter without a word written over it. */
   }
 
   ctx.restore();
