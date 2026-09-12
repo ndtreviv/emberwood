@@ -191,6 +191,13 @@ function applySave(d) {
     const sl = (d.artifacts && d.artifacts.slots) || [];
     G.artifacts = { owned: (d.artifacts && d.artifacts.owned) || {},
                     slots: [sl[0] || null, sl[1] || null, sl[2] || null] };
+    /* An older file wrote a 1 against each artifact it held.  A 1 is one
+       copy, so the old files read straight across.  Drop a key the table
+       no longer knows, and hold every count inside one to five. */
+    for (const k of Object.keys(G.artifacts.owned)) {
+      if (!artifactBy(k)) { delete G.artifacts.owned[k]; continue; }
+      G.artifacts.owned[k] = clamp(G.artifacts.owned[k] | 0, 1, ART_MAX);
+    }
     /* never wear what is not owned, and never wear one twice */
     const seen = {};
     for (let i = 0; i < ARTIFACT_SLOTS; i++) {
@@ -304,7 +311,7 @@ G.goldAdmin = function () {
     p.up[it.key] = shopMax(it);
   }
   p.up.heart = shopMax(SHOP_ITEMS[0]);
-  p.maxHp = 6 + p.up.heart * 2 + (G.hasArtifact('ankh') ? 2 : 0) + (G.hasArtifact('sunheart') ? 8 : 0);
+  p.maxHp = 6 + p.up.heart * 2 + G.artAdd('hp');
   p.hp = p.maxHp;
   G.codes.tickets += 99;
   try { Art.buildGold(); } catch (err) { console.error('gold avatar', err); }
@@ -437,11 +444,9 @@ G.coinBonus = function () {
 G.comboMult = function () { return 1 + Math.min(2, Math.floor(G.combo / 4) * 0.5); };
 G.coinScale = function () {
   const lv = World.LEVELS[G.level];
-  /* the scarab charm pays a quarter more on every kill */
-  return ((lv && lv.coinScale) || 1) * (G.hasArtifact('scarab') ? 1.25 : 1)
-         * (G.hasArtifact('coinclasp') ? 1.1 : 1)
-         * (G.boostLeft && G.boostLeft('coin') > 0 ? 2 : 1)
-         * (G.hasArtifact('pharaohcrook') ? 2 : 1);
+  /* every worn artifact that pays more multiplies in here */
+  return ((lv && lv.coinScale) || 1) * G.artMul('coin')
+         * (G.boostLeft && G.boostLeft('coin') > 0 ? 2 : 1);
 };
 G.purse = function () { return G.codes.admin ? INF : String(G.player.coins); };
 G.spawnCoin = function (x, y, vx, vy, still, si, value) {
@@ -500,7 +505,7 @@ G.needsBubble = function () {
 /* The ring, or the Sandstep bought in the waste: either one carries you
    through ground that would otherwise swallow you. */
 G.canPhase = function () {
-  if (G.hasArtifact && G.hasArtifact('ring')) return true;
+  if (G.artOn && G.artOn('phase')) return true;
   return !!(G.player && G.player.up && G.player.up.sandstep > 0);
 };
 /* which patch of phase ground a point stands over */
@@ -773,6 +778,11 @@ G.enterRoom = function (id, spawn) {
 
   const s = spawn || room.start;
   G.player.place(s.x, room.mode === 'top' ? s.y + G.player.h / 2 : s.y);
+  /* The room is built now, and G.room already points at it, so a spawn
+     point that fell inside a wall is stepped clear before the first frame
+     draws.  Nobody should have to wait five seconds for the rescue. */
+  G.player.unstickNow();
+  G.player.stuckT = 0;
   G.player.dashT = 0; G.player.atkT = 0;
   G.exitLock = true; G.nearExit = null;
   /* the throne room holds its breath: no music, no wind, and no dragon
@@ -2282,7 +2292,7 @@ function drawArchipelago() {
    Archipelago buy the page that is kept for them.
    ============================================================ */
 const STORE_BOX = { x: 6, y: 6, w: 372, h: 204 };
-const STORE_TABS = ['ITEMS', 'LIMITED', 'ARTIFACTS', 'CLOTHES', 'SHARDS'];
+const STORE_TABS = ['LIMITED', 'ITEMS', 'ARTIFACTS', 'CLOTHES', 'SHARDS'];
 const STORE_ROWS = 5;
 function storeTabRect(i) { return { x: STORE_BOX.x + 8 + i * 72, y: STORE_BOX.y + 20, w: 69, h: 14 }; }
 function storeRowRect(i) { return { x: STORE_BOX.x + 8, y: STORE_BOX.y + 42 + i * 26, w: STORE_BOX.w - 16, h: 24 }; }
@@ -2290,14 +2300,27 @@ function storeBuyRect(i) { const r = storeRowRect(i); return { x: r.x + r.w - 62
 function storePageRect(d) { return { x: d < 0 ? STORE_BOX.x + 8 : STORE_BOX.x + 40, y: STORE_BOX.y + 180, w: 26, h: 16 }; }
 function storeBackRect() { return { x: STORE_BOX.x + STORE_BOX.w - 62, y: STORE_BOX.y + 180, w: 54, h: 16 }; }
 
-/* the three boxes, and what each one is likely to hold */
+/* The three caskets.  A casket rolls three times.  Each roll pays a purse,
+   turns up a suit, or gives an artifact of the rank its table names.
+
+   The worn casket is deliberately thin: it holds one legendary at the most,
+   and a super rare or a legendary comes out of about one box in a hundred.
+   The sealed casket runs at about one box in fifteen, and the king's casket
+   at about two boxes in five.  The dearer the casket, the better the odds
+   for every ruby you spend. */
 const BOXES = [
-  { key: 'box1', name: 'WORN CASKET', rubies: 10,
-    odds: { 2: 0.84, 3: 0.15, 4: 0.01, 5: 0 } },
+  { key: 'box1', name: 'WORN CASKET', rubies: 10, maxTop: 1,
+    desc: 'THREE FINDS. ALMOST ALL OF THEM COMMON',
+    coinOdds: 0.16, suitOdds: 0.05,
+    odds: { 1: 0.7998, 2: 0.1960, 3: 0.0032, 4: 0.0010, 5: 0 } },
   { key: 'box2', name: 'SEALED CASKET', rubies: 50,
-    odds: { 2: 0.55, 3: 0.40, 4: 0.05, 5: 0 } },
+    desc: 'THREE FINDS, AND SIX TIMES THE BETTER ODDS',
+    coinOdds: 0.12, suitOdds: 0.05,
+    odds: { 1: 0.4200, 2: 0.5533, 3: 0.0210, 4: 0.0057, 5: 0 } },
   { key: 'box3', name: 'KINGS CASKET', rubies: 100,
-    odds: { 2: 0.30, 3: 0.58, 4: 0.10, 5: 0.02 } }
+    desc: 'THREE FINDS, THE BEST ODDS, AND THE BOW',
+    coinOdds: 0.08, suitOdds: 0.04,
+    odds: { 1: 0.17052, 2: 0.6400, 3: 0.1195, 4: 0.0624, 5: 0.00758 } }
 ];
 /* how long a booster runs, and what it doubles */
 const BOOST_SECS = 600;
@@ -2336,16 +2359,17 @@ function storeItemRows() {
 /* the artifacts, dearest first, with the three caskets at the head */
 function storeArtifactRows() {
   const rows = BOXES.map((b, i) => ({
-    name: b.name, desc: 'ONE ARTIFACT, THE BETTER BOX THE BETTER ODDS',
+    name: b.name, desc: b.desc,
     rubies: b.rubies, box: b.key, casket: i,
     buy: () => G.openBox(b.key)
   }));
-  const order = ARTIFACTS.slice().sort((a, b) => b.rank - a.rank);
+  const order = ARTIFACTS.filter(a => a.shop).sort((a, b) => b.rank - a.rank);
   for (const a of order) {
-    if (a.rank < 2) continue;
     rows.push({ name: a.name, desc: a.desc, coins: RANK_PRICE[a.rank],
                 rank: a.rank, art: a.key,
-                owned: () => G.ownsArtifact(a.key),
+                /* the shop sells up to the five a pouch holds */
+                owned: () => G.artFull(a.key),
+                ownedMsg: 'YOUR POUCH HOLDS FIVE ALREADY',
                 buy: () => G.giveArtifact(a.key) });
   }
   return rows;
@@ -2374,30 +2398,30 @@ function storeShardRows() {
       buy: () => { G.arrows = (G.arrows | 0) + 50; } }
   ];
 }
-/* The limited page turns over with the day.  Three things off the other
-   pages, each at a third off, and a clock on how long they stand. */
+/* The front page turns over with the day.  It holds three artifacts in a
+   mythic cut, and nothing else in the shop sells them. */
 function storeDayKey() { return Math.floor(Date.now() / 86400000); }
 function storeLimitedRows() {
   const rng = new RNG(storeDayKey() * 7919 + 13);
-  const pool = storeItemRows().concat(storeArtifactRows().filter(r => r.coins && r.rank && r.rank <= 3));
-  const out = [];
-  const taken = {};
+  const pool = ARTIFACTS.filter(a => a.limited);
+  const out = [], taken = {};
   for (let k = 0; k < 3 && pool.length; k++) {
     let i = rng.i(0, pool.length - 1), guard = 0;
-    while (taken[i] && guard++ < 40) i = rng.i(0, pool.length - 1);
+    while (taken[i] && guard++ < 60) i = rng.i(0, pool.length - 1);
     taken[i] = 1;
-    const src = pool[i];
-    out.push(Object.assign({}, src, {
-      coins: src.coins ? Math.round(src.coins * 0.66 / 100) * 100 : src.coins,
-      was: src.coins, limited: true
-    }));
+    const a = pool[i];
+    out.push({ name: a.name, desc: a.desc, coins: a.cost, rank: a.rank, art: a.key,
+               limited: true,
+               owned: () => G.artFull(a.key),
+               ownedMsg: 'YOUR POUCH HOLDS FIVE ALREADY',
+               buy: () => G.giveArtifact(a.key) });
   }
   return out;
 }
 function storeRows() {
   switch (G.storeTab) {
-    case 0: return storeItemRows();
-    case 1: return storeLimitedRows();
+    case 0: return storeLimitedRows();
+    case 1: return storeItemRows();
     case 2: return storeArtifactRows();
     case 3: return storeClothRows();
     default: return storeShardRows();
@@ -2430,38 +2454,77 @@ G.spendShards = function (n) {
    open it yourself.
    ============================================================ */
 const BOX_ITEMS = 3;
-/* one roll on a casket's table, avoiding what has already come out of it */
-function rollBoxItem(box, taken) {
+/* what a purse out of a casket lining holds */
+const BOX_COIN_LO = 100, BOX_COIN_HI = 500;
+/* which rank this roll asks for, held down to the cap the box still allows */
+function boxRollRank(box, cap) {
   const r = Math.random();
-  let acc = 0, rank = 2;
-  for (const k of [5, 4, 3, 2]) {
+  let acc = 0, rank = 1;
+  for (const k of [5, 4, 3, 2, 1]) {
     acc += box.odds[k] || 0;
     if (r < acc) { rank = k; break; }
   }
+  return Math.min(rank, cap);
+}
+/* one artifact off a casket's table, avoiding what has already come out */
+function rollBoxArtifact(box, taken, cap) {
+  const rank = boxRollRank(box, cap);
   const pick = (want) => {
-    const pool = ARTIFACTS.filter(a => a.rank === want && !G.ownsArtifact(a.key) && !taken[a.key]);
+    const pool = ARTIFACTS.filter(a => a.rank === want && !a.limited &&
+                                      !G.artFull(a.key) && !taken[a.key]);
     return pool.length ? pool[ri(0, pool.length - 1)] : null;
   };
   let got = pick(rank);
   /* nothing of that rank left, so look below it and then above it */
-  for (let k = rank - 1; !got && k >= 2; k--) got = pick(k);
-  for (let k = rank + 1; !got && k <= 5; k++) got = pick(k);
+  for (let k = rank - 1; !got && k >= 1; k--) got = pick(k);
+  for (let k = rank + 1; !got && k <= cap; k++) got = pick(k);
   return got;
+}
+/* a suit the wardrobe has not got yet, or nothing.  A casket never gives up
+   a suit that waits on a prestige: those are earned. */
+function rollBoxSuit() {
+  const pool = SUIT_KEYS.filter(k => !SUITS[k].need && !(G.wardrobe && G.wardrobe.owned[k]));
+  return pool.length ? pool[ri(0, pool.length - 1)] : null;
+}
+function boxCoinItem() {
+  const n = ri(BOX_COIN_LO / 10, BOX_COIN_HI / 10) * 10;
+  return { kind: 'coin', key: 'coin', rank: 1, coins: n, name: 'A PURSE',
+           short: n + ' COINS', desc: 'A PURSE OUT OF THE CASKET LINING' };
+}
+function boxSuitItem(k) {
+  const su = SUITS[k];
+  return { kind: 'suit', key: k, rank: 2, name: su.name, short: su.name,
+           desc: 'CUT TO THE PATTERN OF ' + su.realm };
 }
 G.openBox = function (key) {
   const box = BOXES.find(b => b.key === key);
   if (!box) return false;
   const tier = BOXES.indexOf(box);
   const taken = {}, items = [];
+  /* The worn casket holds one legendary at the most.  After the first one
+     comes out, nothing else in that box rolls above a super rare. */
+  let top = 0, cap = 5;
   for (let i = 0; i < BOX_ITEMS; i++) {
-    const got = rollBoxItem(box, taken);
-    if (!got) break;
-    taken[got.key] = 1;
+    const r = Math.random();
+    let got = null;
+    if (r < (box.suitOdds || 0)) {
+      const sk = rollBoxSuit();
+      if (sk) got = boxSuitItem(sk);
+    } else if (r < (box.suitOdds || 0) + (box.coinOdds || 0)) {
+      got = boxCoinItem();
+    }
+    if (!got) {
+      const a = rollBoxArtifact(box, taken, cap);
+      if (a) {
+        taken[a.key] = 1;
+        got = { kind: 'art', key: a.key, rank: a.rank, name: a.name,
+                short: a.short, desc: a.desc };
+        if (a.rank >= 4) { top++; if (box.maxTop && top >= box.maxTop) cap = 3; }
+      }
+    }
+    /* the pouch holds five of everything already, so the casket pays coin */
+    if (!got) got = boxCoinItem();
     items.push(got);
-  }
-  if (!items.length) {
-    G.storeMsg = 'YOU HOLD EVERY ARTIFACT ALREADY'; G.storeMsgT = 2.6; Snd.uiBad();
-    return false;
   }
   /* it comes to the middle of the screen, still shut */
   G.boxShow = { tier: tier, name: box.name, items: items, phase: 'shut', t: 0, given: false };
@@ -2495,8 +2558,13 @@ function updateBoxShow(dt) {
       /* what is inside is yours the moment the lid goes */
       if (!b.given) {
         b.given = true;
-        for (const it of b.items) G.giveArtifact(it.key);
-        G.pouchNew = (G.pouchNew | 0) + b.items.length;
+        let got = 0;
+        for (const it of b.items) {
+          if (it.kind === 'coin') { if (G.player) G.player.coins += it.coins; }
+          else if (it.kind === 'suit') { if (G.wardrobe) G.wardrobe.owned[it.key] = 1; }
+          else if (G.giveArtifact(it.key, true)) got++;
+        }
+        G.pouchNew = (G.pouchNew | 0) + got;
         G.saveGame();
       }
       for (let i = 0; i < 90; i++) G.particles.push(new Particle({
@@ -2580,7 +2648,10 @@ function drawBoxShow() {
       ctx.fillRect(r.x - 4, y - 4, r.w + 8, r.h + 8);
       ctx.restore();
     }
-    const ic = Art.item.artifact[it.key];
+    /* an artifact wears its own face; a purse and a suit wear theirs */
+    const ic = it.kind === 'coin' ? (Art.item.coinPile && Art.item.coinPile[0])
+             : it.kind === 'suit' ? (Art.suitIcon || {})[it.key]
+             : Art.item.artifact[it.key];
     if (ic) {
       ctx.save();
       ctx.translate(r.x + r.w / 2, y + 28);
@@ -2613,7 +2684,8 @@ function storeRowPic(row) {
 function openStore(from) {
   G.state = 'store';
   G.storeFrom = from || 'map';
-  if (G.storeTab === undefined) G.storeTab = 0;
+  /* it always opens on the front page, so the day's cuts are seen first */
+  G.storeTab = 0;
   G.storePage = 0; G.storeSel = -1; G.storeMsgT = 0; G.storeT = 0;
   G.particles.length = 0;
   Snd.ui();
@@ -2630,22 +2702,34 @@ function storeAfford(row) {
   return G.codes.admin || G.player.coins >= (row.coins || 0);
 }
 function storeBuy(row) {
-  if (row.owned && row.owned()) { G.storeMsg = 'YOU HOLD IT ALREADY'; G.storeMsgT = 2; Snd.uiBad(); return; }
+  if (!row) return;
+  if (row.owned && row.owned()) {
+    G.storeMsg = row.ownedMsg || 'YOU HOLD IT ALREADY'; G.storeMsgT = 2; Snd.uiBad(); return;
+  }
   if (row.need && (G.prestige | 0) < row.need) {
     G.storeMsg = 'PRESTIGE ' + PRESTIGE_MARK[row.need] + ' OPENS IT'; G.storeMsgT = 2.4; Snd.uiBad(); return;
   }
+  /* Can they pay?  The purse is only opened after the thing itself has
+     gone through, so a buy that cannot be made costs nothing.  A casket
+     once took the rubies and gave nothing back. */
+  const cost = row.coins || 0;
   if (row.shards !== undefined) {
-    if (!G.spendShards(row.shards)) { G.storeMsg = 'IT ASKS ' + row.shards + ' SHARDS'; G.storeMsgT = 2.2; Snd.uiBad(); return; }
+    if (G.shardTotal() < row.shards) { G.storeMsg = 'IT ASKS ' + row.shards + ' SHARDS'; G.storeMsgT = 2.2; Snd.uiBad(); return; }
   } else if (row.rubies !== undefined) {
     if ((G.rubies | 0) < row.rubies) { G.storeMsg = 'IT ASKS ' + row.rubies + ' RUBIES'; G.storeMsgT = 2.2; Snd.uiBad(); return; }
-    G.rubies -= row.rubies;
-  } else {
-    const cost = row.coins || 0;
-    if (!G.codes.admin && G.player.coins < cost) { G.storeMsg = 'IT ASKS ' + shortCoin(cost) + ' COINS'; G.storeMsgT = 2.2; Snd.uiBad(); return; }
-    if (!G.codes.admin) G.player.coins -= cost;
+  } else if (!G.codes.admin && G.player.coins < cost) {
+    G.storeMsg = 'IT ASKS ' + shortCoin(cost) + ' COINS'; G.storeMsgT = 2.2; Snd.uiBad(); return;
   }
   const said = G.storeMsgT;
-  row.buy();
+  if (row.buy() === false) {
+    if (G.storeMsgT === said) { G.storeMsg = 'IT CANNOT BE SOLD TO YOU'; G.storeMsgT = 2.4; }
+    Snd.uiBad();
+    return;
+  }
+  /* it went through, so now it is paid for */
+  if (row.shards !== undefined) G.spendShards(row.shards);
+  else if (row.rubies !== undefined) G.rubies -= row.rubies;
+  else if (!G.codes.admin) G.player.coins -= cost;
   if (G.storeMsgT === said) { G.storeMsg = row.name + ' IS YOURS'; G.storeMsgT = 2.4; }
   Snd.buy(); G.flash(0.25);
   G.saveGame();
@@ -2709,7 +2793,8 @@ function drawStore() {
     const can = storeAfford(row);
     ctx.fillStyle = hot ? 'rgba(74,56,34,0.94)' : 'rgba(24,18,12,0.86)';
     ctx.fillRect(r.x, r.y, r.w, r.h);
-    ctx.fillStyle = owned ? '#6fc46a' : (row.rank ? RANK_COL[row.rank] : (can ? '#8a6a3a' : '#5b4a34'));
+    ctx.fillStyle = row.limited ? '#ff3a3a'
+                  : (owned ? '#6fc46a' : (row.rank ? RANK_COL[row.rank] : (can ? '#8a6a3a' : '#5b4a34')));
     ctx.fillRect(r.x, r.y, r.w, 1);
     /* the picture of the thing itself: the artifact's own icon, the suit on
        its hanger, the casket, or whatever the row names */
@@ -2743,9 +2828,20 @@ function drawStore() {
     ctx.fillStyle = can && !owned ? '#8a6a3a' : '#3a3350';
     ctx.fillRect(br.x, br.y, br.w, 1);
     drawText(ctx, label, br.x + br.w / 2, br.y + 5, col, 1, 'center');
-    /* what it used to cost, on the page that is cut down */
-    if (row.limited && row.was) drawText(ctx, shortCoin(row.was), br.x - 4, br.y + 5, '#7a6448', 1, 'right');
   });
+  /* THE FRONT PAGE SHOUTS.  The day's mythic cuts stand above it. */
+  if (G.storeTab === 0) {
+    const by = B.y + 46 + show.length * 26;
+    const pulse = 0.72 + Math.sin(G.storeT * 6) * 0.28;
+    ctx.save();
+    ctx.globalAlpha = pulse;
+    drawText(ctx, '!!! LIMITED !!!', B.x + B.w / 2, by, '#ff3a3a', 2, 'center', '#2a0505');
+    ctx.restore();
+    drawText(ctx, 'MYTHIC CUTS. THEY GO WHEN THE DAY TURNS.',
+             B.x + B.w / 2, by + 18, '#ff8b9a', 1, 'center');
+    if (!show.length)
+      drawText(ctx, 'NOTHING STANDS HERE TODAY', B.x + B.w / 2, by + 30, '#8a94a6', 1, 'center');
+  }
   /* the pages, and the way out */
   if (pages > 1) {
     for (const d of [-1, 1]) {
@@ -3188,58 +3284,209 @@ function drawRiddle() {
    THE ARTIFACTS POUCH.  Three slots.  Whatever sits in a slot
    works; whatever sits in the pouch does nothing.
    ============================================================ */
+/* ------------------------------------------------------------
+   One row of the table, written short so the table stays
+   readable: the key, the rank, the long name, the short name,
+   the line the panel prints, what it does, what a merge of it
+   makes, and the face it wears.
+   ------------------------------------------------------------ */
+function artRow(key, rank, name, short, desc, st, up, shape, col) {
+  return { key: key, rank: rank, name: name, short: short, desc: desc,
+           st: st || {}, up: up || null, shape: shape || 'bead', col: col || '#c9a06a' };
+}
 const ARTIFACTS = [
-  /* the three mythical things, one from each guardian of the waste */
-  { key: 'sunheart', rank: 4, name: 'THE SUNHEART', short: 'SUNHEART',
-    desc: 'FOUR HEARTS MORE ON YOUR LIFE BAR' },
-  { key: 'riddlestone', rank: 4, name: 'THE RIDDLESTONE', short: 'RIDDLESTONE',
-    desc: 'EVERY SPECIAL CUT BITES HALF AGAIN AS HARD' },
-  { key: 'pharaohcrook', rank: 4, name: "THE PHARAOHS CROOK", short: 'THE CROOK',
-    desc: 'EVERY COIN COMES TO YOU DOUBLED' },
-  { key: 'ring', rank: 3, name: "THE PHARAOHS RING", short: 'THE RING',
-    desc: 'WALK THROUGH QUICKSAND AND POWDERED SNOW' },
-  { key: 'ankh', rank: 2, name: 'COPPER ANKH', short: 'ANKH', desc: 'ONE HEART MORE' },
-  { key: 'eye', rank: 2, name: 'THE STONE EYE', short: 'STONE EYE',
-    desc: 'HIDDEN GROUND GIVES OFF A SHIMMER' },
-  { key: 'scarab', rank: 2, name: 'SCARAB CHARM', short: 'SCARAB',
-    desc: 'EVERY KILL PAYS A QUARTER MORE' },
-  { key: 'frostbead', rank: 2, name: 'FROST BEAD', short: 'FROST BEAD',
-    desc: 'FIRE BURNS HALF AS LONG' },
-  { key: 'emberchip', rank: 2, name: 'EMBER CHIP', short: 'EMBER CHIP',
-    desc: 'THE BLADE BITES ONE POINT DEEPER' },
-  { key: 'feather', rank: 2, name: 'FEATHER TOKEN', short: 'FEATHER',
-    desc: 'YOU JUMP HIGHER' },
-  { key: 'saltvial', rank: 2, name: 'SALT VIAL', short: 'SALT VIAL',
-    desc: 'THE DASH RETURNS A THIRD SOONER' },
-  /* ---- the bow, and the things the shop keeps beside it ---- */
-  { key: 'bow', rank: 5, name: 'THE LONGBOW', short: 'LONGBOW',
-    desc: 'HOLD THE SWORD TO DRAW IT AND LOOSE AN ARROW' },
-  /* four more of the super rare */
-  { key: 'heartstone', rank: 3, name: 'THE HEARTSTONE', short: 'HEARTSTONE',
-    desc: 'TWO HEARTS MORE ON YOUR LIFE BAR' },
-  { key: 'runeplate', rank: 3, name: 'RUNE PLATE', short: 'RUNE PLATE',
-    desc: 'EVERY BLOW AGAINST YOU TAKES ONE POINT LESS' },
-  { key: 'scholarseal', rank: 3, name: 'THE SCHOLARS SEAL', short: 'SEAL',
-    desc: 'EVERY KILL PAYS HALF AGAIN THE EXPERIENCE' },
-  { key: 'deepquiver', rank: 3, name: 'THE DEEP QUIVER', short: 'QUIVER',
-    desc: 'AN ARROW IN THREE COSTS YOU NOTHING' },
-  /* four more of the rare */
-  { key: 'tidecharm', rank: 2, name: 'TIDE CHARM', short: 'TIDE CHARM',
-    desc: 'YOU SWIM A THIRD FASTER' },
-  { key: 'windvane', rank: 2, name: 'THE WIND VANE', short: 'WIND VANE',
-    desc: 'THE GALE REACHES HALF AGAIN AS FAR' },
-  { key: 'coinclasp', rank: 2, name: 'COIN CLASP', short: 'COIN CLASP',
-    desc: 'EVERY KILL PAYS A TENTH MORE AGAIN' },
-  { key: 'flintnock', rank: 2, name: 'FLINT NOCK', short: 'FLINT NOCK',
-    desc: 'AN ARROW BITES HALF AGAIN AS DEEP' }
+  /* ---------------- COMMON: twenty four small helps --------------- */
+  artRow('bentcoin', 1, 'A BENT COIN', 'BENT COIN', 'EVERY KILL PAYS A TWENTIETH MORE', { coin: 1.05 }, 'coinclasp', 'coin', '#c9a06a'),
+  artRow('claytoken', 1, 'CLAY TOKEN', 'TOKEN', 'EVERY KILL PAYS A SIXTEENTH MORE', { coin: 1.06 }, 'silvermark', 'rune', '#b08050'),
+  artRow('chalkrune', 1, 'CHALK RUNE', 'CHALK RUNE', 'EVERY KILL PAYS A TENTH MORE EXPERIENCE', { xp: 1.1 }, 'inkstone', 'rune', '#e8e0cc'),
+  artRow('waxtablet', 1, 'WAX TABLET', 'TABLET', 'EVERY KILL PAYS A TWELFTH MORE EXPERIENCE', { xp: 1.08 }, 'inkstone', 'scroll', '#e0c070'),
+  artRow('leathercuff', 1, 'LEATHER CUFF', 'CUFF', 'THE DASH RETURNS A TENTH SOONER', { dashCd: 0.9 }, 'saltvial', 'knot', '#8a6a3a'),
+  artRow('dustsandal', 1, 'DUST SANDAL', 'SANDAL', 'YOU RUN A TWENTIETH FASTER', { speed: 1.05 }, 'swiftsole', 'leaf', '#c8b98c'),
+  artRow('oakcharm', 1, 'OAK CHARM', 'OAK CHARM', 'THE GALE REACHES A TENTH FURTHER', { gale: 1.1 }, 'windvane', 'leaf', '#6f9a4a'),
+  artRow('reedwhistle', 1, 'REED WHISTLE', 'WHISTLE', 'THE GALE REACHES AN EIGHTH FURTHER', { gale: 1.12 }, 'kitevane', 'horn', '#b8c46a'),
+  artRow('dampcloth', 1, 'DAMP CLOTH', 'DAMP CLOTH', 'FIRE BURNS A QUARTER LESS LONG', { burn: 1.34 }, 'frostbead', 'knot', '#6f9ab8'),
+  artRow('boneneedle', 1, 'BONE NEEDLE', 'NEEDLE', 'AN ARROW BITES A TENTH DEEPER', { arrow: 1.1 }, 'barbedhead', 'arrowhead', '#e8dcc0'),
+  artRow('reedband', 1, 'REED BAND', 'REED BAND', 'YOU SWIM A TENTH FASTER', { swim: 1.1 }, 'tidecharm', 'ring', '#7fc4a8'),
+  artRow('swiftlace', 1, 'SWIFT LACE', 'LACE', 'YOU RUN A TWENTY FIFTH FASTER', { speed: 1.04 }, 'swiftsole', 'knot', '#c07a4a'),
+  artRow('mothwing', 1, 'MOTH WING', 'MOTH WING', 'YOU FALL A LITTLE MORE SLOWLY', { fall: 0.86 }, 'feather', 'feather', '#d8c8a8'),
+  artRow('glasstooth', 1, 'GLASS TOOTH', 'TOOTH', 'A SPECIAL CUT BITES A TENTH HARDER', { special: 0.1 }, 'emberfang', 'tooth', '#a9d8e0'),
+  artRow('tinlocket', 1, 'TIN LOCKET', 'LOCKET', 'ONE POINT MORE ON YOUR LIFE BAR', { hp: 1 }, 'ankh', 'orb', '#b8c0cc'),
+  artRow('strawcord', 1, 'STRAW CORD', 'CORD', 'AN ARROW BITES A TWELFTH DEEPER', { arrow: 1.08 }, 'truestring', 'knot', '#ddc87a'),
+  artRow('copperstud', 1, 'COPPER STUD', 'STUD', 'ONE POINT MORE ON YOUR LIFE BAR', { hp: 1 }, 'steelrivet', 'bead', '#c07a3a'),
+  artRow('hidewrap', 1, 'HIDE WRAP', 'HIDE WRAP', 'FIRE BURNS A FIFTH LESS LONG', { burn: 1.25 }, 'oakbuckler', 'plate', '#9a7040'),
+  artRow('slatechip', 1, 'SLATE CHIP', 'SLATE CHIP', 'A SPECIAL CUT BITES A TWELFTH HARDER', { special: 0.08 }, 'honedcore', 'blade', '#8a94a6'),
+  artRow('pitchknot', 1, 'PITCH KNOT', 'PITCH KNOT', 'THE BLADE BITES A TENTH DEEPER', { blade: 1.1 }, 'emberchip', 'knot', '#4a3a30'),
+  artRow('saltpinch', 1, 'A PINCH OF SALT', 'SALT', 'THE DASH RETURNS A TWELFTH SOONER', { dashCd: 0.92 }, 'hourbead', 'bead', '#e8eef8'),
+  artRow('flintspark', 1, 'FLINT SPARK', 'FLINT', 'THE BLADE BITES A TWELFTH DEEPER', { blade: 1.08 }, 'emberfang', 'gem', '#c05a2a'),
+  artRow('owlfeather', 1, 'OWL FEATHER', 'OWL FEATHER', 'YOU JUMP A LITTLE HIGHER', { jump: 1.05 }, 'keeneye', 'feather', '#b09a70'),
+  artRow('riverpearl', 1, 'RIVER PEARL', 'PEARL', 'COINS COME TO YOU FROM FURTHER OFF', { magnet: 1.2 }, 'gembrooch', 'orb', '#dfe8f4'),
+
+  /* ---------------- RARE: the eleven the shop keeps --------------- */
+  artRow('ankh', 2, 'COPPER ANKH', 'ANKH', 'ONE HEART MORE', { hp: 2 }, 'heartstone', 'ankh', '#c9a06a'),
+  artRow('eye', 2, 'THE STONE EYE', 'STONE EYE', 'HIDDEN GROUND GIVES OFF A SHIMMER', { shimmer: 1 }, 'ring', 'eye', '#8a8474'),
+  artRow('scarab', 2, 'SCARAB CHARM', 'SCARAB', 'EVERY KILL PAYS A QUARTER MORE', { coin: 1.25 }, 'mintseal', 'shell', '#6fb98a'),
+  artRow('frostbead', 2, 'FROST BEAD', 'FROST BEAD', 'FIRE BURNS HALF AS LONG', { burn: 2 }, 'ironcarapace', 'bead', '#8fd0e8'),
+  artRow('emberchip', 2, 'EMBER CHIP', 'EMBER CHIP', 'THE BLADE BITES ONE POINT DEEPER', { sword: 1 }, 'duskedge', 'gem', '#ff7a2a'),
+  artRow('feather', 2, 'FEATHER TOKEN', 'FEATHER', 'YOU JUMP HIGHER', { jump: 1.143 }, 'sandglass', 'feather', '#e8dcc0'),
+  artRow('saltvial', 2, 'SALT VIAL', 'SALT VIAL', 'THE DASH RETURNS A THIRD SOONER', { dashCd: 0.67 }, 'sandglass', 'vial', '#cfeaff'),
+  artRow('tidecharm', 2, 'TIDE CHARM', 'TIDE CHARM', 'YOU SWIM A THIRD FASTER', { swim: 1.333 }, 'galeeye', 'shell', '#5fa3dc'),
+  artRow('windvane', 2, 'THE WIND VANE', 'WIND VANE', 'THE GALE REACHES HALF AGAIN AS FAR', { gale: 1.5 }, 'galeeye', 'star', '#cfd8e6'),
+  artRow('coinclasp', 2, 'COIN CLASP', 'COIN CLASP', 'EVERY KILL PAYS A TENTH MORE AGAIN', { coin: 1.1 }, 'dragonhoard', 'coin', '#e0b040'),
+  artRow('flintnock', 2, 'FLINT NOCK', 'FLINT NOCK', 'AN ARROW BITES HALF AGAIN AS DEEP', { arrow: 1.5 }, 'boltcord', 'arrowhead', '#a9b3c9'),
+  /* ---------------- RARE: twenty four a casket gives -------------- */
+  artRow('silverankh', 2, 'SILVER ANKH', 'S ANKH', 'ONE HEART MORE', { hp: 2 }, 'heartstone', 'ankh', '#cfd8e6'),
+  artRow('jadeheart', 2, 'JADE HEART', 'JADE HEART', 'ONE HEART MORE', { hp: 2 }, 'heartstone', 'gem', '#4fb08a'),
+  artRow('bronzegorget', 2, 'BRONZE GORGET', 'GORGET', 'FIRE BURNS HALF AS LONG', { burn: 2 }, 'ironcarapace', 'plate', '#a66a28'),
+  artRow('scalebrace', 2, 'SCALE BRACE', 'BRACE', 'ONE HEART MORE', { hp: 2 }, 'ironcarapace', 'plate', '#5f8a6a'),
+  artRow('steelrivet', 2, 'STEEL RIVET', 'RIVET', 'THREE POINTS MORE ON YOUR LIFE BAR', { hp: 3 }, 'runeplate', 'bead', '#a9b3c9'),
+  artRow('oakbuckler', 2, 'OAK BUCKLER', 'BUCKLER', 'FIRE BURNS HALF AGAIN AS FAST', { burn: 1.5 }, 'runeplate', 'plate', '#8a6a3a'),
+  artRow('keeneye', 2, 'THE KEEN EYE', 'KEEN EYE', 'HIDDEN GROUND GIVES OFF A SHIMMER', { shimmer: 1 }, 'ring', 'eye', '#7fc4d8'),
+  artRow('duststep', 2, 'DUST STEP', 'DUST STEP', 'YOU RUN A TENTH FASTER', { speed: 1.1 }, 'ring', 'leaf', '#d9bd7e'),
+  artRow('emberfang', 2, 'EMBER FANG', 'EMBER FANG', 'THE BLADE BITES ONE POINT DEEPER', { sword: 1 }, 'duskedge', 'tooth', '#ff7a2a'),
+  artRow('honedcore', 2, 'THE HONED CORE', 'HONED CORE', 'A SPECIAL CUT BITES A QUARTER HARDER', { special: 0.25 }, 'duskedge', 'gem', '#c9c0a8'),
+  artRow('stormbead', 2, 'STORM BEAD', 'STORM BEAD', 'THE GALE REACHES A THIRD FURTHER', { gale: 1.33 }, 'galeeye', 'bead', '#8fd0e8'),
+  artRow('kitevane', 2, 'THE KITE VANE', 'KITE VANE', 'THE GALE REACHES A THIRD FURTHER', { gale: 1.35 }, 'galeeye', 'star', '#cfeaff'),
+  artRow('boltcharm', 2, 'BOLT CHARM', 'BOLT CHARM', 'THE BLADE BITES ONE POINT DEEPER', { sword: 1 }, 'thunderfang', 'star', '#ffe14d'),
+  artRow('ironbell', 2, 'THE IRON BELL', 'IRON BELL', 'A SPECIAL CUT BITES A QUARTER HARDER', { special: 0.25 }, 'thunderfang', 'bell', '#8a94a6'),
+  artRow('swiftsole', 2, 'SWIFT SOLE', 'SWIFT SOLE', 'YOU RUN A SEVENTH FASTER', { speed: 1.15 }, 'sandglass', 'leaf', '#c07a4a'),
+  artRow('hourbead', 2, 'HOUR BEAD', 'HOUR BEAD', 'THE DASH RETURNS A QUARTER SOONER', { dashCd: 0.75 }, 'sandglass', 'orb', '#e0c070'),
+  artRow('silvermark', 2, 'SILVER MARK', 'S MARK', 'EVERY KILL PAYS A FIFTH MORE', { coin: 1.2 }, 'mintseal', 'coin', '#cfd8e6'),
+  artRow('merchantring', 2, 'THE MERCHANT RING', 'M RING', 'EVERY KILL PAYS A FIFTH MORE', { coin: 1.2 }, 'mintseal', 'ring', '#e0b040'),
+  artRow('hoardkey', 2, 'THE HOARD KEY', 'HOARD KEY', 'COINS COME TO YOU FROM FURTHER OFF', { magnet: 1.6 }, 'dragonhoard', 'key', '#e0b040'),
+  artRow('gembrooch', 2, 'GEM BROOCH', 'BROOCH', 'EVERY KILL PAYS A QUARTER MORE', { coin: 1.25 }, 'dragonhoard', 'gem', '#c9403a'),
+  artRow('inkstone', 2, 'INK STONE', 'INK STONE', 'EVERY KILL PAYS A QUARTER MORE EXPERIENCE', { xp: 1.25 }, 'scholarseal', 'vial', '#2f5fb0'),
+  artRow('starbead', 2, 'STAR BEAD', 'STAR BEAD', 'EVERY KILL PAYS A QUARTER MORE EXPERIENCE', { xp: 1.25 }, 'starchart', 'star', '#b07ae0'),
+  artRow('truestring', 2, 'THE TRUE STRING', 'STRING', 'AN ARROW BITES A QUARTER DEEPER', { arrow: 1.25 }, 'hawkfletch', 'knot', '#e8dcc0'),
+  artRow('barbedhead', 2, 'BARBED HEAD', 'BARB', 'AN ARROW BITES A THIRD DEEPER', { arrow: 1.33 }, 'boltcord', 'arrowhead', '#8a94a6'),
+
+  /* ---------------- SUPER RARE: fifteen --------------------------- */
+  artRow('ring', 3, "THE PHARAOHS RING", 'THE RING', 'WALK THROUGH QUICKSAND AND POWDERED SNOW', { phase: 1 }, 'riddlestone', 'ring', '#e0b040'),
+  artRow('heartstone', 3, 'THE HEARTSTONE', 'HEARTSTONE', 'TWO HEARTS MORE ON YOUR LIFE BAR', { hp: 4 }, 'sunheart', 'gem', '#c9403a'),
+  artRow('runeplate', 3, 'RUNE PLATE', 'RUNE PLATE', 'EVERY BLOW AGAINST YOU TAKES ONE POINT LESS', { armour: 1 }, 'titanplate', 'plate', '#8a94a6'),
+  artRow('scholarseal', 3, 'THE SCHOLARS SEAL', 'SEAL', 'EVERY KILL PAYS HALF AGAIN THE EXPERIENCE', { xp: 1.5 }, 'codexleaf', 'rune', '#2f5fb0'),
+  artRow('deepquiver', 3, 'THE DEEP QUIVER', 'QUIVER', 'AN ARROW IN THREE COSTS YOU NOTHING', { arrowSave: 0.34 }, 'dragonquiver', 'horn', '#8a6a3a'),
+  artRow('hawkfletch', 3, 'HAWK FLETCH', 'HAWK FLETCH', 'AN ARROW BITES HALF AGAIN AS DEEP', { arrow: 1.5 }, 'sunfletch', 'feather', '#b8a070'),
+  artRow('boltcord', 3, 'THE BOLT CORD', 'BOLT CORD', 'A DEEPER ARROW, AND ONE IN FIVE COSTS NOTHING', { arrow: 1.4, arrowSave: 0.2 }, 'dragonquiver', 'knot', '#c9403a'),
+  artRow('ironcarapace', 3, 'IRON CARAPACE', 'CARAPACE', 'TWO HEARTS MORE ON YOUR LIFE BAR', { hp: 4 }, 'titanplate', 'shell', '#7f8a9c'),
+  artRow('mintseal', 3, 'THE MINT SEAL', 'MINT SEAL', 'EVERY KILL PAYS HALF AGAIN', { coin: 1.5 }, 'pharaohcrook', 'rune', '#e0b040'),
+  artRow('dragonhoard', 3, 'THE HOARD MARK', 'HOARD MARK', 'A RICHER KILL, AND COINS COME FROM TWICE AS FAR', { coin: 1.4, magnet: 2 }, 'pharaohcrook', 'coin', '#c9403a'),
+  artRow('starchart', 3, 'THE STAR CHART', 'STAR CHART', 'EVERY KILL PAYS HALF AGAIN THE EXPERIENCE', { xp: 1.5 }, 'codexleaf', 'scroll', '#2f5fb0'),
+  artRow('galeeye', 3, 'THE EYE OF THE GALE', 'GALE EYE', 'THE GALE REACHES TWICE AS FAR', { gale: 2 }, 'tempestedge', 'eye', '#8fd0e8'),
+  artRow('thunderfang', 3, 'THUNDER FANG', 'T FANG', 'THE BLADE BITES TWO POINTS DEEPER', { sword: 2 }, 'tempestedge', 'tooth', '#ffe14d'),
+  artRow('duskedge', 3, 'THE DUSK EDGE', 'DUSK EDGE', 'A SPECIAL CUT BITES A THIRD HARDER', { special: 0.33 }, 'riddlestone', 'blade', '#6f5aa0'),
+  artRow('sandglass', 3, 'THE SAND GLASS', 'SAND GLASS', 'THE DASH RETURNS TWICE AS SOON', { dashCd: 0.5 }, 'riddlestone', 'vial', '#d9bd7e'),
+
+  /* ---------------- LEGENDARY: eight ------------------------------ */
+  artRow('sunheart', 4, 'THE SUNHEART', 'SUNHEART', 'FOUR HEARTS MORE ON YOUR LIFE BAR', { hp: 8 }, 'worldheart', 'orb', '#f0c93a'),
+  artRow('riddlestone', 4, 'THE RIDDLESTONE', 'RIDDLESTONE', 'EVERY SPECIAL CUT BITES HALF AGAIN AS HARD', { special: 0.5 }, 'stormcrown', 'rune', '#2f5fb0'),
+  artRow('pharaohcrook', 4, "THE PHARAOHS CROOK", 'THE CROOK', 'EVERY COIN COMES TO YOU DOUBLED', { coin: 2 }, 'midashand', 'horn', '#e0b040'),
+  artRow('dragonquiver', 4, 'THE DRAGON QUIVER', 'D QUIVER', 'A DOUBLE ARROW, AND TWO IN FIVE COST NOTHING', { arrow: 2, arrowSave: 0.4 }, 'bow', 'horn', '#c9403a'),
+  artRow('sunfletch', 4, 'THE SUN FLETCH', 'SUN FLETCH', 'AN ARROW BITES TWICE AS DEEP', { arrow: 2 }, 'bow', 'feather', '#f0c93a'),
+  artRow('titanplate', 4, 'THE TITAN PLATE', 'TITAN PLATE', 'EVERY BLOW AGAINST YOU TAKES TWO POINTS LESS', { armour: 2 }, 'worldheart', 'plate', '#a9b3c9'),
+  artRow('codexleaf', 4, 'THE CODEX LEAF', 'CODEX LEAF', 'EVERY KILL PAYS TWICE THE EXPERIENCE', { xp: 2 }, 'midashand', 'scroll', '#6fd0a0'),
+  artRow('tempestedge', 4, 'THE TEMPEST EDGE', 'TEMPEST', 'THE BLADE BITES THREE POINTS DEEPER', { sword: 3 }, 'stormcrown', 'blade', '#8fd0e8'),
+
+  /* ---------------- MYTHIC: four ---------------------------------- */
+  artRow('bow', 5, 'THE LONGBOW', 'LONGBOW', 'HOLD THE SWORD TO DRAW IT AND LOOSE AN ARROW', { bow: 1 }, null, 'bow', '#c68e3f'),
+  artRow('worldheart', 5, 'THE WORLD HEART', 'WORLD HEART', 'SEVEN HEARTS MORE, AND ONE POINT OFF EVERY BLOW', { hp: 14, armour: 1 }, null, 'orb', '#4fb08a'),
+  artRow('midashand', 5, 'THE HAND OF MIDAS', 'MIDAS HAND', 'EVERY COIN TRIPLED, AND TWICE THE EXPERIENCE', { coin: 3, xp: 2 }, null, 'claw', '#f0c93a'),
+  artRow('stormcrown', 5, 'THE STORM CROWN', 'STORM CROWN', 'A DEEPER BLADE, A HARDER SPECIAL, A LONGER GALE', { sword: 2, special: 0.75, gale: 2 }, null, 'crown', '#b07ae0')
 ];
 const ARTIFACT_SLOTS = 3;
-function artifactBy(key) { for (const a of ARTIFACTS) if (a.key === key) return a; return null; }
+/* the most copies of one artifact a pouch holds */
+const ART_MAX = 5;
+/* how many copies a merge eats, by the rank you merge from */
+const MERGE_N = [0, 2, 2, 2, 3, 0];
+/* A stat lookup walks the worn slots several times a frame, and the table is
+   a hundred rows long, so the key gets an index of its own. */
+let ART_BY = null;
+function artifactBy(key) {
+  if (ART_BY) return ART_BY[key] || null;
+  for (const a of ARTIFACTS) if (a.key === key) return a;
+  return null;
+}
+/* The twenty the shop itself sells, at the price its rank asks.  Every
+   other artifact comes out of a casket, or out of a merge. */
+for (const k of ['sunheart', 'riddlestone', 'pharaohcrook', 'ring', 'ankh', 'eye', 'scarab',
+                 'frostbead', 'emberchip', 'feather', 'saltvial', 'bow', 'heartstone',
+                 'runeplate', 'scholarseal', 'deepquiver', 'tidecharm', 'windvane',
+                 'coinclasp', 'flintnock']) {
+  const a = artifactBy(k);
+  if (a) a.shop = 1;
+}
+/* ------------------------------------------------------------
+   THE MYTHIC CUTS.  The limited page sells an artifact in a
+   mythic cut: the same charm, and twice what the plain one
+   gives.  They are sold, never found.  No casket holds one, and
+   no merge makes one.
+   ------------------------------------------------------------ */
+const MYTH_MUL = 2;
+/* double the good a stat does, whichever way its number runs */
+function mythicStats(base) {
+  const st = {};
+  for (const k in base.st) {
+    const v = base.st[k];
+    if (k === 'hp' || k === 'sword' || k === 'armour' || k === 'special' || k === 'arrowSave')
+      st[k] = Math.round(v * MYTH_MUL * 100) / 100;
+    else if (v < 1) st[k] = Math.round(Math.max(0.25, 1 - (1 - v) * MYTH_MUL) * 100) / 100;
+    else st[k] = Math.round((1 + (v - 1) * MYTH_MUL) * 100) / 100;
+  }
+  return st;
+}
+/* a charm that only turns something on has nothing to double, so the
+   limited page leaves it alone */
+function mythicCanCut(b) {
+  for (const k in b.st) if (k !== 'phase' && k !== 'shimmer' && k !== 'bow') return true;
+  return false;
+}
+/* the colour of a mythic cut: its own family, drawn well toward the rose */
+function hexMix(a, b, t) {
+  const m = mixc(C(a), C(b), t);
+  const hx = (n) => ('0' + (n | 0).toString(16)).slice(-2);
+  return '#' + hx(m[0]) + hx(m[1]) + hx(m[2]);
+}
+ARTIFACTS.filter(a => a.rank === 3 && mythicCanCut(a)).forEach((b, i) => {
+  const m = artRow('myth' + b.key, 5, 'MYTHIC ' + b.name, 'M ' + b.short,
+                   'TWICE WHAT ' + b.short + ' GIVES',
+                   mythicStats(b), null, b.shape, hexMix(b.col, '#ff5ad0', 0.55));
+  m.limited = 1;
+  m.base = b.key;
+  /* two hundred and fifty thousand, up to seven hundred and fifty */
+  m.cost = 250000 + (i % 11) * 50000;
+  ARTIFACTS.push(m);
+});
+/* every row is in the table now, so the index can be built */
+ART_BY = {};
+for (const a of ARTIFACTS) ART_BY[a.key] = a;
 /* common, rare, super rare, legendary, mythic: stone, cyan, violet, gold, rose */
 const RANK_COL = ['#a89270', '#c9a06a', '#7fc4d8', '#b07ae0', '#f0c93a', '#ff5ad0'];
 const RANK_NAME = ['', 'COMMON', 'RARE', 'SUPER RARE', 'LEGENDARY', 'MYTHIC'];
 /* what the shop asks for one, by its rank */
 const RANK_PRICE = [0, 5000, 20000, 50000, 100000, 250000];
+
+/* ------------------------------------------------------------
+   WHAT THE WORN ARTIFACTS ADD UP TO.  There are three slots,
+   and every slot speaks through the same two functions.  A
+   multiplier multiplies.  Everything else adds.
+   ------------------------------------------------------------ */
+function wornArtifacts() {
+  const out = [];
+  const a = G.artifacts;
+  if (!a || !a.slots) return out;
+  for (const k of a.slots) { const it = k && artifactBy(k); if (it) out.push(it); }
+  return out;
+}
+G.artMul = function (stat) {
+  let m = 1;
+  for (const it of wornArtifacts()) if (it.st[stat] !== undefined) m *= it.st[stat];
+  return m;
+};
+G.artAdd = function (stat) {
+  let n = 0;
+  for (const it of wornArtifacts()) if (it.st[stat] !== undefined) n += it.st[stat];
+  return n;
+};
+G.artOn = function (stat) { return G.artAdd(stat) > 0; };
 
 /* ============================================================
    MONEY, WRITTEN SHORT.  A shop row has no room for six noughts,
@@ -3309,17 +3556,27 @@ G.hasArtifact = function (key) {
   return !!(a && a.slots && a.slots.indexOf(key) >= 0);
 };
 G.ownsArtifact = function (key) { return !!(G.artifacts && G.artifacts.owned[key]); };
-G.giveArtifact = function (key) {
+/* how many copies of one artifact the pouch holds, nought to five */
+G.artCount = function (key) { return (G.artifacts && G.artifacts.owned[key]) | 0; };
+G.artFull = function (key) { return G.artCount(key) >= ART_MAX; };
+/* Put one copy in the pouch.  A pouch holds five of each, and the sixth
+   finds no room: the caller then pays the player in coins instead. */
+G.giveArtifact = function (key, quiet) {
   const it = artifactBy(key);
   if (!it || !G.artifacts) return false;
-  if (G.artifacts.owned[key]) return false;
-  G.artifacts.owned[key] = 1;
-  /* a free slot takes it at once, so a find is felt straight away */
-  const free = G.artifacts.slots.indexOf(null);
-  if (free >= 0) G.artifacts.slots[free] = key;
-  G.relicShow = { key: key, name: it.name, desc: it.desc, t: 0, dur: 3.4,
-                  icon: () => Art.item.artifact[key] };
-  Snd.unlock(); G.flash(0.5);
+  const had = G.artCount(key);
+  if (had >= ART_MAX) return false;
+  G.artifacts.owned[key] = had + 1;
+  /* a free slot takes the first copy at once, so a find is felt straight away */
+  if (!had) {
+    const free = G.artifacts.slots.indexOf(null);
+    if (free >= 0) G.artifacts.slots[free] = key;
+  }
+  if (!quiet) {
+    G.relicShow = { key: key, name: it.name, desc: it.desc, t: 0, dur: 3.4,
+                    icon: () => Art.item.artifact[key] };
+    Snd.unlock(); G.flash(0.5);
+  }
   G.applyArtifacts();
   G.saveGame();
   return true;
@@ -3331,13 +3588,41 @@ G.rollArtifact = function (rank) {
   if (!pool.length) return null;
   return pool[Math.floor(Math.random() * pool.length)].key;
 };
+/* ------------------------------------------------------------
+   A MERGE.  Two of the same common make the rare it points at.
+   Two rares make a super rare, two super rares a legendary, and
+   three legendaries a mythic.  A mythic merges into nothing.
+   ------------------------------------------------------------ */
+G.mergeCost = function (key) {
+  const it = artifactBy(key);
+  return (it && it.up) ? (MERGE_N[it.rank] || 0) : 0;
+};
+G.canMerge = function (key) {
+  const need = G.mergeCost(key);
+  if (!need) return false;
+  const it = artifactBy(key);
+  return G.artCount(key) >= need && !G.artFull(it.up);
+};
+G.mergeArtifact = function (key) {
+  if (!G.canMerge(key)) return false;
+  const it = artifactBy(key), need = G.mergeCost(key);
+  G.artifacts.owned[key] = G.artCount(key) - need;
+  if (!G.artifacts.owned[key]) {
+    delete G.artifacts.owned[key];
+    /* the last copy went into the merge, so it comes off the belt too */
+    for (let i = 0; i < ARTIFACT_SLOTS; i++)
+      if (G.artifacts.slots[i] === key) G.artifacts.slots[i] = null;
+  }
+  /* No red mark for a merge: you are standing in the pouch, and the thing
+     it made is on the list in front of you. */
+  G.giveArtifact(it.up, true);
+  return true;
+};
 G.applyArtifacts = function () {
   const p = G.player;
   if (!p) return;
-  /* the ankh is the only one that changes a stored number */
-  const want = 6 + (p.up.heart || 0) * 2 +
-               (G.hasArtifact('ankh') ? 2 : 0) + (G.hasArtifact('sunheart') ? 8 : 0) +
-               (G.hasArtifact('heartstone') ? 4 : 0);
+  /* health is the one stat the player carries as a stored number */
+  const want = 6 + (p.up.heart || 0) * 2 + G.artAdd('hp');
   if (p.maxHp !== want) {
     const gain = want - p.maxHp;
     p.maxHp = want;
@@ -3357,12 +3642,23 @@ function pouchListRect(i) {
 /* the two arrows live up in the header, beside the close button, where the
    footer line cannot reach them */
 function pouchPageRect(d) {
-  return { x: POUCH_BOX.x + POUCH_BOX.w - (d < 0 ? 94 : 68), y: POUCH_BOX.y + 4, w: 24, h: 16 };
+  return { x: POUCH_BOX.x + POUCH_BOX.w - (d < 0 ? 118 : 92), y: POUCH_BOX.y + 4, w: 24, h: 16 };
 }
-function ownedArtifacts() { return ARTIFACTS.filter(a => G.artifacts.owned[a.key]); }
+/* Everything the pouch holds, the best of it first.  There are a hundred
+   artifacts now, so the list would bury a legendary without this. */
+function ownedArtifacts() {
+  return ARTIFACTS.filter(a => G.artifacts.owned[a.key])
+                  .sort((a, b) => b.rank - a.rank || a.key.localeCompare(b.key));
+}
+/* the little box on a row that merges what the row holds */
+function pouchMergeRect(i) {
+  const r = pouchListRect(i);
+  return { x: r.x + r.w - 15, y: r.y + 2, w: 13, h: 13 };
+}
 function pouchPages() { return Math.max(1, Math.ceil(ownedArtifacts().length / POUCH_PER_PAGE)); }
 function updatePouch(dt) {
   G.pouchT = (G.pouchT || 0) + dt;
+  G.pouchMsgT = Math.max(0, (G.pouchMsgT || 0) - dt);
   const closeR = { x: POUCH_BOX.x + POUCH_BOX.w - 24, y: POUCH_BOX.y + 4, w: 20, h: 16 };
   G.pouchClose = Input.over(closeR);
   if (Input.tap(closeR) || Input.hit('Escape') || Input.actHit('shop')) {
@@ -3380,9 +3676,24 @@ function updatePouch(dt) {
   const all = ownedArtifacts();
   const own = all.slice(G.pouchPage * POUCH_PER_PAGE, (G.pouchPage + 1) * POUCH_PER_PAGE);
   for (let i = 0; i < own.length; i++) if (Input.over(pouchListRect(i))) G.pouchSel = i;
-  let slotTap = -1, listTap = -1;
+  let slotTap = -1, listTap = -1, mergeTap = -1;
   for (let i = 0; i < ARTIFACT_SLOTS; i++) if (Input.tap(pouchSlotRect(i))) slotTap = i;
-  for (let i = 0; i < own.length; i++) if (Input.tap(pouchListRect(i))) listTap = i;
+  /* the merge box sits on the row, so it takes the tap first */
+  for (let i = 0; i < own.length; i++)
+    if (G.canMerge(own[i].key) && Input.tap(pouchMergeRect(i))) mergeTap = i;
+  if (mergeTap < 0)
+    for (let i = 0; i < own.length; i++) if (Input.tap(pouchListRect(i))) listTap = i;
+  if (mergeTap >= 0) {
+    const from = own[mergeTap], made = artifactBy(from.up);
+    if (G.mergeArtifact(from.key)) {
+      G.pouchMsg = MERGE_N[from.rank] + ' ' + from.short + ' MADE ' + made.short;
+      G.pouchMsgT = 2.6;
+      Snd.unlock(); G.flash(0.35);
+      G.applyArtifacts(); G.saveGame();
+      G.pouchPage = clamp(G.pouchPage | 0, 0, pouchPages() - 1);
+    }
+    return;
+  }
   if (slotTap >= 0) { G.pouchSlotSel = slotTap; }
   if (listTap >= 0) { G.pouchSel = listTap; }
   if (slotTap >= 0) {
@@ -3418,7 +3729,8 @@ function drawPouch() {
   ctx.fillStyle = G.pouchClose ? '#c9403a' : 'rgba(20,14,10,0.8)';
   ctx.fillRect(closeR.x, closeR.y, closeR.w, closeR.h);
   drawText(ctx, 'X', closeR.x + closeR.w / 2, closeR.y + 4, '#ffeec0', 1, 'center');
-  drawText(ctx, 'THREE SLOTS. WHAT SITS IN A SLOT WORKS.', B.x + 12, B.y + 22, '#a89270', 1, 'left');
+  drawText(ctx, 'THREE SLOTS. FIVE COPIES OF EACH. A SLOT WORKS.',
+           B.x + 12, B.y + 22, '#a89270', 1, 'left');
 
   /* the three slots */
   for (let i = 0; i < ARTIFACT_SLOTS; i++) {
@@ -3465,10 +3777,28 @@ function drawPouch() {
     if (Art.item.artifact[a.key]) ctx.drawImage(Art.item.artifact[a.key], r.x + 2, r.y + 1);
     /* the rank is written first, and the name takes what room is left, so
        the two never sit on top of one another */
+    const canM = G.canMerge(a.key);
     const tag = inSlot ? 'WORN' : RANK_NAME[a.rank];
-    drawText(ctx, tag, r.x + r.w - 5, r.y + 5, inSlot ? '#9be89a' : RANK_COL[a.rank], 1, 'right');
-    drawText(ctx, fitText(a.short, r.w - 30 - textWidth(tag)), r.x + 21, r.y + 5,
+    const tagX = r.x + r.w - (canM ? 19 : 5);
+    drawText(ctx, tag, tagX, r.y + 5, inSlot ? '#9be89a' : RANK_COL[a.rank], 1, 'right');
+    drawText(ctx, fitText(a.short, r.w - 30 - textWidth(tag) - (canM ? 14 : 0)), r.x + 21, r.y + 5,
              inSlot ? '#9be89a' : '#ebdcb6', 1, 'left');
+    /* how many copies, as a badge on the corner of the picture */
+    const n = G.artCount(a.key);
+    if (n > 1) {
+      ctx.fillStyle = 'rgba(10,8,18,0.9)';
+      ctx.fillRect(r.x + 11, r.y + 8, 8, 8);
+      drawText(ctx, String(n), r.x + 13, r.y + 9, n >= ART_MAX ? '#ff8b9a' : '#ffd04a', 1, 'left');
+    }
+    /* the merge box, only where a merge can go through */
+    if (canM) {
+      const mr = pouchMergeRect(i), mh = Input.over(mr);
+      ctx.fillStyle = mh ? '#6fc46a' : 'rgba(40,74,34,0.92)';
+      ctx.fillRect(mr.x, mr.y, mr.w, mr.h);
+      ctx.fillStyle = '#9be89a';
+      ctx.fillRect(mr.x, mr.y, mr.w, 1);
+      drawText(ctx, '+', mr.x + mr.w / 2, mr.y + 3, mh ? '#0e1a0c' : '#9be89a', 1, 'center');
+    }
   });
   if (pages > 1) {
     for (const d of [-1, 1]) {
@@ -3477,14 +3807,23 @@ function drawPouch() {
       ctx.fillRect(r.x, r.y, r.w, r.h);
       drawText(ctx, d < 0 ? '<' : '>', r.x + r.w / 2, r.y + 5, can ? '#ffeec0' : '#5b4a34', 1, 'center');
     }
-    drawText(ctx, (page + 1) + '/' + pages, pouchPageRect(1).x + 28, B.y + 9, '#a9b3c9', 1, 'left');
+    /* right up against the close button, so a count of two figures over two
+       still keeps clear of it */
+    drawText(ctx, (page + 1) + '/' + pages, B.x + B.w - 28, B.y + 9, '#a9b3c9', 1, 'right');
   }
 
   /* the line at the foot says what the thing under the cursor does */
-  let foot = 'CLICK A FIND TO WEAR IT. CLICK A SLOT TO TAKE IT OFF.';
-  if (G.pouchSel >= 0 && own[G.pouchSel]) foot = own[G.pouchSel].desc;
-  else if (G.pouchSlotSel >= 0 && G.artifacts.slots[G.pouchSlotSel])
+  let foot = 'CLICK A FIND TO WEAR IT. THE PLUS BOX MERGES COPIES.';
+  if (G.pouchSel >= 0 && own[G.pouchSel]) {
+    const a = own[G.pouchSel];
+    foot = a.desc;
+    if (a.up) {
+      const made = artifactBy(a.up);
+      foot = MERGE_N[a.rank] + ' MAKE ' + made.short + ' - ' + a.desc;
+    }
+  } else if (G.pouchSlotSel >= 0 && G.artifacts.slots[G.pouchSlotSel])
     foot = artifactBy(G.artifacts.slots[G.pouchSlotSel]).desc;
+  if (G.pouchMsgT > 0) foot = G.pouchMsg;
   ctx.fillStyle = 'rgba(20,14,10,0.9)';
   ctx.fillRect(B.x + 1, B.y + B.h - 15, B.w - 2, 14);
   drawText(ctx, foot, B.x + B.w / 2, B.y + B.h - 11, '#ffeec0', 1, 'center');
@@ -5169,7 +5508,7 @@ function drawHUD() {
     }
   }
   /* the quiver, when you carry a bow, and the boosters while they run */
-  if (G.hasArtifact('bow')) {
+  if (G.artOn('bow')) {
     const qx = VW - 96, qy = 20;
     ctx.fillStyle = 'rgba(10,8,18,0.55)'; ctx.fillRect(qx - 4, qy - 2, 46, 11);
     ctx.save();
@@ -6119,8 +6458,8 @@ function xpFor(e) {
   return Math.max(1, Math.round(6 + Math.sqrt(hp) * 3 + dmg * 2));
 }
 G.giveXp = function (n, x, y) {
-  /* the scholar's seal reads half again out of every kill */
-  if (G.hasArtifact && G.hasArtifact('scholarseal')) n *= 1.5;
+  /* every worn artifact that reads more out of a kill multiplies in here */
+  if (G.artMul) n *= G.artMul('xp');
   if (G.boostLeft && G.boostLeft('xp') > 0) n *= 2;
   n = Math.max(0, Math.round(n));
   if (!n) return;

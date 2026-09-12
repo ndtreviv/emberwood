@@ -3826,7 +3826,211 @@ function sandstepSprite() {
   g.outline(C('#241708'));
   return g;
 }
+/* ============================================================
+   THE FACE OF AN ARTIFACT.  Twenty of them are drawn by hand
+   below, and they keep the faces they have always had.  Every
+   other one is built here out of the shape and the colour its
+   row in the table names.  A mark taken from the key itself
+   goes on top, so no two of the hundred look alike.
+   ============================================================ */
+const ART_HAND = {
+  ring: 1, scarab: 1, frostbead: 1, emberchip: 1, feather: 1, saltvial: 1, ankh: 1,
+  sunheart: 1, riddlestone: 1, pharaohcrook: 1, bow: 1, heartstone: 1, runeplate: 1,
+  scholarseal: 1, deepquiver: 1, tidecharm: 1, windvane: 1, coinclasp: 1, flintnock: 1,
+  eye: 1
+};
+function artHash(key) {
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+/* Six accents.  A key of its own turns its colour a little toward one of
+   them, so two charms of one shape and one family never wear one face. */
+const ART_ACCENT = ['#ff7a2a', '#5fa3dc', '#6fc46a', '#e0b040', '#b07ae0', '#ff5a7a'];
+function artShapePix(shape, hex, key) {
+  const g = new Pix(16, 16);
+  const h = artHash(key || shape);
+  const acc = C(ART_ACCENT[h % 6]);
+  const b = mixc(C(hex), acc, 0.1 + ((h >> 3) % 4) * 0.05);
+  const d = sh(b, -0.45), dd = sh(b, -0.68), l = sh(b, 0.4), w = C('#ffffff');
+  const clear = [0, 0, 0, 0];
+  const s1 = h % 4, s2 = (h >> 4) % 3;
+  switch (shape) {
+    case 'coin':
+      g.disc(8, 8, 6.4, dd); g.disc(8, 8, 5.4, b); g.disc(8, 8, 2.8, l);
+      for (let k = 0; k < 4; k++) g.set(8 + Math.cos(k / 4 * TAU) * 4.4, 8 + Math.sin(k / 4 * TAU) * 4.4, dd);
+      break;
+    case 'ring':
+      g.ell(8, 9, 6, 6, dd); g.ell(8, 9, 3.8, 3.8, clear);
+      g.ell(8, 8.4, 5.4, 5.4, b); g.ell(8, 9, 3.8, 3.8, clear);
+      g.disc(8, 3, 2.4, d); g.disc(8, 3, 1.6, l);
+      break;
+    case 'gem':
+      g.poly([[8, 1], [14, 7], [8, 15], [2, 7]], dd);
+      g.poly([[8, 3], [12.4, 7], [8, 13], [3.6, 7]], b);
+      g.poly([[8, 5], [10.4, 7], [8, 11], [5.6, 7]], l);
+      break;
+    case 'vial':
+      g.rect(6, 1, 4, 3, dd); g.rect(5, 4, 6, 11, dd); g.rect(6, 5, 4, 9, b);
+      g.rect(6, 9, 4, 5, l); g.rect(6, 2, 4, 1, l);
+      break;
+    case 'feather':
+      /* a shaft, and the barbs lying back off it on both sides */
+      for (let k = 0; k < 11; k++) {
+        const y = 2 + k, sp = Math.round(1 + Math.sin((k + 1) / 12 * Math.PI) * 4.2);
+        g.thick(8 - sp, y + 1, 8, y, 1, k % 2 ? b : d);
+        g.thick(8, y, 8 + sp, y + 1, 1, k % 2 ? d : b);
+      }
+      g.thick(8, 1, 8, 15, 1, dd); g.thick(8, 3, 8, 9, 1, l);
+      break;
+    case 'blade':
+      g.poly([[8, 0], [11, 5], [10, 11], [6, 11], [5, 5]], dd);
+      g.poly([[8, 2], [9.8, 5.4], [9, 10], [7, 10]], b);
+      g.thick(8, 2, 8, 10, 1, l);
+      g.rect(3, 11, 10, 2, sh(b, -0.72)); g.rect(7, 13, 2, 3, d);
+      break;
+    case 'rune':
+      g.rect(3, 1, 10, 14, dd); g.rect(4, 2, 8, 12, b);
+      g.thick(6, 4, 10, 4, 1, l); g.thick(6, 7, 10, 7, 1, l);
+      if (s1 !== 0) g.thick(6, 10, 10, 10, 1, l);
+      if (s2 === 1) g.thick(8, 4, 8, 11, 1, dd);
+      break;
+    case 'orb':
+      /* a globe in a claw mount, so it is never a bare disc */
+      g.disc(8, 9, 6, dd); g.disc(8, 9, 5, b); g.disc(6.4, 7.4, 2.2, l); g.set(6, 7, w);
+      g.thick(3, 4, 13, 4, 1, sh(acc, -0.3));
+      g.thick(5, 4, 4, 9, 1, sh(acc, -0.3)); g.thick(11, 4, 12, 9, 1, sh(acc, -0.3));
+      g.rect(7, 1, 2, 3, sh(acc, -0.45));
+      break;
+    case 'bead':
+      g.thick(1, 4, 15, 4, 1, sh(b, -0.72));
+      g.disc(8, 9.4, 5.4, dd); g.disc(8, 9.4, 4.4, b); g.disc(6.6, 8, 1.8, l);
+      break;
+    case 'plate':
+      g.poly([[8, 0], [14, 3], [13, 12], [8, 15], [3, 12], [2, 3]], dd);
+      g.poly([[8, 2], [12, 4.4], [11.4, 11], [8, 13], [4.6, 11], [4, 4.4]], b);
+      g.thick(8, 3, 8, 12, 1, l);
+      for (let k = 0; k < 2 + s1; k++) g.set(4 + k * 2, 6, dd);
+      break;
+    case 'shell':
+      g.ell(8, 9.4, 6.4, 5.4, dd); g.ell(8, 9.4, 5.4, 4.4, b);
+      for (let k = -2; k <= 2; k++) g.line(8, 14, 8 + k * 3, 5, d);
+      g.ell(8, 13, 2, 1.4, l);
+      break;
+    case 'star':
+      g.poly([[8, 0], [10, 6], [16, 6], [11.2, 9.4], [13, 15.4], [8, 11.8],
+              [3, 15.4], [4.8, 9.4], [0, 6], [6, 6]], dd);
+      g.poly([[8, 3], [9.2, 7], [13, 7], [10, 9.4], [11, 13], [8, 10.8],
+              [5, 13], [6, 9.4], [3, 7], [6.8, 7]], b);
+      g.disc(8, 8, 1.6, l);
+      break;
+    case 'tooth':
+      /* a fang: wide at the root, and drawn to a point at the tip */
+      g.poly([[4, 1], [12, 1], [10, 8], [8, 15], [6, 8]], dd);
+      g.poly([[5.4, 2], [10.6, 2], [9.2, 8], [8, 12.6], [6.8, 8]], b);
+      g.thick(7, 3, 7.6, 9, 1, l);
+      g.rect(4, 1, 8, 2, d);
+      break;
+    case 'horn':
+      g.poly([[2, 14], [4, 5], [8, 1], [12, 4], [11, 10], [7, 15]], dd);
+      g.poly([[4, 13], [5.4, 6], [8, 3], [10.4, 5.4], [9.6, 10]], b);
+      for (let k = 0; k < 3; k++) g.thick(4 + k, 12 - k * 3, 10 - k, 10 - k * 3, 1, d);
+      g.set(7, 4, l);
+      break;
+    case 'key':
+      g.disc(5, 4, 3.6, dd); g.disc(5, 4, 3, b); g.disc(5, 4, 1.6, clear);
+      g.rect(4, 6, 2, 9, b); g.rect(3, 6, 1, 9, dd);
+      g.rect(6, 12, 3, 2, b); g.rect(6, 9, 2, 2, b); g.set(4, 7, l);
+      break;
+    case 'knot':
+      /* two cords, crossed and pulled tight, with the ends hanging */
+      g.thick(2, 5, 14, 11, 3, dd); g.thick(2, 11, 14, 5, 3, dd);
+      g.thick(3, 5, 13, 11, 1, b); g.thick(3, 11, 13, 5, 1, b);
+      g.disc(8, 8, 2.8, d); g.disc(8, 8, 2, b); g.set(7, 7, l);
+      g.thick(5, 12, 4, 15, 1, d); g.thick(11, 12, 12, 15, 1, d);
+      break;
+    case 'leaf':
+      g.ell(8, 8, 4.4, 6.6, dd); g.ell(8, 8, 3.4, 5.6, b);
+      g.thick(8, 2, 8, 15, 1, dd);
+      for (let k = 0; k < 3; k++) { g.line(8, 6 + k * 3, 5, 4 + k * 3, d); g.line(8, 6 + k * 3, 11, 4 + k * 3, d); }
+      g.set(7, 5, l);
+      break;
+    case 'scroll':
+      g.rect(3, 3, 10, 10, b); g.rect(2, 1, 12, 2, dd); g.rect(2, 13, 12, 2, dd);
+      g.thick(5, 6, 11, 6, 1, dd); g.thick(5, 9, 10, 9, 1, dd);
+      g.rect(3, 3, 10, 1, l);
+      break;
+    case 'eye':
+      g.ell(8, 8, 7, 5, dd); g.ell(8, 8, 5.8, 3.8, l);
+      g.disc(8, 8, 3, b); g.disc(8, 8, 1.6, C('#101820')); g.set(7, 7, w);
+      break;
+    case 'bell':
+      g.poly([[8, 1], [12.4, 10], [3.6, 10]], dd);
+      g.poly([[8, 3], [11, 9.4], [5, 9.4]], b);
+      g.rect(2, 10, 12, 2, d); g.rect(7, 12, 2, 3, dd); g.set(7, 5, l);
+      break;
+    case 'crown':
+      g.poly([[1, 13], [1, 5], [4.6, 9], [8, 2], [11.4, 9], [15, 5], [15, 13]], dd);
+      g.poly([[3, 12], [3, 8], [5, 10], [8, 5], [11, 10], [13, 8], [13, 12]], b);
+      g.rect(1, 13, 14, 2, d);
+      g.set(8, 3, l); g.set(2, 6, l); g.set(14, 6, l);
+      break;
+    case 'claw':
+      g.poly([[3, 1], [7, 3], [11, 8], [12, 15], [8, 12], [5, 7]], dd);
+      g.poly([[4, 3], [7, 4.6], [10, 9], [10.6, 13], [8, 10.6], [6, 7]], b);
+      g.thick(5, 4, 10, 11, 1, l);
+      break;
+    case 'arrowhead':
+      g.poly([[8, 0], [12.4, 9], [8, 7], [3.6, 9]], dd);
+      g.poly([[8, 2], [10.8, 8], [8, 6.4], [5.2, 8]], b);
+      g.rect(7, 7, 2, 9, sh(b, -0.6));
+      g.rect(6, 10, 4, 1, d); g.rect(6, 12, 4, 1, d); g.set(7, 3, l);
+      break;
+    case 'ankh':
+      g.ell(8, 5, 3.6, 3.8, dd); g.ell(8, 5, 2.2, 2.4, clear);
+      g.ell(8, 4.6, 3, 3.2, b); g.ell(8, 5, 2.2, 2.4, clear);
+      g.rect(7, 8, 2, 8, b); g.rect(3, 9, 10, 2, b);
+      g.rect(7, 8, 1, 8, l); g.rect(3, 9, 10, 1, l);
+      break;
+    case 'bow':
+      for (let k = 0; k <= 12; k++) {
+        const t = k / 12, y = 2 + t * 12, x = 4 + Math.sin(t * Math.PI) * 5;
+        g.set(x, y, b); g.set(x - 1, y, dd);
+      }
+      g.thick(4, 2, 4, 14, 1, l);
+      break;
+    default:
+      g.disc(8, 8, 6, dd); g.disc(8, 8, 5, b); g.disc(6.4, 6.4, 2, l);
+  }
+  /* The mark of its own key: a band, a row of studs, or a stone set into
+     it.  A hundred artifacts keep a hundred faces this way. */
+  const feat = (h >> 9) % 4;
+  if (feat === 1) {
+    g.rect(1, 7, 14, 2, sh(acc, -0.34));
+    g.rect(1, 7, 14, 1, sh(acc, 0.3));
+  } else if (feat === 2) {
+    for (let k = 0; k < 3; k++) { g.set(4 + k * 3, 3, dd); g.set(4 + k * 3, 13, dd); }
+  } else if (feat === 3) {
+    g.disc(8, 3.4, 2.2, sh(acc, -0.4));
+    g.disc(8, 3.4, 1.4, acc);
+    g.set(7, 3, w);
+  }
+  /* and a glint, off a corner its key picks */
+  const ga = (((h >> 15) % 12) / 12) * TAU;
+  g.set(8 + Math.cos(ga) * 6.6, 8 + Math.sin(ga) * 6.6, w);
+  return g;
+}
 function artifactIcon(key) {
+  /* built out of the table, unless it is one of the twenty drawn by hand */
+  if (!ART_HAND[key] && typeof ARTIFACTS !== 'undefined') {
+    let rec = null;
+    for (const a of ARTIFACTS) if (a.key === key) { rec = a; break; }
+    if (rec) {
+      const p = artShapePix(rec.shape, rec.col, rec.key);
+      p.outline(C('#1c1408'));
+      return p;
+    }
+  }
   const g = new Pix(16, 16);
   const gold = C('#e0b040'), goldD = C('#9c7418'), goldL = C('#f6d878');
   const lapis = C('#2f5fb0'), lapisL = C('#5f9fe0');

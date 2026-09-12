@@ -251,6 +251,30 @@ A blow against you knocks you back too, mildly: enough to feel it, and your own 
 muted for a sixth of a second before you get control again. The one exception is a spinning
 cut, which carries straight through a hit.
 
+### The rock gives you up
+
+A hero should never stand inside a block, but a lift, a moving screen of stone or a bad
+landing can put one there. **Stay inside the rock for five seconds and the ground gives you
+up**: you go to the nearest square **two tiles by two** with nothing in it, and the search
+prefers a square with ground under it, so the rescue never drops you down a shaft. Your
+speed goes to nothing, the moves that were running are cancelled, and you get a little
+mercy time on the way out.
+
+Ground you are **meant** to sink through does not count. Quicksand and powdered snow are not
+a trap, and standing in the open never starts the clock.
+
+**A door never leaves you in a wall.** The room is cut before you are put down in it, so a
+spawn point that fell inside the rock is stepped clear before the first frame draws: up the
+column first, since the open air is nearly always above, then down, then a little to either
+side. For the first **three quarters of a second** of a room the five second wait is none at
+all, so a lift or a sweeping block that shoves you into the rock as the room begins gives
+you up on the very next frame.
+
+A test walks every room in the game and every door between them, puts the hero down at each
+spawn point the game itself would use, and fails if one of them stands in the rock. It walks
+another two hundred rooms cut fresh from a seed — vaults, islands and the gullet — and does
+the same.
+
 ## Your profile
 
 **PROFILE** on the chart opens the panel that holds everything about you. It has two pages.
@@ -659,21 +683,53 @@ A pouch hangs at the top right of the screen, under the chart. Click it and it o
 It has **three slots**. Whatever sits in a slot works; whatever sits loose in the pouch does
 nothing. Click a find to wear it, click a slot to take it off.
 
-There are twenty artifacts, so the list runs **eight to a page**. The two arrows sit in the
-header beside the close button.
+**There are a hundred artifacts**, and the pouch holds **up to five copies of each**. The
+list runs **eight to a page**, the best rank first, so a legendary never hides behind a
+drawer of commons. The two arrows sit in the header beside the close button. A copy count
+sits as a badge on the corner of a picture: it turns red at five, the ceiling.
 
-| Artifact | Rank | What it does |
+Every artifact carries **its own face**, drawn at sixteen pixels square. Twenty are drawn by
+hand. The other eighty are built out of the shape and the colour their row names, with a
+band, a row of studs or a set stone taken from the key itself, so **no two of the hundred
+are the same picture**.
+
+### The five ranks
+
+| Rank | How many | Where it comes from |
 | --- | --- | --- |
-| The Pharaoh's Ring | Royal | Walk through quicksand and powdered snow |
-| Copper Ankh | Rare | One heart more |
-| The Stone Eye | Rare | Hidden ground gives off a shimmer |
-| Scarab Charm | Common | Every kill pays a quarter more |
-| Frost Bead | Common | Fire burns half as long |
-| Ember Chip | Common | The blade bites one point deeper |
-| Feather Token | Common | You jump higher |
-| Salt Vial | Common | The dash returns a third sooner |
+| **COMMON** | 24 | Caskets |
+| **RARE** | 35 | Caskets, merges, and 11 of them in the shop at 20K |
+| **SUPER RARE** | 15 | Caskets, merges, and 5 of them in the shop at 50K |
+| **LEGENDARY** | 8 | Caskets, merges, and 3 of them in the shop at 100K |
+| **MYTHIC** | 18 | Merges, the King's Casket, and 14 cuts on the limited page |
 
-The ring comes from the sphinx. The rest come out of the chest at the head of a vault's climb.
+The Pharaoh's Ring comes from the sphinx. The three mythical things of the waste come from
+its three guardians. Everything else comes out of a chest, a casket, a merge or the shop.
+
+### Merging
+
+Copies are not waste. **The green plus box on a row merges them**, and what it makes is
+written on the row's own line at the foot of the panel.
+
+| You give | You get |
+| --- | --- |
+| **2** of one common | The rare it points at |
+| **2** of one rare | The super rare it points at |
+| **2** of one super rare | The legendary it points at |
+| **3** of one legendary | The mythic it points at |
+
+Every artifact under mythic names the one it climbs to, so a merge is never a lottery: two
+Bent Coins make a Coin Clasp, and three Sunhearts make **The World Heart**. The plus box
+only shows when the merge can actually go through — you hold enough copies, and the pouch
+has room for what it makes.
+
+### What an artifact does
+
+An artifact does its work through a **stat**, and the three worn slots add up. A multiplier
+multiplies, and everything else adds: three charms that each pay a fifth more pay
+1.2 × 1.2 × 1.2. The stats are coins, experience, health, blade, special cuts, arrows, arrow
+saving, armour, the dash, running, swimming, jumping, falling, the gale, burning, the coin
+magnet, walking through quicksand, and the bow itself.
 
 ## The Archipelago
 
@@ -739,11 +795,23 @@ Every price is written short: **1K** for a thousand, **250K** for a quarter of a
 
 | Page | What it sells |
 | --- | --- |
+| **LIMITED** | The front page. Three **mythic cuts**, turning over with the day |
 | **ITEMS** | Arrows: **1K** for one, **8K** for ten, **35K** for fifty — the more you take the less each costs. **2X EXPERIENCE** and **2X COINS**, ten minutes apiece, **5K** each |
-| **LIMITED** | Three things off the other pages at **a third off**, turning over with the day |
-| **ARTIFACTS** | The three caskets, then all twenty artifacts, dearest first |
+| **ARTIFACTS** | The three caskets, then the twenty artifacts the shop sells, dearest first. Each casket's row says what it is: *three finds, almost all of them common*; *six times the better odds*; *the best odds, and the bow* |
 | **CLOTHES** | Every suit the wardrobe sells, the three prestige regalia included |
 | **SHARDS** | Arrows, rubies and boosters, paid for in the shards of the Archipelago |
+
+### The front page
+
+The shop always opens on **LIMITED**, and the page shouts: **!!! LIMITED !!!** in red under
+the three rows, and a red rule over each of them.
+
+What stands there is a **mythic cut** — an artifact in its mythic finish, which gives
+**twice what the plain one gives**. The Mythic Rune Plate turns two points off every blow
+instead of one. The Mythic Deep Quiver keeps back two arrows in three instead of one.
+
+There are **fourteen cuts**, and three of them stand each day. They cost **250K to 750K**,
+and nothing else in the game holds one: no casket drops a cut, and no merge makes one.
 
 **Every row carries a picture of the thing itself**, drawn at sixteen square: a single arrow
 with its steel head and two feathers, a sheaf of three, a full quiver, a stoppered bottle
@@ -760,41 +828,64 @@ own icon on a plate of its rank**, so the tier reads before the words do.
 | **SUPER RARE** | 50K | 5 |
 | **RARE** | 20K | 11 |
 
+The shop sells **twenty artifacts and no more**. The other eighty come out of caskets and
+merges. The shop sells **up to five of each**, the same ceiling the pouch holds.
+
 ### Rubies and caskets
 
 **A guardian leaves rubies**, and how many depends on how hard it was to bring down. The
 Ember Wyrm of the first realm leaves **5**. The Pharaoh of the last leaves **100**. Every
 guardian between them falls on a curve between the two.
 
-Rubies buy nothing but caskets. **A casket holds three artifacts** you do not own yet, and
-it does not open on the shelf:
+Rubies buy nothing but caskets. **A casket rolls three times**, and it does not open on the
+shelf:
 
 1. Buy one and **it comes to the middle of the screen, still shut**, shivering. Nothing under
    it takes a tap while it stands there.
-2. **Click it** and the lid goes. The three inside are yours at that moment, and they rise
+2. **Click it** and the lid goes. What is inside is yours at that moment, and the three rise
    into place one after another on cards edged in the colour of their rank.
 3. **Click again** to put them away.
 
 A **red mark** then sits beside the pouch until you open it and look at what you have.
 
-Each of the three is rolled on the casket's own table:
+Each of the three rolls is an artifact, **a purse of 100 to 500 coins**, or **a suit** the
+wardrobe has not got. A casket never gives up a suit that waits on a prestige, and it never
+gives up a mythic cut off the limited page.
 
-| Casket | Rubies | Rare | Super rare | Legendary | Mythic |
-| --- | --- | --- | --- | --- | --- |
-| **Worn** | 10 | 84% | 15% | **1%** | — |
-| **Sealed** | 50 | 55% | 40% | 5% | — |
-| **King's** | 100 | 30% | 58% | **10%** | **2%** |
+| Casket | Rubies | Common | Rare | Super rare | Legendary | Mythic | Purse | Suit |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| **Worn** | 10 | 63% | 15% | 0.25% | 0.08% | — | 16% | 5% |
+| **Sealed** | 50 | 35% | 46% | 1.7% | 0.47% | — | 12% | 5% |
+| **King's** | 100 | 15% | 56% | 10.5% | 5.5% | 0.67% | 8% | 4% |
 
-Only the King's Casket can hold **the Longbow**.
+**The worn casket holds one legendary at the most.** Once one comes out of it, nothing else
+in that box rolls above a super rare.
 
-Because three are rolled, a whole casket is likelier than any one of its three. Over four
-thousand openings apiece: **at least one legendary** came out of a worn casket 2.9% of the
-time, a sealed one 13.6%, and a King's 26.8%, and the King's gave up the Longbow 6.1%.
+Because three are rolled, a whole casket is likelier than any one of its rolls. Over
+**twenty thousand openings** of each:
+
+| Casket | Rubies | A super rare or better | A legendary | A mythic |
+| --- | --- | --- | --- | --- |
+| **Worn** | 10 | **1.0%** — one box in a hundred | 0.25% | — |
+| **Sealed** | 50 | **6.5%** — one box in fifteen | 1.4% | — |
+| **King's** | 100 | **42%** — two boxes in five | 17% | 2.0% |
+
+A worn casket is deliberately thin. **Ten rubies buys about a one per cent chance**, fifty
+buys about six and a half, and a hundred buys about forty two: the dearer the casket, the
+better every ruby you spend. Two legendaries came out of one worn casket **nought times in
+twenty thousand**.
+
+Only the King's Casket can hold a **mythic**, the Longbow among them.
+
+**A casket always gives something.** When the pouch already holds five of everything it
+could give, it pays in coin instead, and the rubies are never lost for nothing.
 
 ## The longbow
 
-A **mythic** artifact, 250K in the shop or 2% out of a King's Casket. Wear it in a pouch
-slot and it changes what holding the sword does.
+A **mythic** artifact. **250K in the shop** buys it outright. A King's Casket turns up a
+mythic about **2% of the time**, and the bow is one of the four a casket can hold, so buying
+it is by far the shorter road. Three legendaries of one kind merge into a mythic as well.
+Wear it in a pouch slot and it changes what holding the sword does.
 
 - **Hold the sword button** — `Space` on a keyboard, the **CUT** button on a phone — and you
   draw it. Let go and the arrow flies.
@@ -960,7 +1051,8 @@ that forges it. They are meant to be a long save.
 | The Sandstep | The Dune Sea | 50,000 | Walk into quicksand and fall through to the vault below |
 
 The emberheart wave burns out after **five tiles**. Loose it with the charged gale instead
-and the fire rides the gale for **seven and a half tiles**.
+and the fire rides the gale for **seven and a half tiles**, and a wind charm carries it
+further again.
 
 ## Parrying
 
@@ -1036,6 +1128,14 @@ Sprites are drawn into a `Pix` buffer with primitives (`rect`, `disc`, `poly`,
 
 - `shade()` lights the top edge of every form and darkens the underside.
 - `outline()` traces a dark line around the silhouette.
+
+The eighty artifacts the shop does not sell get their faces the same way, but from data
+rather than by hand. Each row of the table names a **shape** — a coin, a ring, a gem, a
+vial, a feather, a blade, a rune, an orb, a bead, a plate, a shell, a star, a fang, a horn,
+a key, a knot, a leaf, a scroll, an eye, a bell, a crown, a claw, an arrowhead, an ankh — and
+a **colour**. A hash of the key turns the colour a little toward one of six accents and adds
+a band, a row of studs or a set stone. A test walks all hundred icons, hashes the pixels and
+fails if two of them come out the same.
 
 The hero is posed rather than hand-drawn frame by frame: each animation supplies foot
 and hand positions, a body bob, a lean and a sword angle, and the limbs are drawn as

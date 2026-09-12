@@ -3,6 +3,50 @@
    ============================================================ */
 'use strict';
 
+/* What the three worn artifacts add up to.  game.js holds the table and
+   loads after this file, so every call goes through a guard. */
+function aMul(stat) { return G.artMul ? G.artMul(stat) : 1; }
+function aAdd(stat) { return G.artAdd ? G.artAdd(stat) : 0; }
+function aOn(stat) { return !!(G.artOn && G.artOn(stat)); }
+
+/* how long a hero may stand inside a block before the ground gives them up */
+const STUCK_SECS = 5;
+/* and how long a room counts as newly begun, where the wait is none at all */
+const FRESH_SECS = 0.75;
+/* every tile of a two by two square is clear of rock */
+function freePairAt(room, tx, ty) {
+  for (let j = 0; j < 2; j++) for (let i = 0; i < 2; i++)
+    if (room.solid(tx + i, ty + j)) return false;
+  return true;
+}
+/* The nearest two by two square with nothing in it, as a point to stand on:
+   the middle of the square across, and the floor of it under the feet.  A
+   square with ground under it wins over one hanging in the air, so the
+   rescue does not drop the hero straight down a shaft. */
+function nearestFreePair(room, px, py) {
+  if (!room) return null;
+  const tx = Math.floor(px / TILE), ty = Math.floor(py / TILE);
+  const at = (x, y) => ({ x: (x + 1) * TILE, y: (y + 2) * TILE });
+  let loose = null;
+  for (let r = 0; r <= 48; r++) {
+    let best = null, bestD = Infinity;
+    for (let y = ty - r; y <= ty + r; y++) {
+      for (let x = tx - r; x <= tx + r; x++) {
+        /* only the ring at this distance, so the search grows outward */
+        if (Math.max(Math.abs(x - tx), Math.abs(y - ty)) !== r) continue;
+        if (x < 0 || y < 0 || x + 1 >= room.w || y + 1 >= room.h) continue;
+        if (!freePairAt(room, x, y)) continue;
+        const firm = room.solid(x, y + 2) || room.solid(x + 1, y + 2);
+        if (!firm) { if (!loose) loose = { x: x, y: y }; continue; }
+        const d = (x - tx) * (x - tx) + (y - ty) * (y - ty);
+        if (d < bestD) { bestD = d; best = { x: x, y: y }; }
+      }
+    }
+    if (best) return at(best.x, best.y);
+  }
+  return loose ? at(loose.x, loose.y) : null;
+}
+
 /* a solid white copy of a sprite, built once and kept, so a struck creature
    can flash the whole of its silhouette rather than merely brighten */
 const _whiteCache = new WeakMap();
@@ -162,8 +206,8 @@ class Player {
       }));
       return;
     }
-    /* the frost bead makes the fire burn out twice as fast */
-    const fast = (G.hasArtifact && G.hasArtifact('frostbead')) ? 2 : 1;
+    /* a charm that puts out fire makes it burn away faster */
+    const fast = aMul('burn');
     this.burnT = Math.max(0, this.burnT - dt * fast);
     this.burnAcc += dt;
     /* half a heart a second, and the tuck does not turn it aside */
@@ -286,12 +330,45 @@ class Player {
     this.spinT = 0; this.spinKind = null; this.spinHit = null;
     this.x = x - this.w / 2; this.y = y - this.h;
     this.vx = this.vy = 0; this.trail.length = 0; this.spawnFlash = 0.4;
+    /* a room that has only just begun gives up a buried hero at once */
+    this.freshT = FRESH_SECS;
+    this.stuckT = 0;
+  }
+  /* ------------------------------------------------------------
+     A DOOR MUST NEVER PUT YOU IN THE ROCK.  A generator can cut a
+     wall in after it picks a spawn point, and the hero then starts
+     the room buried.  Step the body clear at once, rather than
+     leave it to the five second rescue: up the column first, since
+     the open air is nearly always above, then down, then a little
+     to either side, and at the last the nearest clear square of
+     two tiles by two.
+     ------------------------------------------------------------ */
+  unstickNow() {
+    const room = G.room;
+    if (!room || !this.w || !this.h) return false;
+    const fits = (x, y) => !room.boxSolid(x - this.w / 2, y - this.h, this.w, this.h);
+    const bx = this.cx, by = this.y + this.h;
+    if (fits(bx, by)) return false;
+    for (let d = 2; d <= 160; d += 2) {
+      if (fits(bx, by - d)) { this.place(bx, by - d); return true; }
+      if (fits(bx, by + d)) { this.place(bx, by + d); return true; }
+    }
+    for (let dx = 4; dx <= 64; dx += 4) {
+      for (const sx of [-dx, dx]) {
+        for (let d = 0; d <= 128; d += 4) {
+          if (fits(bx + sx, by - d)) { this.place(bx + sx, by - d); return true; }
+        }
+      }
+    }
+    const spot = nearestFreePair(room, bx, this.cy);
+    if (spot) { this.place(spot.x, spot.y); return true; }
+    return false;
   }
   /* the boots help, but they no longer turn the hero into a bolt: the gain
      tails off and stops at half again the base pace */
   get speedMax() {
     const base = (G.room && G.room.mode === 'top' ? 1.55 : 2.15);
-    return base * (1 + Math.min(0.25, this.up.speed * 0.025));
+    return base * (1 + Math.min(0.25, this.up.speed * 0.025)) * aMul('speed');
   }
   /* a crouch and a roll both shrink the body, so you fit under a low gap */
   get lowH() { return 10; }
@@ -322,18 +399,18 @@ class Player {
       life: rr(0.2, 0.45), col: '#e0d6b6', col2: '#95886a', size: rr(1, 2.2), grav: 0.12
     }));
   }
-  /* The windstep charm carries the dash further.  It does not bring the dash
-     back any sooner: the wait is the same at every step. */
-  get dashCdMax() { return 1.15 * (G.hasArtifact && G.hasArtifact('saltvial') ? 0.67 : 1); }
+  /* The windstep bought in the shop carries the dash further, and never
+     brings it back sooner.  A worn charm is the one thing that shortens the
+     wait, and two charms shorten it twice. */
+  get dashCdMax() { return 1.15 * aMul('dashCd'); }
   get dashSpan() { return Math.min(0.34, 0.16 * (1 + this.up.dash * 0.16)); }
-  /* the lodestone reaches further with every step, but never pulls harder:
-     the draw itself is the same whatever you have bought */
-  get magnetR() { return 62 + this.up.magnet * 24; }
+  /* the lodestone reaches further with every step, and a worn charm reaches
+     further again, but nothing pulls harder: the draw is always the same */
+  get magnetR() { return (62 + this.up.magnet * 24) * aMul('magnet'); }
   /* the whetstone bites half as deep as it used to: a step is worth half a
      point, not a whole one */
   get atkDmg() {
-    return 2 + Math.floor(this.up.sword * 0.5) +
-           (G.hasArtifact && G.hasArtifact('emberchip') ? 1 : 0);
+    return Math.max(2, Math.round((2 + Math.floor(this.up.sword * 0.5) + aAdd('sword')) * aMul('blade')));
   }
   /* Hold the sword rather than tapping it and the blade gathers the air.
      Let go on a full charge and it goes out as a blade of wind. */
@@ -341,11 +418,11 @@ class Player {
   /* You draw a bow the way you charge a gale: by holding the sword down.
      Carrying the longbow and an arrow to spare turns the hold into a draw. */
   get bowReady() {
-    return !!(G.hasArtifact && G.hasArtifact('bow') && (G.arrows | 0) > 0);
+    return !!(aOn('bow') && (G.arrows | 0) > 0);
   }
   /* where an arrow would go, and what it would cost */
   get arrowDmg() {
-    return Math.max(2, Math.round((2 + this.atkDmg) * (G.hasArtifact('flintnock') ? 1.5 : 1)));
+    return Math.max(2, Math.round((2 + this.atkDmg) * aMul('arrow')));
   }
   loose() {
     const a = G.aim(this.cx, this.cy - 6);
@@ -358,8 +435,8 @@ class Player {
     G.projectiles.push(new Arrow(this.cx + a.x * 8, this.cy - 6 + a.y * 8,
                                  a.x * sp, a.y * sp - 0.8, this.arrowDmg, fiery));
     if (fiery) Snd.fire();
-    /* the deep quiver keeps an arrow back now and then */
-    if (!(G.hasArtifact('deepquiver') && Math.random() < 0.34)) G.arrows = Math.max(0, (G.arrows | 0) - 1);
+    /* a quiver charm keeps an arrow back now and then */
+    if (!(Math.random() < aAdd('arrowSave'))) G.arrows = Math.max(0, (G.arrows | 0) - 1);
     this.atkT = 0.001; this.atkHit = new Set(); this.atkCd = 0.26;
     this.chargeCd = 0.3;
     Snd.swing(); G.shake(2);
@@ -414,12 +491,11 @@ class Player {
     this.atkT = 0.001; this.atkHit = new Set(); this.atkCd = 0.3;
     const dmg = Math.max(2, Math.round(this.atkDmg * 2));
     const a = this.galeAim();
-    G.waves.push(new WindSwipe(this.cx + a.x * 10, this.cy + a.y * 10, a, dmg,
-                               G.hasArtifact('windvane') ? 1.5 : 1));
-    /* the gale carries the emberheart fire half again as far */
+    G.waves.push(new WindSwipe(this.cx + a.x * 10, this.cy + a.y * 10, a, dmg, aMul('gale')));
+    /* the gale carries the emberheart fire as far as the gale itself goes */
     if (this.up.emberheart > 0) {
       G.waves.push(new Wave(this.cx + a.x * 12, this.cy + a.y * 12, a, this.atkDmg,
-                            GALE_RANGE * (G.hasArtifact('windvane') ? 1.5 : 1)));
+                            GALE_RANGE * aMul('gale')));
       Snd.fire();
     }
     if (this.grounded && G.room.mode === 'side') this.vx += this.face * 1.4;
@@ -438,8 +514,7 @@ class Player {
   /* the sigil sharpens the moves that come out of a dive or a spin:
      the air pierce, the flip cut and the roll cut. A quarter a step. */
   get specialMult() {
-    const stone = (G.hasArtifact && G.hasArtifact('riddlestone')) ? 0.5 : 0;
-    return 1 + (this.up.special || 0) * 0.25 + stone;
+    return 1 + (this.up.special || 0) * 0.25 + aAdd('special');
   }
   /* and one special straight into the next builds on it: a flip into a dive,
      or a dive into a flip, up to half again by the third link */
@@ -465,8 +540,8 @@ class Player {
        and NaN is never at or below zero, so they could not die again */
     if (!isFinite(dmg)) dmg = 1;
     dmg = Math.max(1, dmg - (this.up.armour > 0 && Math.random() < this.up.armour * 0.2 ? 1 : 0));
-    /* the rune plate turns one point off every blow that lands */
-    if (G.hasArtifact && G.hasArtifact('runeplate')) dmg = Math.max(1, dmg - 1);
+    /* a plate turns points off every blow that lands */
+    dmg = Math.max(1, dmg - aAdd('armour'));
     this.hp -= dmg;
     G.breakCombo();
     this.invuln = 1.15;
@@ -955,12 +1030,54 @@ class Player {
     this.updateSink(dt);
     this.updateSnow(dt);
     this.updateCape(dt);
+    this.updateStuck(dt);
 
     /* trail fade */
     for (const t of this.trail) t.life -= dt;
     this.trail = this.trail.filter(t => t.life > 0);
 
     this.updateAnim(dt);
+  }
+
+  /* ------------------------------------------------------------
+     THE ROCK GIVES YOU UP.  A hero should never stand inside a
+     block.  If one does, and stays there five seconds, the ground
+     puts them on the nearest floor of two tiles by two with
+     nothing in it.  Ground you are meant to sink through does not
+     count: quicksand and powdered snow are not a trap.
+     ------------------------------------------------------------ */
+  inRock() {
+    const room = G.room;
+    if (!room || this.dead) return false;
+    const tx = Math.floor(this.cx / TILE), ty = Math.floor(this.cy / TILE);
+    if (!room.solid(tx, ty)) return false;
+    if (room.phase && room.phase(tx, ty)) return false;
+    return true;
+  }
+  updateStuck(dt) {
+    this.freshT = Math.max(0, (this.freshT || 0) - dt);
+    if (!this.inRock()) { this.stuckT = 0; return; }
+    this.stuckT = (this.stuckT || 0) + dt;
+    /* A lift or a sweeping block can push a hero into the rock in the first
+       moments of a room, before they have had a chance to move.  Nobody
+       waits five seconds for that: the ground gives them up at once. */
+    if (this.stuckT < (this.freshT > 0 ? 0 : STUCK_SECS)) return;
+    this.stuckT = 0;
+    const spot = nearestFreePair(G.room, this.cx, this.cy);
+    if (!spot) return;
+    this.x = spot.x - this.w / 2;
+    this.y = spot.y - this.h;
+    this.vx = this.vy = 0;
+    this.dashT = 0; this.pierceT = 0; this.rollT = 0; this.spinT = 0;
+    this.onLadder = false; this.grounded = false;
+    this.invuln = Math.max(this.invuln, 0.6);
+    this.spawnFlash = 0.4;
+    Snd.dashReady(); G.shake(4);
+    G.texts.push(new FloatText(this.cx, this.y - 4, 'THE ROCK GIVES YOU UP', '#8fd0e8'));
+    for (let i = 0; i < 22; i++) G.particles.push(new Particle({
+      x: this.cx + rr(-5, 5), y: this.cy + rr(-7, 7), vx: rr(-2, 2), vy: rr(-2.4, 0.6),
+      life: rr(0.3, 0.7), col: '#cfeaff', col2: '#5fa3dc', size: rr(1, 2.4), grav: 0.05
+    }));
   }
 
   updateSide(dt, L, Rk, U, D) {
@@ -1028,7 +1145,7 @@ class Player {
       /* hold S in water to swim freely, with no gravity pulling you down */
       const dx = (Rk ? 1 : 0) - (L ? 1 : 0);
       const dy = (D ? 1 : 0) - (U ? 1 : 0);
-      const spd = 1.45 * (1 + this.up.speed * 0.12);
+      const spd = 1.45 * (1 + this.up.speed * 0.12) * aMul('swim');
       if (dx || dy) {
         const l = Math.hypot(dx, dy) || 1;
         this.vx = approach(this.vx, dx / l * spd, 0.20 * s);
@@ -1143,7 +1260,7 @@ class Player {
 
       /* gravity: a cling slows the slide down the rock */
       const g = this.inWater ? 0.13 : ((this.spinT > 0 && this.spinKind === 'flip') ? 0.25 : 0.36);
-      this.vy = Math.min(this.vy + g * s, this.inWater ? 1.6 : 7);
+      this.vy = Math.min(this.vy + g * s, this.inWater ? 1.6 : 7 * aMul('fall'));
       if (clinging) this.vy = Math.min(this.vy, 1.3);
 
       /* jump */
@@ -1192,7 +1309,7 @@ class Player {
           }
         } else {
           /* the feather token puts more spring in a jump */
-          const lift = (G.hasArtifact && G.hasArtifact('feather')) ? -7.2 : -6.3;
+          const lift = -6.3 * aMul('jump');
           this.vy = this.inWater ? -3.2 : lift;
           Snd.jump();
         }
