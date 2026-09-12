@@ -499,6 +499,13 @@ it and the chart says **COMING SOON**.
 | Aether City | Zeus | storm wisps, storm birds |
 | Sporewood | The Mother Spore | sporelings, spiders |
 
+**The Mother Spore stands ten times what the other two do.** She is the longest fight in the
+chapter by far, and the only guardian whose health was set apart from the rest. Her mending
+and the three turns of her fight are both read off her whole health, so they climbed with it:
+she still hardens at three fifths and again at three tenths, and she still mends half a point
+in a hundred every second. That mending stalls for **a second and a half** every time she is
+struck, so it never walls a hero who keeps the blade on her.
+
 A **glass bubble** covers the hero's head all through Chapter Two, because the whole
 chapter is under the sea.
 

@@ -4930,9 +4930,12 @@ class SporeShot {
 }
 class MotherSpore extends Enemy {
   constructor(x, y) {
-    super({ x: x, y: y, w: 70, h: 60, hp: 56, damage: 2, coinDrop: 0, blood: '#c9403a' });
+    /* The Mother Spore stands ten times what she did.  Her mending is a part
+       of her whole health, and every turn of her fight is a fraction of it,
+       so both follow the number up without a word of their own. */
+    super({ x: x, y: y, w: 70, h: 60, hp: 560, damage: 2, coinDrop: 0, blood: '#c9403a' });
     this.kbScale = 0;                 /* a guardian holds its ground */
-    this.maxHp = 56; this.face = -1;
+    this.maxHp = 560; this.face = -1;
     this.state = 'sleep'; this.stateT = 0; this.phase = 1;
     this.awake = false; this.dying = false; this.deathT = 0; this.mode = 'idle';
     this.brood = 0;
