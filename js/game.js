@@ -6753,8 +6753,8 @@ function buffBar(tier, level) {
 const XP_CODES = { XP10: 10, XP50: 50, XP100: 100 };
 /* and the codes that hand over rubies */
 const RUBY_CODES = { RUBY10: 10 };
-/* The mark of a prestige, cut from bare lines rather than the letter I. */
-const PRESTIGE_MARK = ['', '|', '||', '|||'];
+/* the mark of a prestige, in Roman numerals */
+const PRESTIGE_MARK = ['', 'I', 'II', 'III'];
 /* bronze reads brown, so it is never taken for the gold beside it */
 const PRESTIGE_COL = ['', '#b07536', '#cfd8e6', '#f0c93a'];
 const PRESTIGE_NAME = ['', 'BRONZE', 'SILVER', 'GOLD'];
@@ -6767,7 +6767,8 @@ const PRESTIGE_NAME = ['', 'BRONZE', 'SILVER', 'GOLD'];
    together as one, and the plate never has to stretch to hold them. */
 function prestigeBadgeSize(pr, sc) {
   const h = Math.round(GH * sc + 4 * sc);
-  return { w: h, h: h };
+  /* the first mark takes a square plate; the wider marks stretch it */
+  return { w: Math.max(h, Math.round(textWidth(PRESTIGE_MARK[pr] || 'I') * sc + 6 * sc)), h: h };
 }
 function drawPrestigeBadge(c2, x, y, pr, sc) {
   const mark = PRESTIGE_MARK[pr];
@@ -6786,17 +6787,8 @@ function drawPrestigeBadge(c2, x, y, pr, sc) {
   c2.fillRect(x + cut, y, b.w - cut * 2, px);
   c2.fillStyle = css(sh(col, -0.42));
   c2.fillRect(x + cut, y + b.h - px, b.w - cut * 2, px);
-  /* The numeral: one line to each mark, cut in an ink dark enough for
-     bronze, silver and gold alike.  A line is as wide as the plate's own
-     pixel, and the gap between two of them is a single pixel however large
-     the plate is drawn, so the lines stand as close as they can. */
-  const n = mark.length;
-  const pitch = px + 1;
-  const span = n * pitch - 1;
-  const lx = x + Math.round((b.w - span) / 2);
-  const ly = y + px * 2, lh = b.h - px * 4;
-  c2.fillStyle = '#241a0a';
-  for (let i = 0; i < n; i++) c2.fillRect(lx + i * pitch, ly, px, lh);
+  /* the numeral, in an ink dark enough for bronze, silver and gold alike */
+  drawText(c2, mark, x + b.w / 2, y + Math.round((b.h - GH * sc) / 2), '#2a1c08', sc, 'center');
   return b.w;
 }
 function drawRank(c2, x, y, scale, align) {

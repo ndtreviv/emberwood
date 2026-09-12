@@ -408,15 +408,13 @@ The realms you have cleared stay cleared. They have to: the buffed runs are walk
 that record, and the file percentage is counted from it.
 
 There are **three marks**, written as Roman numerals on a plate of their own metal and shown
-**before** the level. The plate is a **square** whatever the mark on it: its corners are cut
-away and a light runs along its crown, so it reads as a button rather than as a block of
-colour.
+**before** the level. The plate has its corners cut away and a light along its crown, so it
+reads as a button rather than as a block of colour.
 
-The numeral is cut as a **bare line**, not the letter I with its serifs, and the lines are
-cut into the plate by hand rather than set as text. A line is as wide as the plate's own
-pixel and the gap between two of them is **a single pixel**, however large the plate is
-drawn, so the lines stand as close as they can. Three of them take **five pixels** on the
-play screen and **eight** on the profile page, where three set as text would take seventeen.
+The numeral is **the letter I**, serifs and all, set from the same font as everything else.
+The plate is a **square** at the first mark and stretches to hold the wider ones: eleven
+pixels across at `I`, seventeen at `II` and twenty three at `III`. Three serifed letters take
+seventeen pixels, and no eleven pixel square could hold them.
 
 | Mark | Colour | What it opens |
 | --- | --- | --- |
