@@ -257,8 +257,8 @@ function slotBuffCount(d, tier) {
 }
 /* The first hundred is every realm cleared, every paper found and every
    upgrade maxed.  After that each buffed run of the whole game is worth a
-   hundred more: bronze carries a finished file to 200, silver to 300 and
-   gold to 400. */
+   hundred more: iron carries a finished file to 200, bronze to 300, silver
+   to 400 and gold to 500. */
 /* a function, not a constant: the count of marks is declared further down */
 function filePctMax() { return 100 * (1 + PRESTIGE_MAX); }
 function slotPercent(d) {
@@ -270,12 +270,10 @@ function slotPercent(d) {
     pct += Math.round(slotBuffCount(d, tier) / World.LEVELS.length * 100);
   return Math.min(filePctMax(), pct);
 }
-/* which metal a file has reached: none, then bronze, silver and gold */
+/* Which metal a file has reached.  Every hundred past the first is one
+   metal further up: two hundred is iron, and the top is gold. */
 function fileTier(pct) {
-  if (pct >= 400) return 3;
-  if (pct >= 300) return 2;
-  if (pct >= 200) return 1;
-  return 0;
+  return clamp(Math.floor(pct / 100) - 1, 0, PRESTIGE_MAX);
 }
 /* what colour a file writes its number and its percentage in */
 function fileTierCol(pct) {
@@ -6292,9 +6290,10 @@ function drawFiles() {
     drawText(ctx, 'PAPERS ' + t.papers + '/' + t.papersMax, r.x + 8, r.y + 62, part(t.papers, t.papersMax), 1, 'left');
     drawText(ctx, 'UPGRADES ' + t.upgrades + '/' + t.upgradesMax, r.x + 8, r.y + 72, part(t.upgrades, t.upgradesMax), 1, 'left');
     /* and what the buffed runs have taken, when any of them have begun */
-    const runs = [1, 2, 3].map(k => slotBuffCount(d, k));
+    const runs = [];
+    for (let k = 1; k <= PRESTIGE_MAX; k++) runs.push(slotBuffCount(d, k));
     if (runs.some(n => n > 0)) {
-      /* the three counts on one line, each in the metal of its own run */
+      /* one count to each run, on one line, each in the metal of its own */
       let rx = r.x + 8;
       rx += drawText(ctx, 'RUNS ', rx, r.y + 82, '#e0d0aa', 1, 'left');
       for (let k = 1; k <= PRESTIGE_MAX; k++) {
@@ -6521,7 +6520,7 @@ function drawCodes() {
    a prestige, and keep the mark.
    ============================================================ */
 const LEVEL_MAX = 100;
-const PRESTIGE_MAX = 3;
+const PRESTIGE_MAX = 4;
 const XP_BASE = 46, XP_POW = 1.4;
 /* what it costs to go from level n to level n + 1 */
 function xpStep(n) { return Math.round(XP_BASE * Math.pow(n, XP_POW)); }
@@ -6679,15 +6678,17 @@ const BORDERS = [
   { name: 'GREY STONE', base: '#6b6760', dark: '#454340', light: '#8f8a80', need: 0 },
   { name: 'DARK STONE', base: '#4a4744', dark: '#2c2b2a', light: '#6a6660', need: 0 },
   { name: 'BLACK STONE', base: '#2e2d2c', dark: '#1a1a19', light: '#484644', need: 0 },
-  { name: 'BRONZE', base: '#a66a28', dark: '#5e3a10', light: '#d4a05c', need: 1, shine: true },
-  { name: 'SILVER', base: '#cfd8e6', dark: '#8a95a8', light: '#ffffff', need: 2, shine: true },
-  { name: 'GOLD', base: '#f0c93a', dark: '#a8862a', light: '#fff4c0', need: 3, shine: true }
+  { name: 'IRON', base: '#7d838c', dark: '#3f444c', light: '#b8bec7', need: 1, shine: true },
+  { name: 'BRONZE', base: '#a66a28', dark: '#5e3a10', light: '#d4a05c', need: 2, shine: true },
+  { name: 'SILVER', base: '#cfd8e6', dark: '#8a95a8', light: '#ffffff', need: 3, shine: true },
+  { name: 'GOLD', base: '#f0c93a', dark: '#a8862a', light: '#fff4c0', need: 4, shine: true }
 ];
 /* a portrait may be struck in a metal, once a prestige has opened it */
 const TINTS = [{ name: 'PLAIN', label: 'NO TINT', need: 0 },
-               { name: 'BRONZE', label: 'BRONZE TINT', need: 1 },
-               { name: 'SILVER', label: 'SILVER TINT', need: 2 },
-               { name: 'GOLD', label: 'GOLDEN TINT', need: 3 }];
+               { name: 'IRON', label: 'IRON TINT', need: 1 },
+               { name: 'BRONZE', label: 'BRONZE TINT', need: 2 },
+               { name: 'SILVER', label: 'SILVER TINT', need: 3 },
+               { name: 'GOLD', label: 'GOLDEN TINT', need: 4 }];
 function tintOwned(i) { return (TINTS[i] ? TINTS[i].need : 99) <= (G.prestige | 0); }
 function newAccount() { return { name: 'WANDERER', avatar: 0, border: 1, tint: 0 }; }
 function borderOwned(i) { return (BORDERS[i] ? BORDERS[i].need : 99) <= (G.prestige | 0); }
@@ -6697,13 +6698,13 @@ function accountName() {
 }
 /* ---------- the buffed runs a prestige opens ---------- */
 /* A prestige lets you walk every realm you have already cleared a second
-   time, harder.  Bronze first, then silver, then gold: the order holds
-   however high your prestige stands. */
-const BUFF_HP = [1, 3, 6, 10];
-const BUFF_DMG = [1, 1.6, 2.2, 3];
+   time, harder.  Iron first, then bronze, then silver, then gold: the order
+   holds however high your prestige stands. */
+const BUFF_HP = [1, 2, 3.6, 6.4, 10];
+const BUFF_DMG = [1, 1.35, 1.8, 2.35, 3];
 /* A guardian already carries many times what a creature does, so a buffed
    run lifts it by less.  Ten times over would make a fight of half an hour. */
-const BUFF_BOSS = [1, 2, 3.2, 5];
+const BUFF_BOSS = [1, 1.6, 2.4, 3.5, 5];
 function buffKey(tier, level) { return tier + ':' + level; }
 function buffCleared(tier, level) {
   if (tier <= 0) return !!G.cleared[level];
@@ -6733,20 +6734,23 @@ function buffBar(tier, level) {
 const XP_CODES = { XP10: 10, XP50: 50, XP100: 100 };
 /* and the codes that hand over rubies */
 const RUBY_CODES = { RUBY10: 10 };
-/* The mark of a prestige, cut from bare lines rather than the letter I.
-   A line is the same width as the letter, so nothing beside it shifts. */
-const PRESTIGE_MARK = ['', '|', '||', '|||'];
-/* bronze reads brown, so it is never taken for the gold beside it */
-const PRESTIGE_COL = ['', '#b07536', '#cfd8e6', '#f0c93a'];
-const PRESTIGE_NAME = ['', 'BRONZE', 'SILVER', 'GOLD'];
+/* The mark of a prestige, cut from bare lines rather than the letter I. */
+const PRESTIGE_MARK = ['', '|', '||', '|||', '||||'];
+/* Iron first, then bronze, silver and gold.  Bronze reads brown, so it is
+   never taken for the gold above it, and iron reads a cold grey, so it is
+   never taken for the silver. */
+const PRESTIGE_COL = ['', '#9aa4b2', '#b07536', '#cfd8e6', '#f0c93a'];
+const PRESTIGE_NAME = ['', 'IRON', 'BRONZE', 'SILVER', 'GOLD'];
 /* the mark and the number, written together, as they go everywhere */
 /* The mark of a prestige, on a small plate of its own metal.  The corners
    are cut away by a pixel or two, so it reads as a button rather than as a
    block of colour. */
+/* The plate is a square, whatever the mark on it.  The lines are cut into
+   it by hand rather than set as text, so four of them stand as close
+   together as one, and the plate never has to stretch to hold them. */
 function prestigeBadgeSize(pr, sc) {
   const h = Math.round(GH * sc + 4 * sc);
-  /* the first mark takes a square plate; the wider marks stretch it */
-  return { w: Math.max(h, Math.round(textWidth(PRESTIGE_MARK[pr] || 'I') * sc + 6 * sc)), h: h };
+  return { w: h, h: h };
 }
 function drawPrestigeBadge(c2, x, y, pr, sc) {
   const mark = PRESTIGE_MARK[pr];
@@ -6754,18 +6758,26 @@ function drawPrestigeBadge(c2, x, y, pr, sc) {
   const col = C(PRESTIGE_COL[pr]);
   const b = prestigeBadgeSize(pr, sc);
   x = Math.round(x); y = Math.round(y);
-  const cut = Math.max(1, Math.round(sc));        /* how deep each corner cuts */
+  const px = Math.max(1, Math.round(sc));         /* one pixel of the plate */
+  const cut = px;                                 /* how deep each corner cuts */
   /* the plate: a block with its four corners taken off */
   c2.fillStyle = css(col);
   c2.fillRect(x + cut, y, b.w - cut * 2, b.h);
   c2.fillRect(x, y + cut, b.w, b.h - cut * 2);
   /* a light along the crown and a shadow along the foot, so it stands up */
   c2.fillStyle = css(sh(col, 0.45));
-  c2.fillRect(x + cut, y, b.w - cut * 2, Math.max(1, Math.round(sc)));
+  c2.fillRect(x + cut, y, b.w - cut * 2, px);
   c2.fillStyle = css(sh(col, -0.42));
-  c2.fillRect(x + cut, y + b.h - Math.max(1, Math.round(sc)), b.w - cut * 2, Math.max(1, Math.round(sc)));
-  /* the numeral, in an ink dark enough for bronze, silver and gold alike */
-  drawText(c2, mark, x + b.w / 2, y + Math.round((b.h - GH * sc) / 2), '#2a1c08', sc, 'center');
+  c2.fillRect(x + cut, y + b.h - px, b.w - cut * 2, px);
+  /* The numeral: one line to each mark, a pixel wide with a pixel between,
+     cut in an ink dark enough for every one of the four metals. */
+  const n = mark.length;
+  const pitch = px * 2;
+  const span = n * pitch - px;
+  const lx = x + Math.round((b.w - span) / 2);
+  const ly = y + px * 2, lh = b.h - px * 4;
+  c2.fillStyle = '#241a0a';
+  for (let i = 0; i < n; i++) c2.fillRect(lx + i * pitch, ly, px, lh);
   return b.w;
 }
 function drawRank(c2, x, y, scale, align) {
@@ -6789,7 +6801,7 @@ function drawRank(c2, x, y, scale, align) {
    once the tutorial is done, and from the chart after that.
    ============================================================ */
 G.profile = { hair: 0, hairCol: 0, outfit: 0, tee: 0, cape: 'none', suit: 'none' };
-const CAPE_ORDER = ['wood', 'tide', 'ember', 'pBronze', 'pSilver', 'pGold'];
+const CAPE_ORDER = ['wood', 'tide', 'ember', 'pIron', 'pBronze', 'pSilver', 'pGold'];
 /* A mantle is earned: the first three by finishing a chapter, the last
    three by taking a prestige. */
 function capeUnlocked(key) {

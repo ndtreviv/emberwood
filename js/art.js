@@ -21,11 +21,12 @@ const HAIR_COLS = [
   { name: 'MOSS',     base: '#4f9a3f', dark: '#2f6f37', light: '#8fd06a' },
   { name: 'PLUM',     base: '#8f5fc0', dark: '#5d3a86', light: '#c39ae8' },
   { name: 'ROSE',     base: '#e0688a', dark: '#a13c5c', light: '#f7a2bb' },
-  /* Three that no shop sells.  A prestige opens each of them, and each one
+  /* Four that no shop sells.  A prestige opens each of them, and each one
      carries a shine the plain colours do not. */
-  { name: 'BRONZE',   base: '#a66a28', dark: '#5e3a10', light: '#d4a05c', need: 1, shine: true },
-  { name: 'SILVER',   base: '#cfd8e6', dark: '#8a95a8', light: '#ffffff', need: 2, shine: true },
-  { name: 'GOLD',     base: '#f0c93a', dark: '#a8862a', light: '#fff4c0', need: 3, shine: true }
+  { name: 'IRON',     base: '#7d838c', dark: '#3f444c', light: '#b8bec7', need: 1, shine: true },
+  { name: 'BRONZE',   base: '#a66a28', dark: '#5e3a10', light: '#d4a05c', need: 2, shine: true },
+  { name: 'SILVER',   base: '#cfd8e6', dark: '#8a95a8', light: '#ffffff', need: 3, shine: true },
+  { name: 'GOLD',     base: '#f0c93a', dark: '#a8862a', light: '#fff4c0', need: 4, shine: true }
 ];
 /* colours that are found rather than given. A code adds one to the list. */
 const EXTRA_HAIR = {
@@ -85,13 +86,15 @@ const SUITS = {
               base: '#2f5fb0', dark: '#1c3a70', light: '#5f9fe0', legs: '#c9a06a', trim: '#e0b040' },
   suntomb:  { name: 'SUNREGALIA', realm: 'THE SUN TOMB', cost: 30000,
               base: '#e0b040', dark: '#9c7418', light: '#f6d878', legs: '#241c14', trim: '#2f5fb0' },
-  /* Three suits no realm holds.  Each one waits on a prestige, and no purse
-     buys it before then.  All three shine. */
-  pBronze:  { name: 'BRONZE REGALIA', realm: 'PRESTIGE I', cost: 20000, need: 1, shine: true,
+  /* Four suits no realm holds.  Each one waits on a prestige, and no purse
+     buys it before then.  All four shine. */
+  pIron:    { name: 'IRON REGALIA', realm: 'PRESTIGE I', cost: 12000, need: 1, shine: true,
+              base: '#7d838c', dark: '#3f444c', light: '#b8bec7', legs: '#4e535b', trim: '#cdd3db' },
+  pBronze:  { name: 'BRONZE REGALIA', realm: 'PRESTIGE II', cost: 20000, need: 2, shine: true,
               base: '#a66a28', dark: '#5e3a10', light: '#d4a05c', legs: '#6b4014', trim: '#dfb87a' },
-  pSilver:  { name: 'SILVER REGALIA', realm: 'PRESTIGE II', cost: 40000, need: 2, shine: true,
+  pSilver:  { name: 'SILVER REGALIA', realm: 'PRESTIGE III', cost: 40000, need: 3, shine: true,
               base: '#cfd8e6', dark: '#8a95a8', light: '#ffffff', legs: '#93a0b4', trim: '#eef4ff' },
-  pGold:    { name: 'GOLD REGALIA', realm: 'PRESTIGE III', cost: 60000, need: 3, shine: true,
+  pGold:    { name: 'GOLD REGALIA', realm: 'PRESTIGE IV', cost: 60000, need: 4, shine: true,
               base: '#f0c93a', dark: '#a8862a', light: '#fff4c0', legs: '#a8862a', trim: '#fffbe0' }
 };
 const SUIT_KEYS = Object.keys(SUITS);
@@ -5035,19 +5038,24 @@ const CAPES = {
     band: ['#fff4d6', '#ffd06a', '#ff8b4a', '#e0522a', '#a83218', '#6d2412', '#3a1a14', '#241014'],
     edge: '#ffd06a'
   },
-  /* Three that a prestige gives outright.  Beaten metal, shining. */
+  /* Four that a prestige gives outright.  Beaten metal, shining. */
+  pIron: {
+    name: 'IRON MANTLE', short: 'IRON', hint: 'PRESTIGE I', prestige: 1, shine: true,
+    band: ['#c3c9d2', '#a8aeb8', '#7d838c', '#676d76', '#525860', '#3f444c', '#2f333a', '#1f2228'],
+    edge: '#c3c9d2'
+  },
   pBronze: {
-    name: 'BRONZE MANTLE', short: 'BRONZE', hint: 'PRESTIGE I', prestige: 1, shine: true,
+    name: 'BRONZE MANTLE', short: 'BRONZE', hint: 'PRESTIGE II', prestige: 2, shine: true,
     band: ['#dfb87a', '#c4924e', '#a66a28', '#8a5520', '#6b4014', '#4e2e0d', '#372009', '#241505'],
     edge: '#dfb87a'
   },
   pSilver: {
-    name: 'SILVER MANTLE', short: 'SILVER', hint: 'PRESTIGE II', prestige: 2, shine: true,
+    name: 'SILVER MANTLE', short: 'SILVER', hint: 'PRESTIGE III', prestige: 3, shine: true,
     band: ['#ffffff', '#eef4ff', '#cfd8e6', '#aab6c8', '#8a95a8', '#6a7386', '#4c5464', '#333944'],
     edge: '#ffffff'
   },
   pGold: {
-    name: 'GOLD MANTLE', short: 'GOLD', hint: 'PRESTIGE III', prestige: 3, shine: true,
+    name: 'GOLD MANTLE', short: 'GOLD', hint: 'PRESTIGE IV', prestige: 4, shine: true,
     band: ['#fffbe0', '#fff4c0', '#f0c93a', '#d4ac2e', '#a8862a', '#7e641e', '#584614', '#3a2e0c'],
     edge: '#fffbe0'
   }
@@ -5298,6 +5306,9 @@ function frameRailSprite(h) {
   return g;
 }
 const METAL = [null,
+  /* iron is the first metal: a cold grey, kept well off the blue of the
+     silver above it so the two are never taken for one another */
+  { dark: '#2a2d33', mid: '#7d838c', light: '#c3c9d2' },
   /* bronze is brown, not gold: a deep burnt brown through to a warm tan.
      It is kept dark enough to stand off the sand of the chart. */
   { dark: '#241404', mid: '#8a5620', light: '#c58e48' },
@@ -5847,11 +5858,12 @@ Art.steps = function () {
   push('THE REALM', () => {
     const portraitPix = AVATAR_KEYS.map(k => avatarSprite(k));
     Art.portrait = portraitPix.map(g => g.canvas());
-    /* the same ten landscapes struck in each of the three metals */
+    /* the same ten landscapes struck in each of the four metals */
     Art.portraitTint = [null,
                         portraitPix.map(g => tintMetal(g, METAL[1]).canvas()),
                         portraitPix.map(g => tintMetal(g, METAL[2]).canvas()),
-                        portraitPix.map(g => tintMetal(g, METAL[3]).canvas())];
+                        portraitPix.map(g => tintMetal(g, METAL[3]).canvas()),
+                        portraitPix.map(g => tintMetal(g, METAL[4]).canvas())];
     Art.map.bg = mapBackground().canvas();
     Art.map.tutorial = mapNodeSprite('tutorial').canvas();
     Art.prop.sign = prop(signSprite(), 10, 26);
@@ -5859,13 +5871,14 @@ Art.steps = function () {
     Art.map.node = ['forest', 'cloud', 'mush', 'shore', 'drowned', 'abyss', 'cinder', 'obsidian', 'molten',
                     'frost', 'glacier', 'aurora', 'dune', 'sphinx', 'suntomb']
       .map(t => mapNodeSprite(t).canvas());
-    /* the same realms again in beaten metal, one set for each prestige */
+    /* the same realms again in beaten metal, one set for each of the four */
     const nodePix = ['forest', 'cloud', 'mush', 'shore', 'drowned', 'abyss', 'cinder', 'obsidian', 'molten',
                      'frost', 'glacier', 'aurora', 'dune', 'sphinx', 'suntomb'].map(t => mapNodeSprite(t));
     Art.map.nodeTint = [null,
                         nodePix.map(g => tintMetal(g, METAL[1]).canvas()),
                         nodePix.map(g => tintMetal(g, METAL[2]).canvas()),
-                        nodePix.map(g => tintMetal(g, METAL[3]).canvas())];
+                        nodePix.map(g => tintMetal(g, METAL[3]).canvas()),
+                        nodePix.map(g => tintMetal(g, METAL[4]).canvas())];
     Art.map.lock = lockSprite().canvas();
     Art.map.archipelago = mapNodeSprite('archipelago').canvas();
     Art.map.isle = ['isle-snow', 'isle-fire', 'isle-desert', 'isle-forest', 'isle-mesa']

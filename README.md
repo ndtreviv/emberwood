@@ -40,13 +40,14 @@ run and the file climbs a whole century:
 
 | Every realm taken on | The file reads | The number turns |
 | --- | --- | --- |
-| the bronze run | **200%** | bronze |
-| the silver run | **300%** | silver |
-| the gold run | **400%** | gold |
+| the iron run | **200%** | grey |
+| the bronze run | **300%** | bronze |
+| the silver run | **400%** | silver |
+| the gold run | **500%** | gold |
 
-The bar runs the whole four hundred, with a mark at every century. A card that has begun a
-buffed run trades its coin line for the three counts, each in its own metal. Partial progress
-counts: half of the bronze run reads about 150%.
+The bar runs the whole five hundred, with a mark at every century. A card that has begun a
+buffed run trades its coin line for the four counts, each in its own metal. Partial progress
+counts: half of the iron run reads about 150%.
 
 The game writes the file whenever you enter an area, buy an upgrade, find a paper, redeem
 a code, kill a guardian or leave a realm. **ERASE** on a file asks once, then wipes it.
@@ -304,8 +305,8 @@ the same.
 | What | How |
 | --- | --- |
 | **Your picture** | Ten small landscapes, one from each kind of country the game holds. It hangs in a round frame |
-| **Your border** | A ring of brick round the picture: four darknesses of stone, and three of beaten metal a prestige opens |
-| **Your tint** | Four plates beside the picture: **NO TINT**, **BRONZE TINT**, **SILVER TINT** and **GOLDEN TINT**. A tint strikes the whole landscape in that metal. The ones you have not earned carry a padlock |
+| **Your border** | A ring of brick round the picture: four darknesses of stone, and four of beaten metal a prestige opens |
+| **Your tint** | Five plates beside the picture: **NO TINT**, **IRON TINT**, **BRONZE TINT**, **SILVER TINT** and **GOLDEN TINT**. A tint strikes the whole landscape in that metal. The ones you have not earned carry a padlock |
 | **Your name** | Up to twelve letters. Type it, or tap it out on the built-in keyboard |
 | **Your rank** | The mark of a prestige, the level, and a bar that fills as you fight |
 | | The mark sits on a small plate of its own metal, corners cut, so it reads as a button |
@@ -334,9 +335,10 @@ on the same screen from the start, named and greyed, so you can see what is comi
 | **Greenwood** | Chapter One | dark pines over a ridge of grey stone and snow |
 | **Drowned Deep** | Chapter Two | pale crests falling into deep water over sunken stone |
 | **Molten Crown** | Chapter Three | a cone of dark rock with fire running down it |
-| **Bronze Mantle** | Prestige I | beaten bronze, with a light running down it |
-| **Silver Mantle** | Prestige II | beaten silver, with a light running down it |
-| **Gold Mantle** | Prestige III | beaten gold, with a light running down it |
+| **Iron Mantle** | Prestige I | beaten iron, with a light running down it |
+| **Bronze Mantle** | Prestige II | beaten bronze, with a light running down it |
+| **Silver Mantle** | Prestige III | beaten silver, with a light running down it |
+| **Gold Mantle** | Prestige IV | beaten gold, with a light running down it |
 
 A mantle is a rope of eleven short links hung from the shoulders, nineteen pixels of it, so
 the hem falls below the boots. It **trails behind a run**, **streams upward through a jump or
@@ -407,19 +409,26 @@ A prestige gives back everything you were carrying:
 The realms you have cleared stay cleared. They have to: the buffed runs are walked against
 that record, and the file percentage is counted from it.
 
-There are **three marks**, written as Roman numerals on a plate of their own metal and shown
-**before** the level. The plate has its corners cut away and a light along its crown, so it
-reads as a button rather than as a block of colour.
+There are **four marks**, written as Roman numerals on a plate of their own metal and shown
+**before** the level. The plate is a **square** whatever the mark on it: its corners are cut
+away and a light runs along its crown, so it reads as a button rather than as a block of
+colour.
 
-The numeral is cut as a **bare line**, not the letter I with its serifs: `|`, `||`, `|||`.
-The line is the same width as the letter, so nothing beside it shifts.
+The numeral is cut as a **bare line**, not the letter I with its serifs, and the lines are
+cut into the plate by hand rather than set as text. Four of them therefore stand **seven
+pixels** across where four set as text would take twenty three, and the plate never has to
+stretch to hold them.
 
 | Mark | Colour | What it opens |
 | --- | --- | --- |
-| **I** | bronze | bronze hair, the Bronze Regalia, a bronze border, the Bronze Mantle |
-| | | Bronze is drawn **brown**, so it is never taken for the gold beside it |
-| **II** | silver | silver hair, the Silver Regalia, a silver border, the Silver Mantle |
-| **III** | gold | gold hair, the Gold Regalia, a gold border, the Gold Mantle |
+| **I** | grey | iron hair, the Iron Regalia, an iron border, the Iron Mantle |
+| **II** | bronze | bronze hair, the Bronze Regalia, a bronze border, the Bronze Mantle |
+| | | Bronze is drawn **brown**, so it is never taken for the gold above it |
+| **III** | silver | silver hair, the Silver Regalia, a silver border, the Silver Mantle |
+| **IV** | gold | gold hair, the Gold Regalia, a gold border, the Gold Mantle |
+
+Iron is drawn a **cold grey**, well off the blue of the silver, so those two are never taken
+for one another either.
 
 All of it shines: a light runs down the hero, the cloth and the frame. **No purse buys any of
 it early.** The wardrobe says `LOCKED` and names the mark it waits on.
@@ -427,21 +436,21 @@ it early.** The wardrobe says `LOCKED` and names the mark it waits on.
 ### The buffed runs
 
 A prestige also lets you walk every realm you have already cleared a second time, harder.
-Pick the run from **THE RUN** on the chart: `-` for the plain one, then `I`, `II` and `III`.
+Pick the run from **THE RUN** on the chart: `-` for the plain one, then the four marks.
 
 | Run | Creatures stand | Creatures hit | Guardians stand | Guardians hit |
 | --- | --- | --- | --- | --- |
-| Bronze | 3x | 1.6x | 2x | 1.6x |
-| Silver | 6x | 2.2x | 3.2x | 2.2x |
+| Iron | 2x | 1.35x | 1.6x | 1.35x |
+| Bronze | 3.6x | 1.8x | 2.4x | 1.8x |
+| Silver | 6.4x | 2.35x | 3.5x | 2.35x |
 | Gold | 10x | 3x | 5x | 3x |
 
-**The order holds however high your prestige stands.** You take the bronze run of a realm
-before its silver one, and its silver one before its gold one, even at Prestige III. Once
-bronze is done the silver one opens at once, so a high prestige never waits on anything but
-the run under it.
+**The order holds however high your prestige stands.** You take the iron run of a realm
+before its bronze one, and so on up, even at Prestige IV. Once one is done the next opens at
+once, so a high prestige never waits on anything but the run under it.
 
-A realm you have taken on a buffed run shows its **icon in that metal** on the chart: bronze,
-then silver, then gold.
+A realm you have taken on a buffed run shows its **icon in that metal** on the chart: iron,
+then bronze, then silver, then gold.
 
 ## The tutorial
 
@@ -850,7 +859,7 @@ step goes up rather than reading a thousand of this one: 999,999 is **1M**, not 
 | **LIMITED** | The front page. Three **mythic cuts**, turning over with the day |
 | **ITEMS** | Arrows: **1K** for one, **8K** for ten, **35K** for fifty — the more you take the less each costs. **2X EXPERIENCE** and **2X COINS**, ten minutes apiece, **5K** each |
 | **ARTIFACTS** | The three caskets, then the twenty artifacts the shop sells, dearest first. Each casket's row says what it is: *three finds, almost all of them common*; *six times the better odds*; *the best odds, and the bow* |
-| **CLOTHES** | Every suit the wardrobe sells, the three prestige regalia included |
+| **CLOTHES** | Every suit the wardrobe sells, the four prestige regalia included |
 | **SHARDS** | Arrows, rubies and boosters, paid for in the shards of the Archipelago |
 
 ### The front page
@@ -996,11 +1005,12 @@ Click a suit you own to wear it, and click it again to take it off.
 | The Dune Sea | Sandstride | 19,000 |
 | Sphinx Hollow | Riddleweave | 24,000 |
 | The Sun Tomb | Sunregalia | 30,000 |
-| Prestige I | Bronze Regalia | 20,000 |
-| Prestige II | Silver Regalia | 40,000 |
-| Prestige III | Gold Regalia | 60,000 |
+| Prestige I | Iron Regalia | 12,000 |
+| Prestige II | Bronze Regalia | 20,000 |
+| Prestige III | Silver Regalia | 40,000 |
+| Prestige IV | Gold Regalia | 60,000 |
 
-The last three shine, and no purse buys one before its mark is yours.
+The last four shine, and no purse buys one before its mark is yours.
 
 Enemies get sturdier and drop far more with each chapter, so the deeper shop stock stays
 within reach. Aether City pays a coin more per kill than anywhere else.
