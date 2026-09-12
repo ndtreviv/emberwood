@@ -1008,7 +1008,11 @@ function frame(now) {
   G.dt = dt;
   G.t += dt;
 
-  /* One bad frame must never kill the loop: catch it, show it, keep going. */
+  /* ONE BAD FRAME COSTS A FRAME, NOT THE SESSION.  Nothing is painted over
+     the game when a frame throws.  The error goes to the console, the last
+     good picture stands in place of the broken one, and the next frame runs
+     as it always did.  The update and the render are caught apart, so a
+     fault in one still lets the other do its work. */
   try {
     updatePad();
     /* A casket on the screen holds it: nothing under it takes a tap until
@@ -1027,54 +1031,81 @@ function frame(now) {
       else if (G.state === 'map') updateMap(dt);
       else updatePlay(dt);
     }
-    render();
   } catch (err) {
     reportCrash(err);
+  }
+  try {
+    render();
+    keepFrame();
+  } catch (err) {
+    reportCrash(err);
+    showKeptFrame();
   }
   Input.endFrame();
   G.clickAttack = false;
   requestAnimationFrame(frame);
 }
 
+/* ============================================================
+   THE LAST GOOD PICTURE.  Every frame that draws clean is kept.
+   A frame that throws leaves the canvas half drawn, so the kept
+   picture goes back over it and the player sees a held frame
+   rather than a torn one.
+   ============================================================ */
+let keptFrame = null, keptCtx = null;
+function keepFrame() {
+  if (!keptFrame) {
+    keptFrame = mkc(VW, VH);
+    keptCtx = keptFrame.getContext('2d');
+    keptCtx.imageSmoothingEnabled = false;
+  }
+  keptCtx.setTransform(1, 0, 0, 1, 0, 0);
+  keptCtx.clearRect(0, 0, VW, VH);
+  keptCtx.drawImage(ctx.canvas, 0, 0);
+}
+function showKeptFrame() {
+  /* a render that threw part way can leave the canvas turned, faded or
+     stacked, so every one of those is put back before anything is drawn */
+  try {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.imageSmoothingEnabled = false;
+    if (keptFrame) ctx.drawImage(keptFrame, 0, 0);
+  } catch (e) { /* nothing more we can do */ }
+}
+
+/* The count and the last message are kept for the test rigs, and for
+   anybody who opens the console.  Nothing of them reaches the screen. */
 let crashInfo = null, crashCount = 0;
 function reportCrash(err) {
   crashCount++;
   if (!crashInfo) {
     crashInfo = { msg: String(err && err.message || err), stack: String(err && err.stack || '') };
     console.error('[emberwood] frame error', err);
+  } else if (crashCount % 120 === 0) {
+    /* a fault that comes back every frame says so now and then, and never
+       fills the console with the same line sixty times a second */
+    console.error('[emberwood] frame error x' + crashCount, err);
   }
-  try { drawCrash(); } catch (e) { /* nothing more we can do */ }
-}
-function drawCrash() {
-  ctx.save();
-  ctx.globalAlpha = 1;
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = 'rgba(10,4,10,0.92)';
-  ctx.fillRect(0, 0, VW, VH);
-  drawText(ctx, 'FRAME ERROR', 6, 6, '#ff6a5a', 2, 'left');
-  drawText(ctx, 'X ' + crashCount, VW - 6, 8, '#8a94a6', 1, 'right');
-  const wrap = (s, n) => { const o = []; for (let i = 0; i < s.length; i += n) o.push(s.slice(i, i + n)); return o; };
-  let y = 26;
-  for (const line of wrap(crashInfo.msg, 60).slice(0, 3)) { drawText(ctx, line, 6, y, '#ffd04a', 1, 'left'); y += 9; }
-  y += 4;
-  for (const raw of crashInfo.stack.split('\n').slice(0, 8)) {
-    const s = raw.trim().replace(/^at /, '').replace(/file:\/\/.*\/js\//, '');
-    for (const line of wrap(s, 62).slice(0, 1)) { drawText(ctx, line, 6, y, '#9aa8c4', 1, 'left'); y += 9; }
-  }
-  drawText(ctx, 'RELOAD THE PAGE AFTER THE FIX', 6, VH - 12, '#6d7994', 1, 'left');
-  ctx.restore();
 }
 
 function updateLoad(dt) {
   loadT += dt;
   if (loadIdx < loadSteps.length) {
-    loadSteps[loadIdx].fn();
+    /* A step that throws must never hold the bar where it stands.  The step
+       is counted first and then run, so a fault costs one set of sprites
+       rather than a game that never starts. */
+    const step = loadSteps[loadIdx];
     loadIdx++;
+    try { step.fn(); } catch (e) { console.error('[emberwood] art step ' + step.label, e); }
   } else if (!G.worldBuilt) {
-    World.build();
+    /* and the same for the world: it is marked built before it is built, so
+       a realm that will not cut does not put the loop in a circle */
     G.worldBuilt = true;
+    try { World.build(); } catch (e) { console.error('[emberwood] world', e); }
     G.player = new Player();
-    initTitle();
+    try { initTitle(); } catch (e) { console.error('[emberwood] title', e); }
   } else if (loadT > 0.4) {
     G.state = 'title';
   }
@@ -3305,19 +3336,19 @@ const ARTIFACTS = [
   artRow('oakcharm', 1, 'OAK CHARM', 'OAK CHARM', 'THE GALE REACHES A TENTH FURTHER', { gale: 1.1 }, 'windvane', 'leaf', '#6f9a4a'),
   artRow('reedwhistle', 1, 'REED WHISTLE', 'WHISTLE', 'THE GALE REACHES AN EIGHTH FURTHER', { gale: 1.12 }, 'kitevane', 'horn', '#b8c46a'),
   artRow('dampcloth', 1, 'DAMP CLOTH', 'DAMP CLOTH', 'FIRE BURNS A QUARTER LESS LONG', { burn: 1.34 }, 'frostbead', 'knot', '#6f9ab8'),
-  artRow('boneneedle', 1, 'BONE NEEDLE', 'NEEDLE', 'AN ARROW BITES A TENTH DEEPER', { arrow: 1.1 }, 'barbedhead', 'arrowhead', '#e8dcc0'),
+  artRow('boneneedle', 1, 'BONE NEEDLE', 'NEEDLE', 'A TENTH DEEPER, IN WHOLE ARROW POINTS', { arrow: 1.1 }, 'barbedhead', 'arrowhead', '#e8dcc0'),
   artRow('reedband', 1, 'REED BAND', 'REED BAND', 'YOU SWIM A TENTH FASTER', { swim: 1.1 }, 'tidecharm', 'ring', '#7fc4a8'),
   artRow('swiftlace', 1, 'SWIFT LACE', 'LACE', 'YOU RUN A TWENTY FIFTH FASTER', { speed: 1.04 }, 'swiftsole', 'knot', '#c07a4a'),
   artRow('mothwing', 1, 'MOTH WING', 'MOTH WING', 'YOU FALL A LITTLE MORE SLOWLY', { fall: 0.86 }, 'feather', 'feather', '#d8c8a8'),
   artRow('glasstooth', 1, 'GLASS TOOTH', 'TOOTH', 'A SPECIAL CUT BITES A TENTH HARDER', { special: 0.1 }, 'emberfang', 'tooth', '#a9d8e0'),
   artRow('tinlocket', 1, 'TIN LOCKET', 'LOCKET', 'ONE POINT MORE ON YOUR LIFE BAR', { hp: 1 }, 'ankh', 'orb', '#b8c0cc'),
-  artRow('strawcord', 1, 'STRAW CORD', 'CORD', 'AN ARROW BITES A TWELFTH DEEPER', { arrow: 1.08 }, 'truestring', 'knot', '#ddc87a'),
+  artRow('strawcord', 1, 'STRAW CORD', 'CORD', 'A TWELFTH DEEPER, IN WHOLE ARROW POINTS', { arrow: 1.08 }, 'truestring', 'knot', '#ddc87a'),
   artRow('copperstud', 1, 'COPPER STUD', 'STUD', 'ONE POINT MORE ON YOUR LIFE BAR', { hp: 1 }, 'steelrivet', 'bead', '#c07a3a'),
   artRow('hidewrap', 1, 'HIDE WRAP', 'HIDE WRAP', 'FIRE BURNS A FIFTH LESS LONG', { burn: 1.25 }, 'oakbuckler', 'plate', '#9a7040'),
   artRow('slatechip', 1, 'SLATE CHIP', 'SLATE CHIP', 'A SPECIAL CUT BITES A TWELFTH HARDER', { special: 0.08 }, 'honedcore', 'blade', '#8a94a6'),
-  artRow('pitchknot', 1, 'PITCH KNOT', 'PITCH KNOT', 'THE BLADE BITES A TENTH DEEPER', { blade: 1.1 }, 'emberchip', 'knot', '#4a3a30'),
+  artRow('pitchknot', 1, 'PITCH KNOT', 'PITCH KNOT', 'A TENTH DEEPER, IN WHOLE BLADE POINTS', { blade: 1.1 }, 'emberchip', 'knot', '#4a3a30'),
   artRow('saltpinch', 1, 'A PINCH OF SALT', 'SALT', 'THE DASH RETURNS A TWELFTH SOONER', { dashCd: 0.92 }, 'hourbead', 'bead', '#e8eef8'),
-  artRow('flintspark', 1, 'FLINT SPARK', 'FLINT', 'THE BLADE BITES A TWELFTH DEEPER', { blade: 1.08 }, 'emberfang', 'gem', '#c05a2a'),
+  artRow('flintspark', 1, 'FLINT SPARK', 'FLINT', 'A TWELFTH DEEPER, IN WHOLE BLADE POINTS', { blade: 1.08 }, 'emberfang', 'gem', '#c05a2a'),
   artRow('owlfeather', 1, 'OWL FEATHER', 'OWL FEATHER', 'YOU JUMP A LITTLE HIGHER', { jump: 1.05 }, 'keeneye', 'feather', '#b09a70'),
   artRow('riverpearl', 1, 'RIVER PEARL', 'PEARL', 'COINS COME TO YOU FROM FURTHER OFF', { magnet: 1.2 }, 'gembrooch', 'orb', '#dfe8f4'),
 
@@ -3362,14 +3393,14 @@ const ARTIFACTS = [
   /* ---------------- SUPER RARE: fifteen --------------------------- */
   artRow('ring', 3, "THE PHARAOHS RING", 'THE RING', 'WALK THROUGH QUICKSAND AND POWDERED SNOW', { phase: 1 }, 'riddlestone', 'ring', '#e0b040'),
   artRow('heartstone', 3, 'THE HEARTSTONE', 'HEARTSTONE', 'TWO HEARTS MORE ON YOUR LIFE BAR', { hp: 4 }, 'sunheart', 'gem', '#c9403a'),
-  artRow('runeplate', 3, 'RUNE PLATE', 'RUNE PLATE', 'EVERY BLOW AGAINST YOU TAKES ONE POINT LESS', { armour: 1 }, 'titanplate', 'plate', '#8a94a6'),
+  artRow('runeplate', 3, 'RUNE PLATE', 'RUNE PLATE', 'ONE BLOW IN TWO TAKES A POINT LESS', { armour: 0.5 }, 'titanplate', 'plate', '#8a94a6'),
   artRow('scholarseal', 3, 'THE SCHOLARS SEAL', 'SEAL', 'EVERY KILL PAYS HALF AGAIN THE EXPERIENCE', { xp: 1.5 }, 'codexleaf', 'rune', '#2f5fb0'),
   artRow('deepquiver', 3, 'THE DEEP QUIVER', 'QUIVER', 'AN ARROW IN THREE COSTS YOU NOTHING', { arrowSave: 0.34 }, 'dragonquiver', 'horn', '#8a6a3a'),
   artRow('hawkfletch', 3, 'HAWK FLETCH', 'HAWK FLETCH', 'AN ARROW BITES HALF AGAIN AS DEEP', { arrow: 1.5 }, 'sunfletch', 'feather', '#b8a070'),
-  artRow('boltcord', 3, 'THE BOLT CORD', 'BOLT CORD', 'A DEEPER ARROW, AND ONE IN FIVE COSTS NOTHING', { arrow: 1.4, arrowSave: 0.2 }, 'dragonquiver', 'knot', '#c9403a'),
+  artRow('boltcord', 3, 'THE BOLT CORD', 'BOLT CORD', 'A DEEPER ARROW, ONE IN FIVE FOR NOTHING', { arrow: 1.4, arrowSave: 0.2 }, 'dragonquiver', 'knot', '#c9403a'),
   artRow('ironcarapace', 3, 'IRON CARAPACE', 'CARAPACE', 'TWO HEARTS MORE ON YOUR LIFE BAR', { hp: 4 }, 'titanplate', 'shell', '#7f8a9c'),
   artRow('mintseal', 3, 'THE MINT SEAL', 'MINT SEAL', 'EVERY KILL PAYS HALF AGAIN', { coin: 1.5 }, 'pharaohcrook', 'rune', '#e0b040'),
-  artRow('dragonhoard', 3, 'THE HOARD MARK', 'HOARD MARK', 'A RICHER KILL, AND COINS COME FROM TWICE AS FAR', { coin: 1.4, magnet: 2 }, 'pharaohcrook', 'coin', '#c9403a'),
+  artRow('dragonhoard', 3, 'THE HOARD MARK', 'HOARD MARK', 'A RICHER KILL, AND TWICE THE COIN REACH', { coin: 1.4, magnet: 2 }, 'pharaohcrook', 'coin', '#c9403a'),
   artRow('starchart', 3, 'THE STAR CHART', 'STAR CHART', 'EVERY KILL PAYS HALF AGAIN THE EXPERIENCE', { xp: 1.5 }, 'codexleaf', 'scroll', '#2f5fb0'),
   artRow('galeeye', 3, 'THE EYE OF THE GALE', 'GALE EYE', 'THE GALE REACHES TWICE AS FAR', { gale: 2 }, 'tempestedge', 'eye', '#8fd0e8'),
   artRow('thunderfang', 3, 'THUNDER FANG', 'T FANG', 'THE BLADE BITES TWO POINTS DEEPER', { sword: 2 }, 'tempestedge', 'tooth', '#ffe14d'),
@@ -3382,15 +3413,69 @@ const ARTIFACTS = [
   artRow('pharaohcrook', 4, "THE PHARAOHS CROOK", 'THE CROOK', 'EVERY COIN COMES TO YOU DOUBLED', { coin: 2 }, 'midashand', 'horn', '#e0b040'),
   artRow('dragonquiver', 4, 'THE DRAGON QUIVER', 'D QUIVER', 'A DOUBLE ARROW, AND TWO IN FIVE COST NOTHING', { arrow: 2, arrowSave: 0.4 }, 'bow', 'horn', '#c9403a'),
   artRow('sunfletch', 4, 'THE SUN FLETCH', 'SUN FLETCH', 'AN ARROW BITES TWICE AS DEEP', { arrow: 2 }, 'bow', 'feather', '#f0c93a'),
-  artRow('titanplate', 4, 'THE TITAN PLATE', 'TITAN PLATE', 'EVERY BLOW AGAINST YOU TAKES TWO POINTS LESS', { armour: 2 }, 'worldheart', 'plate', '#a9b3c9'),
+  artRow('titanplate', 4, 'THE TITAN PLATE', 'TITAN PLATE', 'EVERY BLOW AGAINST YOU TAKES ONE POINT LESS', { armour: 1 }, 'worldheart', 'plate', '#a9b3c9'),
   artRow('codexleaf', 4, 'THE CODEX LEAF', 'CODEX LEAF', 'EVERY KILL PAYS TWICE THE EXPERIENCE', { xp: 2 }, 'midashand', 'scroll', '#6fd0a0'),
   artRow('tempestedge', 4, 'THE TEMPEST EDGE', 'TEMPEST', 'THE BLADE BITES THREE POINTS DEEPER', { sword: 3 }, 'stormcrown', 'blade', '#8fd0e8'),
 
   /* ---------------- MYTHIC: four ---------------------------------- */
   artRow('bow', 5, 'THE LONGBOW', 'LONGBOW', 'HOLD THE SWORD TO DRAW IT AND LOOSE AN ARROW', { bow: 1 }, null, 'bow', '#c68e3f'),
-  artRow('worldheart', 5, 'THE WORLD HEART', 'WORLD HEART', 'SEVEN HEARTS MORE, AND ONE POINT OFF EVERY BLOW', { hp: 14, armour: 1 }, null, 'orb', '#4fb08a'),
+  artRow('worldheart', 5, 'THE WORLD HEART', 'WORLD HEART', 'SEVEN HEARTS MORE, AND ONE POINT OF ARMOUR', { hp: 14, armour: 1 }, null, 'orb', '#4fb08a'),
   artRow('midashand', 5, 'THE HAND OF MIDAS', 'MIDAS HAND', 'EVERY COIN TRIPLED, AND TWICE THE EXPERIENCE', { coin: 3, xp: 2 }, null, 'claw', '#f0c93a'),
-  artRow('stormcrown', 5, 'THE STORM CROWN', 'STORM CROWN', 'A DEEPER BLADE, A HARDER SPECIAL, A LONGER GALE', { sword: 2, special: 0.75, gale: 2 }, null, 'crown', '#b07ae0')
+  artRow('stormcrown', 5, 'THE STORM CROWN', 'STORM CROWN', 'A DEEPER BLADE, A HARDER CUT, A LONG GALE', { sword: 2, special: 0.75, gale: 2 }, null, 'crown', '#b07ae0'),
+
+  /* ---------------- RARE: twenty more out of a casket ------------- */
+  artRow('ashband', 2, 'ASH BAND', 'ASH BAND', 'ONE HEART MORE', { hp: 2 }, 'ironcarapace', 'ring', '#7a736c'),
+  artRow('tidepearl', 2, 'TIDE PEARL', 'TIDE PEARL', 'YOU SWIM TWO FIFTHS FASTER', { swim: 1.4 }, 'galeeye', 'orb', '#6fc4bc'),
+  artRow('glassfang', 2, 'GLASS FANG', 'GLASS FANG', 'THE BLADE BITES ONE POINT DEEPER', { sword: 1 }, 'duskedge', 'tooth', '#a9d8e0'),
+  artRow('warplate', 2, 'WAR PLATE', 'WAR PLATE', 'THREE POINTS MORE ON YOUR LIFE BAR', { hp: 3 }, 'runeplate', 'plate', '#6f7a8c'),
+  artRow('lodeglass', 2, 'LODE GLASS', 'LODE GLASS', 'COINS COME FROM FOUR FIFTHS FURTHER OFF', { magnet: 1.8 }, 'dragonhoard', 'vial', '#8a6ac0'),
+  artRow('runenail', 2, 'RUNE NAIL', 'RUNE NAIL', 'THE BLADE BITES ONE POINT DEEPER', { sword: 1 }, 'thunderfang', 'arrowhead', '#b0a070'),
+  artRow('sparkcoil', 2, 'SPARK COIL', 'SPARK COIL', 'A SPECIAL CUT BITES A QUARTER HARDER', { special: 0.25 }, 'thunderfang', 'knot', '#ffd04a'),
+  artRow('dunemark', 2, 'THE DUNE MARK', 'DUNE MARK', 'THE DASH RETURNS A FIFTH SOONER', { dashCd: 0.8 }, 'sandglass', 'rune', '#d9bd7e'),
+  artRow('coldbead', 2, 'COLD BEAD', 'COLD BEAD', 'FIRE BURNS NEARLY TWICE AS FAST', { burn: 1.8 }, 'ironcarapace', 'bead', '#9fd4e8'),
+  artRow('sightstone', 2, 'THE SIGHT STONE', 'SIGHT STONE', 'HIDDEN GROUND GIVES OFF A SHIMMER', { shimmer: 1 }, 'ring', 'eye', '#8fa0b8'),
+  artRow('talleystone', 2, 'THE TALLY STONE', 'TALLY STONE', 'EVERY KILL PAYS A FIFTH MORE', { coin: 1.2 }, 'mintseal', 'rune', '#c9a06a'),
+  artRow('tollring', 2, 'THE TOLL RING', 'TOLL RING', 'EVERY KILL PAYS A FIFTH MORE', { coin: 1.2 }, 'mintseal', 'ring', '#b8862f'),
+  artRow('quillcase', 2, 'THE QUILL CASE', 'QUILL CASE', 'EVERY KILL PAYS A QUARTER MORE EXPERIENCE', { xp: 1.25 }, 'starchart', 'scroll', '#5f7aa8'),
+  artRow('codexchip', 2, 'CODEX CHIP', 'CODEX CHIP', 'EVERY KILL PAYS A FIFTH MORE EXPERIENCE', { xp: 1.2 }, 'scholarseal', 'gem', '#6fd0a0'),
+  artRow('sinewcord', 2, 'SINEW CORD', 'SINEW CORD', 'AN ARROW BITES A THIRD DEEPER', { arrow: 1.33 }, 'hawkfletch', 'knot', '#c8b98c'),
+  artRow('steelbarb', 2, 'STEEL BARB', 'STEEL BARB', 'AN ARROW BITES A QUARTER DEEPER', { arrow: 1.25 }, 'boltcord', 'arrowhead', '#aeb8c8'),
+  artRow('gullfeather', 2, 'GULL FEATHER', 'GULL QUILL', 'YOU JUMP AN EIGHTH HIGHER', { jump: 1.12 }, 'hawkfletch', 'feather', '#e6edf6'),
+  artRow('stormsail', 2, 'THE STORM SAIL', 'STORM SAIL', 'THE GALE REACHES TWO FIFTHS FURTHER', { gale: 1.4 }, 'galeeye', 'star', '#8fd0e8'),
+  artRow('footrope', 2, 'FOOT ROPE', 'FOOT ROPE', 'YOU RUN A SEVENTH FASTER', { speed: 1.15 }, 'sandglass', 'knot', '#a07a4a'),
+  artRow('heartchip', 2, 'HEART CHIP', 'HEART CHIP', 'ONE HEART MORE', { hp: 2 }, 'heartstone', 'gem', '#c9403a'),
+
+  /* ---------------- COMMON: thirty more out of a casket ----------- */
+  artRow('graypebble', 1, 'A GREY PEBBLE', 'PEBBLE', 'EVERY KILL PAYS A TWENTY FIFTH MORE', { coin: 1.04 }, 'talleystone', 'orb', '#8f949c'),
+  artRow('slatetally', 1, 'SLATE TALLY', 'TALLY', 'EVERY KILL PAYS A TWENTIETH MORE', { coin: 1.05 }, 'talleystone', 'rune', '#7c828c'),
+  artRow('chippedcup', 1, 'A CHIPPED CUP', 'CUP', 'EVERY KILL PAYS A TWENTIETH MORE', { coin: 1.05 }, 'tollring', 'bell', '#9a958c'),
+  artRow('ashmark', 1, 'ASH MARK', 'ASH MARK', 'EVERY KILL PAYS A TWELFTH MORE EXPERIENCE', { xp: 1.08 }, 'codexchip', 'rune', '#8a8a92'),
+  artRow('sootquill', 1, 'SOOT QUILL', 'SOOT QUILL', 'EVERY KILL PAYS A TENTH MORE EXPERIENCE', { xp: 1.1 }, 'quillcase', 'feather', '#6d7078'),
+  artRow('wornslate', 1, 'WORN SLATE', 'WORN SLATE', 'EVERY KILL PAYS A TWENTIETH MORE EXPERIENCE', { xp: 1.05 }, 'quillcase', 'scroll', '#868d98'),
+  artRow('stonebutton', 1, 'A STONE BUTTON', 'BUTTON', 'ONE POINT MORE ON YOUR LIFE BAR', { hp: 1 }, 'warplate', 'coin', '#9aa0a8'),
+  artRow('greychip', 1, 'A GREY CHIP', 'GREY CHIP', 'ONE POINT MORE ON YOUR LIFE BAR', { hp: 1 }, 'heartchip', 'gem', '#8c929c'),
+  artRow('dullrivet', 1, 'A DULL RIVET', 'DULL RIVET', 'ONE POINT MORE ON YOUR LIFE BAR', { hp: 1 }, 'warplate', 'bead', '#7e848e'),
+  artRow('cinderdust', 1, 'CINDER DUST', 'CINDER DUST', 'FIRE BURNS A SIXTH LESS LONG', { burn: 1.2 }, 'coldbead', 'vial', '#6a6a70'),
+  artRow('wetrag', 1, 'A WET RAG', 'WET RAG', 'FIRE BURNS A SIXTH LESS LONG', { burn: 1.2 }, 'coldbead', 'knot', '#7f8a94'),
+  artRow('graygrit', 1, 'GREY GRIT', 'GREY GRIT', 'FIRE BURNS AN EIGHTH LESS LONG', { burn: 1.15 }, 'ashband', 'bead', '#95999e'),
+  artRow('flintflake', 1, 'A FLINT FLAKE', 'FLAKE', 'A TWENTIETH DEEPER, IN WHOLE BLADE POINTS', { blade: 1.05 }, 'glassfang', 'blade', '#7b828c'),
+  artRow('chippedblade', 1, 'A CHIPPED BLADE', 'CHIPPED', 'A TWELFTH DEEPER, IN WHOLE BLADE POINTS', { blade: 1.08 }, 'glassfang', 'blade', '#98a0aa'),
+  artRow('dullspike', 1, 'A DULL SPIKE', 'DULL SPIKE', 'A TWENTY FIFTH DEEPER, IN WHOLE POINTS', { blade: 1.04 }, 'runenail', 'arrowhead', '#6f757e'),
+  artRow('gritstone', 1, 'GRIT STONE', 'GRIT STONE', 'A SPECIAL CUT BITES A FOURTEENTH HARDER', { special: 0.07 }, 'sparkcoil', 'gem', '#8b9098'),
+  artRow('chalkedge', 1, 'CHALK EDGE', 'CHALK EDGE', 'A SPECIAL CUT BITES A TENTH HARDER', { special: 0.1 }, 'sparkcoil', 'blade', '#c4c8cc'),
+  artRow('shalesliver', 1, 'A SHALE SLIVER', 'SLIVER', 'A SPECIAL CUT BITES A SIXTEENTH HARDER', { special: 0.06 }, 'glassfang', 'tooth', '#767c86'),
+  artRow('rockthong', 1, 'A ROCK THONG', 'THONG', 'YOU RUN A TWENTY FIFTH FASTER', { speed: 1.04 }, 'footrope', 'knot', '#8a8078'),
+  artRow('graysole', 1, 'A GREY SOLE', 'GREY SOLE', 'YOU RUN A TWENTIETH FASTER', { speed: 1.05 }, 'footrope', 'leaf', '#82868e'),
+  artRow('dustlace', 1, 'DUST LACE', 'DUST LACE', 'THE DASH RETURNS A SIXTEENTH SOONER', { dashCd: 0.94 }, 'dunemark', 'knot', '#9b958a'),
+  artRow('hourgrain', 1, 'AN HOUR GRAIN', 'GRAIN', 'THE DASH RETURNS A TWELFTH SOONER', { dashCd: 0.92 }, 'dunemark', 'vial', '#a8a196'),
+  artRow('paleshell', 1, 'A PALE SHELL', 'PALE SHELL', 'YOU SWIM A TWELFTH FASTER', { swim: 1.08 }, 'tidepearl', 'shell', '#aeb4ba'),
+  artRow('seagrit', 1, 'SEA GRIT', 'SEA GRIT', 'YOU SWIM A TENTH FASTER', { swim: 1.1 }, 'tidepearl', 'bead', '#7f9099'),
+  artRow('downquill', 1, 'A DOWN QUILL', 'DOWN QUILL', 'YOU JUMP A TWENTY FIFTH HIGHER', { jump: 1.04 }, 'gullfeather', 'feather', '#c8ccd2'),
+  artRow('greywing', 1, 'A GREY WING', 'GREY WING', 'YOU FALL A LITTLE MORE SLOWLY', { fall: 0.9 }, 'gullfeather', 'feather', '#9096a0'),
+  artRow('reedstay', 1, 'A REED STAY', 'REED STAY', 'THE GALE REACHES A TWELFTH FURTHER', { gale: 1.08 }, 'stormsail', 'horn', '#98a08c'),
+  artRow('windchip', 1, 'A WIND CHIP', 'WIND CHIP', 'THE GALE REACHES A TENTH FURTHER', { gale: 1.1 }, 'stormsail', 'star', '#a6aeb6'),
+  artRow('boneflake', 1, 'A BONE FLAKE', 'BONE FLAKE', 'A SIXTEENTH DEEPER, IN WHOLE ARROW POINTS', { arrow: 1.06 }, 'steelbarb', 'tooth', '#cfcabc'),
+  artRow('graynock', 1, 'A GREY NOCK', 'GREY NOCK', 'A TWELFTH DEEPER, IN WHOLE ARROW POINTS', { arrow: 1.08 }, 'sinewcord', 'arrowhead', '#888e96')
 ];
 const ARTIFACT_SLOTS = 3;
 /* the most copies of one artifact a pouch holds */
@@ -3458,8 +3543,8 @@ ARTIFACTS.filter(a => a.rank === 3 && mythicCanCut(a)).forEach((b, i) => {
 /* every row is in the table now, so the index can be built */
 ART_BY = {};
 for (const a of ARTIFACTS) ART_BY[a.key] = a;
-/* common, rare, super rare, legendary, mythic: stone, cyan, violet, gold, rose */
-const RANK_COL = ['#a89270', '#c9a06a', '#7fc4d8', '#b07ae0', '#f0c93a', '#ff5ad0'];
+/* common, rare, super rare, legendary, mythic: grey, cyan, violet, gold, rose */
+const RANK_COL = ['#a89270', '#9aa4b2', '#7fc4d8', '#b07ae0', '#f0c93a', '#ff5ad0'];
 const RANK_NAME = ['', 'COMMON', 'RARE', 'SUPER RARE', 'LEGENDARY', 'MYTHIC'];
 /* what the shop asks for one, by its rank */
 const RANK_PRICE = [0, 5000, 20000, 50000, 100000, 250000];

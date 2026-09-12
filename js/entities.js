@@ -9,6 +9,14 @@ function aMul(stat) { return G.artMul ? G.artMul(stat) : 1; }
 function aAdd(stat) { return G.artAdd ? G.artAdd(stat) : 0; }
 function aOn(stat) { return !!(G.artOn && G.artOn(stat)); }
 
+/* What a plate turns off this blow.  A plate worth half a point takes one
+   point off one blow in two, so a plate can be worth less than a whole
+   point and still mean something. */
+function armourOff(n) {
+  if (!(n > 0)) return 0;
+  const whole = Math.floor(n);
+  return whole + (Math.random() < n - whole ? 1 : 0);
+}
 /* how long a hero may stand inside a block before the ground gives them up */
 const STUCK_SECS = 5;
 /* and how long a room counts as newly begun, where the wait is none at all */
@@ -540,8 +548,10 @@ class Player {
        and NaN is never at or below zero, so they could not die again */
     if (!isFinite(dmg)) dmg = 1;
     dmg = Math.max(1, dmg - (this.up.armour > 0 && Math.random() < this.up.armour * 0.2 ? 1 : 0));
-    /* a plate turns points off every blow that lands */
-    dmg = Math.max(1, dmg - aAdd('armour'));
+    /* A plate turns points off every blow that lands.  Armour is counted in
+       points on average, not in whole points every time: the whole part
+       always comes off, and what is left over is a chance at one more. */
+    dmg = Math.max(1, dmg - armourOff(aAdd('armour')));
     this.hp -= dmg;
     G.breakCombo();
     this.invuln = 1.15;

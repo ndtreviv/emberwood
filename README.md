@@ -683,25 +683,31 @@ A pouch hangs at the top right of the screen, under the chart. Click it and it o
 It has **three slots**. Whatever sits in a slot works; whatever sits loose in the pouch does
 nothing. Click a find to wear it, click a slot to take it off.
 
-**There are a hundred artifacts**, and the pouch holds **up to five copies of each**. The
-list runs **eight to a page**, the best rank first, so a legendary never hides behind a
-drawer of commons. The two arrows sit in the header beside the close button. A copy count
-sits as a badge on the corner of a picture: it turns red at five, the ceiling.
+**There are a hundred and fifty artifacts**, and the pouch holds **up to five copies of
+each**. The list runs **eight to a page**, the best rank first, so a legendary never hides
+behind a drawer of commons. The two arrows sit in the header beside the close button. A copy
+count sits as a badge on the corner of a picture: it turns red at five, the ceiling.
 
 Every artifact carries **its own face**, drawn at sixteen pixels square. Twenty are drawn by
-hand. The other eighty are built out of the shape and the colour their row names, with a
-band, a row of studs or a set stone taken from the key itself, so **no two of the hundred
-are the same picture**.
+hand. The other hundred and thirty are built out of the shape and the colour their row
+names, with a band, a row of studs or a set stone taken from the key itself, so **no two of
+the hundred and fifty are the same picture**.
 
 ### The five ranks
 
-| Rank | How many | Where it comes from |
-| --- | --- | --- |
-| **COMMON** | 24 | Caskets |
-| **RARE** | 35 | Caskets, merges, and 11 of them in the shop at 20K |
-| **SUPER RARE** | 15 | Caskets, merges, and 5 of them in the shop at 50K |
-| **LEGENDARY** | 8 | Caskets, merges, and 3 of them in the shop at 100K |
-| **MYTHIC** | 18 | Merges, the King's Casket, and 14 cuts on the limited page |
+Each rank carries its own colour, and it is the same colour everywhere: on the label, on the
+rule over a pouch row, on the plate behind a shop icon, and on the edge of a casket card.
+
+| Rank | Colour | How many | Where it comes from |
+| --- | --- | --- | --- |
+| **COMMON** | Grey | 54 | Caskets and chests |
+| **RARE** | Cyan | 55 | Caskets, chests, merges, and 11 of them in the shop at 20K |
+| **SUPER RARE** | Violet | 15 | Caskets, merges, and 5 of them in the shop at 50K |
+| **LEGENDARY** | Gold | 8 | Caskets, merges, and 3 of them in the shop at 100K |
+| **MYTHIC** | Rose | 18 | Merges, the King's Casket, and 14 cuts on the limited page |
+
+**The shop sells twenty and no more.** Every one of the other hundred and thirty comes out
+of a casket, out of a chest at the head of a vault climb, or out of a merge.
 
 The Pharaoh's Ring comes from the sphinx. The three mythical things of the waste come from
 its three guardians. Everything else comes out of a chest, a casket, a merge or the shop.
@@ -730,6 +736,13 @@ multiplies, and everything else adds: three charms that each pay a fifth more pa
 1.2 × 1.2 × 1.2. The stats are coins, experience, health, blade, special cuts, arrows, arrow
 saving, armour, the dash, running, swimming, jumping, falling, the gale, burning, the coin
 magnet, walking through quicksand, and the bow itself.
+
+**Armour is counted in points on average, not in whole points every time.** A plate worth
+half a point turns one point off **one blow in two**, so a plate can be worth less than a
+whole point and still mean something. The Rune Plate is worth half a point, the Titan Plate
+a whole one, and the World Heart a whole one. All three at once turn **two and a half points**
+off a blow, measured over forty thousand blows. No blow ever falls under **one point**,
+whatever you wear.
 
 ## The Archipelago
 
@@ -807,8 +820,9 @@ The shop always opens on **LIMITED**, and the page shouts: **!!! LIMITED !!!** i
 the three rows, and a red rule over each of them.
 
 What stands there is a **mythic cut** — an artifact in its mythic finish, which gives
-**twice what the plain one gives**. The Mythic Rune Plate turns two points off every blow
-instead of one. The Mythic Deep Quiver keeps back two arrows in three instead of one.
+**twice what the plain one gives**. The Mythic Rune Plate turns a point off every blow
+instead of one blow in two. The Mythic Deep Quiver keeps back two arrows in three instead
+of one.
 
 There are **fourteen cuts**, and three of them stand each day. They cost **250K to 750K**,
 and nothing else in the game holds one: no casket drops a cut, and no merge makes one.
@@ -828,8 +842,9 @@ own icon on a plate of its rank**, so the tier reads before the words do.
 | **SUPER RARE** | 50K | 5 |
 | **RARE** | 20K | 11 |
 
-The shop sells **twenty artifacts and no more**. The other eighty come out of caskets and
-merges. The shop sells **up to five of each**, the same ceiling the pouch holds.
+The shop sells **twenty artifacts and no more**. The other hundred and thirty come out of
+caskets, chests and merges. The shop sells **up to five of each**, the same ceiling the
+pouch holds.
 
 ### Rubies and caskets
 
@@ -1129,13 +1144,13 @@ Sprites are drawn into a `Pix` buffer with primitives (`rect`, `disc`, `poly`,
 - `shade()` lights the top edge of every form and darkens the underside.
 - `outline()` traces a dark line around the silhouette.
 
-The eighty artifacts the shop does not sell get their faces the same way, but from data
-rather than by hand. Each row of the table names a **shape** — a coin, a ring, a gem, a
+The hundred and thirty artifacts the shop does not sell get their faces the same way, but
+from data rather than by hand. Each row of the table names a **shape** — a coin, a ring, a gem, a
 vial, a feather, a blade, a rune, an orb, a bead, a plate, a shell, a star, a fang, a horn,
 a key, a knot, a leaf, a scroll, an eye, a bell, a crown, a claw, an arrowhead, an ankh — and
 a **colour**. A hash of the key turns the colour a little toward one of six accents and adds
-a band, a row of studs or a set stone. A test walks all hundred icons, hashes the pixels and
-fails if two of them come out the same.
+a band, a row of studs or a set stone. A test walks all hundred and fifty icons, hashes the pixels
+and fails if two of them come out the same.
 
 The hero is posed rather than hand-drawn frame by frame: each animation supplies foot
 and hand positions, a body bob, a lean and a sword angle, and the limbs are drawn as
@@ -1148,6 +1163,25 @@ that grows toward the top, so trunks stay planted while canopies move.
 Lightning is generated fresh each strike: a jagged path is walked from cloud to ground
 with random perpendicular offsets, painted three times at falling widths for a hot
 white core, then given random forks.
+
+## When a frame throws
+
+**Nothing is ever painted over the game.** There is no error page, no crash screen and no
+stack trace on the canvas.
+
+A frame that throws is caught, and the update and the render are caught apart, so a fault in
+one still lets the other do its work. The error goes to the console, the **last picture that
+drew clean** goes back over the torn one, and the next frame runs as it always did. The
+canvas is put back straight first — the turn, the fade and the blend mode a half-finished
+render may have left behind — so one bad frame cannot smear the frames after it.
+
+A passing fault therefore costs **a frame**, not the session. A fault that comes back every
+frame holds the last good picture and says so in the console every two seconds, rather than
+filling it sixty times a second.
+
+The loading bar is guarded the same way. A set of sprites that will not draw is counted past
+rather than tried again, and a realm that will not cut is marked built before it is built, so
+neither can leave the bar standing still for ever.
 
 ## Testing
 
