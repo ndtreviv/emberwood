@@ -300,9 +300,15 @@ G.foundCode = function (code, si) {
   }));
   void si;
 };
+/* What the admin code pays out.  It was once an endless purse, and an
+   endless purse spends nothing and shows nothing.  A trillion is a number:
+   it is written 1T, it buys everything in the game many times over, and it
+   goes down as it is spent like anybody else's. */
+const ADMIN_COINS = 1e12;
 G.goldAdmin = function () {
   const p = G.player;
   G.codes.admin = true;
+  p.coins = Math.max(p.coins || 0, ADMIN_COINS);
   /* open every realm first: the shop's caps and the relics both key off this,
      so maxing after it gives the full nine-realm stock */
   G.unlocked = World.LEVELS.length;
@@ -448,7 +454,7 @@ G.coinScale = function () {
   return ((lv && lv.coinScale) || 1) * G.artMul('coin')
          * (G.boostLeft && G.boostLeft('coin') > 0 ? 2 : 1);
 };
-G.purse = function () { return G.codes.admin ? INF : String(G.player.coins); };
+G.purse = function () { return shortCoin(G.player.coins); };
 G.spawnCoin = function (x, y, vx, vy, still, si, value) {
   const c = new Coin(x, y, vx, vy, still, value);
   if (si !== undefined) c.si = si;
@@ -1934,7 +1940,7 @@ G.giveShards = function (n) {
 /* how many whole shards the forge could make from the parts on hand */
 function forgeable(shard) {
   const parts = Math.floor(G.partsOf(shard) / SHARD_PARTS);
-  const afford = G.codes.admin ? parts : Math.floor(G.player.coins / FORGE_COST);
+  const afford = Math.floor(G.player.coins / FORGE_COST);
   return Math.min(parts, afford);
 }
 G.forgeShard = function (shard, n) {
@@ -1944,7 +1950,7 @@ G.forgeShard = function (shard, n) {
   if (n <= 0) return 0;
   a.parts[shard] -= n * SHARD_PARTS;
   a.shards[shard] = (a.shards[shard] | 0) + n;
-  if (!G.codes.admin) G.player.coins -= n * FORGE_COST;
+  G.player.coins -= n * FORGE_COST;
   Snd.buy(); G.flash(0.2);
   G.saveGame();
   return n;
@@ -2730,7 +2736,7 @@ function storeAfford(row) {
   if (row.need && (G.prestige | 0) < row.need) return false;
   if (row.shards !== undefined) return G.shardTotal() >= row.shards;
   if (row.rubies !== undefined) return (G.rubies | 0) >= row.rubies;
-  return G.codes.admin || G.player.coins >= (row.coins || 0);
+  return G.player.coins >= (row.coins || 0);
 }
 function storeBuy(row) {
   if (!row) return;
@@ -2748,7 +2754,7 @@ function storeBuy(row) {
     if (G.shardTotal() < row.shards) { G.storeMsg = 'IT ASKS ' + row.shards + ' SHARDS'; G.storeMsgT = 2.2; Snd.uiBad(); return; }
   } else if (row.rubies !== undefined) {
     if ((G.rubies | 0) < row.rubies) { G.storeMsg = 'IT ASKS ' + row.rubies + ' RUBIES'; G.storeMsgT = 2.2; Snd.uiBad(); return; }
-  } else if (!G.codes.admin && G.player.coins < cost) {
+  } else if (G.player.coins < cost) {
     G.storeMsg = 'IT ASKS ' + shortCoin(cost) + ' COINS'; G.storeMsgT = 2.2; Snd.uiBad(); return;
   }
   const said = G.storeMsgT;
@@ -2760,7 +2766,7 @@ function storeBuy(row) {
   /* it went through, so now it is paid for */
   if (row.shards !== undefined) G.spendShards(row.shards);
   else if (row.rubies !== undefined) G.rubies -= row.rubies;
-  else if (!G.codes.admin) G.player.coins -= cost;
+  else G.player.coins -= cost;
   if (G.storeMsgT === said) { G.storeMsg = row.name + ' IS YOURS'; G.storeMsgT = 2.4; }
   Snd.buy(); G.flash(0.25);
   G.saveGame();
@@ -2804,8 +2810,7 @@ function drawStore() {
   px -= drawText(ctx, String(G.rubies | 0), px - textWidth(String(G.rubies | 0)), B.y + 7, '#ff5a7a', 1, 'left') + 4;
   ctx.fillStyle = '#ff5a7a';
   ctx.fillRect(px - 7, B.y + 8, 5, 5); px -= 12;
-  drawText(ctx, G.codes.admin ? INF : shortCoin(G.player.coins),
-           px, B.y + 7, '#ffe98a', 1, 'right');
+  drawText(ctx, shortCoin(G.player.coins), px, B.y + 7, '#ffe98a', 1, 'right');
   /* the five pages */
   STORE_TABS.forEach((name, i) => {
     const r = storeTabRect(i), on = G.storeTab === i, hot = Input.over(r);
@@ -2986,8 +2991,8 @@ function updateWardrobe(dt) {
       G.wardMsg = G.profile.suit === key ? 'YOU PUT IT ON' : 'YOU TAKE IT OFF';
       G.wardMsgT = 1.4;
       Snd.buy(); G.saveGame();
-    } else if (G.codes.admin || G.player.coins >= suit.cost) {
-      if (!G.codes.admin) G.player.coins -= suit.cost;
+    } else if (G.player.coins >= suit.cost) {
+      G.player.coins -= suit.cost;
       G.wardrobe.owned[key] = 1;
       G.profile.suit = key;
       applyProfile();
@@ -3032,7 +3037,7 @@ function drawWardrobe() {
       const owned = !!G.wardrobe.owned[key];
       const worn = G.profile.suit === key;
       const open = suitUnlocked(key);
-      const afford = open && (G.codes.admin || G.player.coins >= suit.cost);
+      const afford = open && G.player.coins >= suit.cost;
       const hot = G.wardSel === i;
       ctx.fillStyle = hot ? 'rgba(74,56,34,0.96)' : 'rgba(24,18,12,0.86)';
       ctx.fillRect(r.x, r.y, r.w, r.h);
@@ -3601,15 +3606,25 @@ function fitText(str, room) {
   while (str.length > 1 && textWidth(str + '.') > room) str = str.slice(0, -1);
   return str + '.';
 }
+/* The steps a purse is written in, the largest first.  A quintillion is
+   past the point where a number in this language still counts every unit,
+   so the mark on it is a reading rather than a tally. */
+const COIN_STEPS = [
+  [1e18, 'QUI'], [1e15, 'QUA'], [1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'K']
+];
 function shortCoin(n) {
   n = Math.round(n || 0);
-  if (n >= 1000000) {
-    const m = n / 1000000;
-    return (m >= 10 || m === Math.floor(m) ? Math.round(m) : Math.round(m * 10) / 10) + 'MIL';
-  }
-  if (n >= 1000) {
-    const k = n / 1000;
-    return (k >= 10 || k === Math.floor(k) ? Math.round(k) : Math.round(k * 10) / 10) + 'K';
+  if (n < 0) return '-' + shortCoin(-n);
+  for (let i = 0; i < COIN_STEPS.length; i++) {
+    const size = COIN_STEPS[i][0];
+    if (n < size) continue;
+    const v = n / size;
+    /* one figure after the point under ten, and none at all over it */
+    const out = v >= 10 || v === Math.floor(v) ? Math.round(v) : Math.round(v * 10) / 10;
+    /* A purse a hair under the next step rounds up onto a thousand of this
+       one.  A thousand thousand is a million, so it goes up a step. */
+    if (out >= 1000 && i > 0) return '1' + COIN_STEPS[i - 1][1];
+    return out + COIN_STEPS[i][1];
   }
   return String(n);
 }
@@ -5574,7 +5589,7 @@ function drawHUD() {
   }
   /* coins */
   ctx.drawImage(Art.item.coin[Math.floor(G.t / 0.09) % 8], 32, 17);
-  drawText(ctx, G.purse(), 46, 19, G.codes.admin ? '#ffeec0' : '#ffe98a', G.codes.admin ? 2 : 1, 'left', '#000000');
+  drawText(ctx, G.purse(), 46, 19, '#ffe98a', 1, 'left', '#000000');
   /* The rank, beside the purse: the mark of a prestige, the level, and a
      thin bar that fills as you fight. */
   {
@@ -5583,7 +5598,7 @@ function drawHUD() {
     ctx.fillStyle = 'rgba(10,8,18,0.55)'; ctx.fillRect(rx - 4, ry - 3, 46, 15);
     drawRank(ctx, rx, ry, 1, 'left');
     ctx.fillStyle = '#12101c'; ctx.fillRect(rx - 2, ry + 8, 42, 3);
-    ctx.fillStyle = rankColour(n);
+    ctx.fillStyle = rankBarColour(n);
     ctx.fillRect(rx - 2, ry + 8, Math.round(42 * G.levelFrac()), 3);
     /* what you just took, for a moment after you take it */
     if (G.xpGainT > 0) {
@@ -6289,7 +6304,7 @@ function drawFiles() {
         if (k < PRESTIGE_MAX) rx += drawText(ctx, '/', rx, r.y + 82, '#7a6448', 1, 'left');
       }
     } else {
-      drawText(ctx, 'COINS ' + (d.codes && d.codes.admin ? INF : (d.coins || 0)), r.x + 8, r.y + 82, '#e0d0aa', 1, 'left');
+      drawText(ctx, 'COINS ' + shortCoin(d.coins || 0), r.x + 8, r.y + 82, '#e0d0aa', 1, 'left');
     }
 
     const er = fileEraseRect(i);
@@ -6616,6 +6631,14 @@ function rankColour(n) {
   if (n >= 30) return '#ffd04a';
   return '#a9b3c9';
 }
+/* gold, silver and bronze: the three metals a level can wear */
+const RANK_METAL = { '#f0c93a': 1, '#cfd8e6': 1, '#c68e3f': 1 };
+/* The bar runs a little darker than the number over it wherever the level
+   wears a metal, so the two read apart instead of running together. */
+function rankBarColour(n) {
+  const col = rankColour(n);
+  return RANK_METAL[col] ? css(sh(C(col), -0.26)) : col;
+}
 /* the button that offers a prestige, top middle of the play screen */
 function prestigeBtnRect() { return { x: VW / 2 - 42, y: VH - 22, w: 84, h: 14 }; }
 /* What a parry sends back.  Everywhere it is worth what the blade is worth.
@@ -6710,7 +6733,9 @@ function buffBar(tier, level) {
 const XP_CODES = { XP10: 10, XP50: 50, XP100: 100 };
 /* and the codes that hand over rubies */
 const RUBY_CODES = { RUBY10: 10 };
-const PRESTIGE_MARK = ['', 'I', 'II', 'III'];
+/* The mark of a prestige, cut from bare lines rather than the letter I.
+   A line is the same width as the letter, so nothing beside it shifts. */
+const PRESTIGE_MARK = ['', '|', '||', '|||'];
 /* bronze reads brown, so it is never taken for the gold beside it */
 const PRESTIGE_COL = ['', '#b07536', '#cfd8e6', '#f0c93a'];
 const PRESTIGE_NAME = ['', 'BRONZE', 'SILVER', 'GOLD'];
@@ -7162,7 +7187,7 @@ function drawProfileFace() {
   drawRank(ctx, nr.x + 34, ry, 2, 'left');
   const bw = nr.w, by = ry + 20;
   ctx.fillStyle = '#12101c'; ctx.fillRect(nr.x, by, bw, 7);
-  ctx.fillStyle = rankColour(n);
+  ctx.fillStyle = rankBarColour(n);
   ctx.fillRect(nr.x + 1, by + 1, Math.round((bw - 2) * G.levelFrac()), 5);
   ctx.fillStyle = '#3a3350'; ctx.fillRect(nr.x, by, bw, 1);
   const left = n >= LEVEL_MAX ? 0 : XP_TABLE[n] - (G.xp | 0);
@@ -7181,7 +7206,7 @@ function drawProfileFace() {
   ctx.fillRect(pgr.x, pgr.y, pgr.w, pgr.h);
   ctx.fillStyle = can ? PRESTIGE_COL[Math.min(PRESTIGE_MAX, pr + 1)] : '#3a3350';
   ctx.fillRect(pgr.x, pgr.y, pgr.w, 1);
-  drawText(ctx, pr >= PRESTIGE_MAX ? 'PRESTIGE III' : ('PRESTIGE ' + PRESTIGE_MARK[pr + 1]),
+  drawText(ctx, 'PRESTIGE ' + PRESTIGE_MARK[pr >= PRESTIGE_MAX ? PRESTIGE_MAX : pr + 1],
            pgr.x + pgr.w / 2, pgr.y + 6, can ? '#ffeec0' : '#6d7994', 1, 'center');
   drawText(ctx, pr >= PRESTIGE_MAX ? 'ALL THREE MARKS ARE YOURS'
                                    : 'YOU KEEP ONLY YOUR LOOK',
@@ -7689,9 +7714,9 @@ function updateShop(dt) {
   if (it.key === 'tonic' && p.hp >= p.maxHp) { Snd.uiBad(); return; }
   /* a free-upgrade ticket covers anything but a relic */
   const useTicket = !it.relic && it.key !== 'tonic' && G.codes.tickets > 0 && !G.codes.admin;
-  if (!useTicket && !G.codes.admin && p.coins < cost) { Snd.uiBad(); G.shopWarn = 0.6; return; }
+  if (!useTicket && p.coins < cost) { Snd.uiBad(); G.shopWarn = 0.6; return; }
   if (useTicket) { G.codes.tickets--; G.banner('TICKET SPENT', 1.4); }
-  else if (!G.codes.admin) p.coins -= cost;
+  else p.coins -= cost;
   Snd.buy();
   if (it.key === 'heart') { p.up.heart = (p.up.heart || 0) + 1; p.maxHp += 2; p.hp = p.maxHp; }
   else if (it.key === 'tonic') p.heal(p.maxHp);
@@ -7727,7 +7752,7 @@ function drawShop() {
     const mx = shopMax(it);
     const maxed = lvl >= mx;
     const ticketable = !it.relic && it.key !== 'tonic' && G.codes.tickets > 0 && !G.codes.admin;
-    const afford = (G.codes.admin || ticketable || G.player.coins >= cost) && !maxed;
+    const afford = (ticketable || G.player.coins >= cost) && !maxed;
     const sel = G.shopSel === i;
     ctx.fillStyle = sel ? '#332c4c' : '#211c32';
     ctx.fillRect(r.x, r.y, r.w, r.h);

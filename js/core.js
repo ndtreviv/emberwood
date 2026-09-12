@@ -317,6 +317,10 @@ const GLYPHS = {
 /* the infinity mark, keyed by code point so this file stays plain ASCII */
 const INF = String.fromCharCode(0x221E);
 GLYPHS[INF] = '...../.#.#./#.#.#/#.#.#/#.#.#/.#.#./.....';
+/* The Roman numeral one, cut as a bare line rather than the letter I with
+   its serifs.  The mark of a prestige is built from it, and it keeps the
+   letter's own width, so nothing beside it shifts. */
+GLYPHS['|'] = '..#../..#../..#../..#../..#../..#../..#..';
 const GW = 5, GH = 7;
 const _glyphCache = new Map();
 function glyphRows(ch) {

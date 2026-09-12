@@ -384,6 +384,10 @@ Your level and your name are written in the same colour, and the colour climbs w
 The band from eighty to eighty nine was not given a colour in the brief, so it takes steel,
 which sits between bronze and silver.
 
+**The bar runs darker than the number over it** wherever the level wears a metal — bronze,
+silver or gold — so the two read apart instead of running together. The other four bands
+draw the bar in the same colour as the number.
+
 ### Prestige
 
 Pass level 100 and earn one more point of experience, and a **PRESTIGE** button appears on
@@ -406,6 +410,9 @@ that record, and the file percentage is counted from it.
 There are **three marks**, written as Roman numerals on a plate of their own metal and shown
 **before** the level. The plate has its corners cut away and a light along its crown, so it
 reads as a button rather than as a block of colour.
+
+The numeral is cut as a **bare line**, not the letter I with its serifs: `|`, `||`, `|||`.
+The line is the same width as the letter, so nothing beside it shifts.
 
 | Mark | Colour | What it opens |
 | --- | --- | --- |
@@ -823,8 +830,20 @@ The smithing table opens from either archipelago screen.
 **SHOP** on the chart, directly under **PROFILE**, opens it. Five pages, and the purse along
 the top shows all three currencies: **coins**, **rubies** and **shards**.
 
-Every price is written short: **1K** for a thousand, **250K** for a quarter of a million,
-**1MIL** for a million. Only the shard page writes its prices plain, in shards.
+Every coin count in the game is written short, on the shop pages and in the purse alike.
+Only the shard page writes its prices plain, in shards.
+
+| From | Mark | Written |
+| --- | --- | --- |
+| a thousand | **K** | 1K, 1.5K, 250K |
+| a million | **M** | 1M, 2.5M |
+| a billion | **B** | 1B, 4.2B |
+| a trillion | **T** | 1T |
+| a quadrillion | **QUA** | 1QUA |
+| a quintillion | **QUI** | 1QUI |
+
+One figure after the point under ten, and none at all over it. A purse a hair under the next
+step goes up rather than reading a thousand of this one: 999,999 is **1M**, not 1000K.
 
 | Page | What it sells |
 | --- | --- |
@@ -1050,7 +1069,11 @@ A few codes need no paper at all:
 | `XP50` | Hands you **fifty levels** |
 | `XP100` | Hands you **a hundred levels**, so you stand at the top |
 | `RUBY10` | Hands you **ten rubies**, which buy caskets |
-| `ADMIN` | Opens everything |
+| `ADMIN` | Opens everything, and pays **a trillion coins** |
+
+`ADMIN` once gave an endless purse, which spends nothing and shows nothing. It pays **one
+trillion** instead: the purse reads **1T**, it buys everything in the game many times over,
+and it goes down as it is spent like anybody else's.
 
 The three level codes may be used **again and again** until the hundredth level, and then
 they say so rather than doing nothing. `XP100` leaves you one point of experience past the
