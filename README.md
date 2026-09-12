@@ -108,6 +108,26 @@ sword swing — aims at the ring instead.
 It ignores fingers that land on a button, so you can hold the pad and drag the ring at
 the same time, and it resets to just ahead of you whenever you enter a realm.
 
+### The gilt frame
+
+A phone held sideways is wider than sixteen by nine, so a band of screen is left over at
+**each side** of the picture. A carved and gilded picture frame stands in those bands, and
+the game hangs in the frame. Only the sides carry a rail: the picture already fills the
+screen from top to bottom.
+
+Each rail is drawn once, forty eight of the game's own pixels across, and every band runs
+down it from the wall outward to the picture: an outer step, an **ogee** moulding, a row of
+**bead and reel**, a deep cove carrying a **laurel garland** with a berry between each pair
+of leaves, a band of **egg and dart**, an inner torus, a fillet, a bright line where the
+frame meets the picture, and the shadow the frame throws over the picture itself. Four
+**rosettes** sit down its length, the gilding is rubbed thin along the highest edges, and a
+sheen falls across the whole rail as a light would throw it.
+
+The rail keeps the picture's own scale, so **its pixels are the same size as the pixels in
+the game** and the carving never squashes. Where the band is too narrow to hold the whole
+rail, the plain outer step hangs off the screen edge and every carved band still shows. On a
+screen of sixteen by nine there is no band, and no rail is drawn. The rails take no taps.
+
 ### Landscape and fullscreen
 
 In mobile mode the canvas takes the whole screen in either orientation, the desktop hint

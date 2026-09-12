@@ -477,7 +477,13 @@ const Store = {
    ============================================================ */
 let cv, ctx;
 /* the page fills the screen on a phone; a desktop keeps its border */
-const Screen = { fullscreen: false, landscape: false, wantFull: false };
+const Screen = { fullscreen: false, landscape: false, wantFull: false,
+                 railL: null, railR: null };
+/* art.js hands the two gilt rails over as soon as it has drawn them */
+Screen.setRails = function (leftUrl, rightUrl) {
+  Screen.railL = leftUrl; Screen.railR = rightUrl;
+  if (Screen.resize) Screen.resize();
+};
 
 function screenIsLandscape() {
   const w = (window.visualViewport && window.visualViewport.width) || window.innerWidth;
@@ -529,8 +535,41 @@ function initDisplay() {
     const aw = winW - pad, ah = winH - pad - (full ? 0 : 18);
     let s = Math.min(aw / VW, ah / VH);
     if (!full) s = s >= 1 ? Math.max(1, Math.floor(s * 2) / 2) : s;   // half-step scaling
-    cv.style.width = Math.round(VW * s) + 'px';
-    cv.style.height = Math.round(VH * s) + 'px';
+    const cw = Math.round(VW * s), ch = Math.round(VH * s);
+    cv.style.width = cw + 'px';
+    cv.style.height = ch + 'px';
+    layRails(winW, winH, cw, ch, s, full);
+  }
+  /* ------------------------------------------------------------
+     THE GILT RAILS.  A phone in landscape is wider than sixteen
+     by nine, so a band is left over at each side of the picture.
+     A carved gilded frame stands in each band, flush against the
+     edge of the picture, and the wall behind it takes the rest.
+     The rails follow the picture's own scale, so their pixels are
+     the same size as the pixels in the game.
+     ------------------------------------------------------------ */
+  /* the rail is drawn forty eight of the game's own pixels across */
+  const RAIL_W = 48;
+  function layRails(winW, winH, cw, ch, s, full) {
+    const L = document.getElementById('railL'), R = document.getElementById('railR');
+    if (!L || !R) return;
+    const gutter = Math.floor((winW - cw) / 2);
+    /* they belong to a phone held sideways, and to nothing else */
+    const show = !!full && Screen.landscape && gutter >= 6 && !!Screen.railL;
+    L.style.display = R.style.display = show ? 'block' : 'none';
+    if (!show) return;
+    /* The rail always keeps the picture's own scale, so its pixels stay
+       square and the carving never squashes.  A band too narrow to hold it
+       clips the outer edge instead, and the outer edge is only the wall. */
+    const rw = Math.round(RAIL_W * s);
+    const top = Math.round((winH - ch) / 2);
+    L.style.top = R.style.top = top + 'px';
+    L.style.height = R.style.height = ch + 'px';
+    L.style.width = R.style.width = rw + 'px';
+    L.style.left = (gutter - rw) + 'px';
+    R.style.left = (gutter + cw) + 'px';
+    L.style.backgroundImage = 'url(' + Screen.railL + ')';
+    R.style.backgroundImage = 'url(' + Screen.railR + ')';
   }
   Screen.resize = resize;
   window.addEventListener('resize', resize);

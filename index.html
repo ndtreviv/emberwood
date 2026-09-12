@@ -32,6 +32,11 @@
     box-shadow:0 0 0 2px #1a1a28, 0 0 40px rgba(0,0,0,.8);
     cursor:none;
   }
+  /* the gilt rails that stand at each side of the picture on a phone held
+     sideways; core.js places them and art.js draws them */
+  .rail{position:fixed;display:none;pointer-events:none;z-index:2;
+    image-rendering:pixelated;image-rendering:crisp-edges;
+    background-repeat:no-repeat;background-size:100% 100%;}
   #boot{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
     background:#08070c;z-index:20;letter-spacing:2px;font-size:13px;color:#7f8aa3;}
   #boot.hide{display:none;}
@@ -41,6 +46,7 @@
 </head>
 <body>
 <div id="wrap"><canvas id="game" width="384" height="216"></canvas></div>
+<div id="railL" class="rail"></div><div id="railR" class="rail"></div>
 <div id="boot">FORGING THE EMBERWOOD…</div>
 <div id="hint">ARROWS move / UP jump / DOWN crouch &nbsp;·&nbsp; SPACE or CLICK sword &nbsp;·&nbsp; hold S to swim &nbsp;·&nbsp; D dash &nbsp;·&nbsp; F air pierce &nbsp;·&nbsp; CLICK a doorway to enter &nbsp;·&nbsp; ESC shop &nbsp;·&nbsp; map icon (top right) to leave a realm &nbsp;·&nbsp; M mute &nbsp;·&nbsp; keys are yours to change in SETTINGS</div>
 <script>

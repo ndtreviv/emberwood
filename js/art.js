@@ -5092,6 +5092,211 @@ function capeCell(design, along, across, n, w) {
    written back in bronze, silver or gold.  The realms a prestige
    run has taken are shown this way.
    ============================================================ */
+/* ============================================================
+   THE GILT RAIL.  A phone in landscape is wider than sixteen
+   by nine, so a band of the screen is left over at each side.
+   A carved and gilded picture frame stands in it, and the game
+   hangs in the frame.
+
+   The rail is drawn as the left hand side of a frame, sixty
+   four across by the height of the picture.  Every band runs
+   down it from the wall at the far left to the picture at the
+   right: the wall, the outer step, an ogee moulding, a row of
+   bead and reel, the broad cove with its acanthus leaves, a
+   band of egg and dart, the inner torus, the fillet, and the
+   shadow the frame throws on the picture itself.
+   ============================================================ */
+/* How wide the rail is, in the game's own pixels.  A phone of nineteen and
+   a half by nine leaves about forty one at each side of the picture, so the
+   rail loses only its outer step there and every carved band still shows. */
+const RAIL_VW = 48;
+const GILT = {
+  night: '#0a0810',                     /* the wall behind the frame */
+  shade: '#1a1208',
+  deep:  '#3a2606',
+  dark:  '#5c4008',
+  bronze:'#8a6418',
+  mid:   '#b8862f',
+  gold:  '#e0b040',
+  lit:   '#f6d878',
+  white: '#fffbe0'
+};
+/* the gold ramp, nought at the deepest shadow and one at the brightest */
+function giltAt(t) {
+  const stops = [GILT.shade, GILT.deep, GILT.dark, GILT.bronze, GILT.mid,
+                 GILT.gold, GILT.lit, GILT.white];
+  const u = clamp(t, 0, 1) * (stops.length - 1);
+  const i = Math.min(stops.length - 2, Math.floor(u));
+  return mixc(C(stops[i]), C(stops[i + 1]), u - i);
+}
+/* a repeating carved ornament reads as carving because the light on it
+   turns with the surface, so every band is drawn from its own curve */
+function railBand(g, x0, w, h, curve, rng, grain) {
+  for (let x = 0; x < w; x++) {
+    const u = w === 1 ? 0.5 : x / (w - 1);
+    for (let y = 0; y < h; y++) {
+      let t = curve(u, y);
+      /* the patina: gold is never flat, and old gilding wears thin */
+      if (grain) t += (rng.n() - 0.5) * grain;
+      g.set(x0 + x, y, giltAt(t));
+    }
+  }
+}
+function frameRailSprite(h) {
+  const H = Math.max(48, h | 0);
+  const W = RAIL_VW;
+  const g = new Pix(W, H);
+  const rng = new RNG(90210);
+
+  /* ---- the outer edge of the frame, against the wall ---- */
+  for (let y = 0; y < H; y++) g.set(0, y, C('#0a0804'));
+
+  /* ---- the outer step: a hard dark edge, then a lit top face ---- */
+  railBand(g, 1, 3, H, (u) => 0.05 + u * 0.30, rng, 0.05);
+  railBand(g, 4, 2, H, (u) => 0.62 - u * 0.14, rng, 0.06);
+
+  /* ---- the outer ogee: it rolls out to a crest, then back in ---- */
+  railBand(g, 6, 6, H, (u) => {
+    const crest = Math.sin(u * Math.PI);
+    return 0.18 + crest * 0.68 - u * 0.10;
+  }, rng, 0.07);
+
+  /* ---- bead and reel: a bead, then a spool, all the way down ---- */
+  const BEAD = 7;
+  railBand(g, 12, 5, H, (u, y) => {
+    const p = y % BEAD;
+    if (p < 5) {
+      /* a little sphere, bright up and to the left, dark under */
+      const dy = (p - 2) / 2.4, dx = (u - 0.38) * 2;
+      const r = Math.sqrt(dx * dx + dy * dy);
+      return clamp(0.88 - r * 0.62, 0.06, 1);
+    }
+    /* the reel between two beads sits in shadow */
+    return 0.14 + (1 - Math.abs(u - 0.5) * 2) * 0.16;
+  }, rng, 0.05);
+
+  /* ---- the cove: a deep hollow, carrying a laurel garland ---- */
+  const COVE_X = 17, COVE_W = 14;
+  railBand(g, COVE_X, COVE_W, H, (u) => 0.04 + Math.pow(u, 2.2) * 0.40, rng, 0.05);
+  /* the stem the leaves spring from */
+  for (let y = 0; y < H; y++) {
+    g.set(COVE_X + 6, y, giltAt(0.28 + rng.n() * 0.06));
+    g.set(COVE_X + 7, y, giltAt(0.52 + rng.n() * 0.06));
+  }
+  /* Laurel: one leaf to each side, turning down the rail, each lying over
+     the one below it.  A leaf is an oval laid at a slant: dark at its cut
+     edge, bright along the spine, with a shadow under the tip. */
+  const LEAF_STEP = 11;
+  for (let ly = -LEAF_STEP; ly < H + LEAF_STEP; ly += LEAF_STEP) {
+    for (const side of [-1, 1]) {
+      const cx = COVE_X + 6.5 + side * 3.2;
+      const cy = ly + (side < 0 ? 0 : LEAF_STEP / 2);
+      for (let dy = -6; dy <= 6; dy++) {
+        for (let dx = -4; dx <= 4; dx++) {
+          /* lay the oval over at a slant, tip down and away from the stem */
+          const rx = dx * 0.94 + dy * side * 0.30;
+          const ry = dy * 0.62 - dx * side * 0.26;
+          const d = (rx * rx) / 7.0 + (ry * ry) / 5.0;
+          if (d > 1) continue;
+          const px = Math.round(cx + dx), py = Math.round(cy + dy);
+          if (px < COVE_X || px >= COVE_X + COVE_W || py < 0 || py >= H) continue;
+          let t;
+          if (d > 0.78) t = 0.09;                      /* the cut edge */
+          else if (Math.abs(ry) < 0.6) t = 0.90;       /* the spine, catching light */
+          else t = 0.62 - d * 0.28 - Math.max(0, ry) * 0.08 + (rx < 0 ? 0.10 : 0);
+          g.set(px, py, giltAt(clamp(t + (rng.n() - 0.5) * 0.05, 0, 1)));
+        }
+      }
+      /* the shadow the leaf throws on the hollow under its tip */
+      for (let k = 0; k < 4; k++) {
+        const px = Math.round(cx + side * (2 + k * 0.7)), py = Math.round(cy + 4 + k * 0.5);
+        if (px < COVE_X || px >= COVE_X + COVE_W || py < 0 || py >= H) continue;
+        g.set(px, py, mixc(g.getc(px, py), C(GILT.shade), 0.45 - k * 0.08));
+      }
+    }
+    /* a berry where two leaves meet, as a laurel carries */
+    const by = ly + Math.round(LEAF_STEP * 0.75);
+    if (by >= 1 && by < H - 1) {
+      g.disc(COVE_X + 6.5, by, 1.6, giltAt(0.32));
+      g.disc(COVE_X + 6.5, by, 1.0, giltAt(0.76));
+      g.set(COVE_X + 6, by - 1, C(GILT.white));
+    }
+  }
+
+  /* ---- egg and dart ---- */
+  const EGG = 14;
+  railBand(g, 31, 7, H, (u, y) => {
+    const p = ((y % EGG) + EGG) % EGG;
+    if (p < 10) {
+      /* the egg: an oval, lit at the top left, cut round by its shell */
+      const dy = (p - 4.5) / 5.0, dx = (u - 0.44) * 2.0;
+      const r = Math.sqrt(dx * dx + dy * dy);
+      if (r > 1.0) return 0.02;                    /* cut clean away outside */
+      if (r > 0.80) return 0.62 - (r - 0.80) * 1.6;    /* the shell, catching light */
+      if (r > 0.70) return 0.04;                   /* the groove behind the shell */
+      const lit = 0.94 - r * 0.44 - Math.max(0, dy) * 0.30 + Math.max(0, -dx) * 0.10;
+      return clamp(lit, 0.10, 1);
+    }
+    /* the dart: a spearhead pointing down between two eggs */
+    const q = (p - 10) / 3.5;
+    const halfW = 0.40 * (1 - q);
+    const d = Math.abs(u - 0.5);
+    if (d > halfW) return 0.03;
+    return clamp(0.88 - (d / Math.max(0.05, halfW)) * 0.46, 0.1, 1);
+  }, rng, 0.04);
+
+  /* ---- the inner torus: a fat round bead running the whole length ---- */
+  railBand(g, 38, 5, H, (u) => {
+    const crest = Math.sin(u * Math.PI);
+    return 0.14 + Math.pow(crest, 0.8) * 0.80;
+  }, rng, 0.055);
+
+  /* ---- the fillet, and the bright line where it meets the picture ---- */
+  railBand(g, 43, 2, H, (u) => 0.32 + u * 0.44, rng, 0.05);
+  railBand(g, 45, 1, H, () => 0.97, rng, 0.02);
+
+  /* ---- the shadow the frame throws over the picture ---- */
+  for (let x = 46; x < W; x++)
+    for (let y = 0; y < H; y++)
+      g.set(x, y, mixc(C('#120c06'), C('#241708'), (x - 46) / Math.max(1, W - 47)));
+
+  /* ---- the rosettes: one at each end, and a pair along the length ---- */
+  const rose = (cy) => {
+    const cx = COVE_X + 6.5;
+    for (let k = 0; k < 8; k++) {
+      const a = k / 8 * TAU;
+      /* eight petals, each lit on the side the light comes from */
+      for (let r = 1.2; r <= 5.4; r += 0.4) {
+        const px = cx + Math.cos(a) * r, py = cy + Math.sin(a) * r;
+        const lit = 0.54 + Math.cos(a - 2.3) * 0.26 - (r / 5.4) * 0.22;
+        if (px >= COVE_X && px < COVE_X + COVE_W && py >= 0 && py < H)
+          g.set(px, py, giltAt(lit));
+      }
+    }
+    for (let r = 3.6; r >= 0; r -= 0.5)
+      g.ell(cx, cy, r, r, giltAt(0.30 + (3.6 - r) * 0.17));
+    g.set(cx - 1, cy - 1, C(GILT.white));
+  };
+  rose(10);
+  rose(H - 11);
+  rose(Math.round(H * 0.34));
+  rose(Math.round(H * 0.66));
+
+  /* ---- a sheen down the whole rail, as a light would throw it ---- */
+  for (let y = 0; y < H; y++) {
+    const sheen = Math.exp(-Math.pow((y / H - 0.26) * 3.4, 2)) * 0.11;
+    if (sheen < 0.01) continue;
+    for (let x = 1; x < 46; x++) g.set(x, y, mixc(g.getc(x, y), C(GILT.white), sheen));
+  }
+  /* ---- and the wear: the gilding is rubbed off the highest edges ---- */
+  for (let k = 0; k < H * 1.4; k++) {
+    const x = rng.i(6, 42), y = rng.i(0, H - 1);
+    const c = g.getc(x, y);
+    const lum = (c[0] * 0.3 + c[1] * 0.59 + c[2] * 0.11) / 255;
+    if (lum > 0.62) g.set(x, y, mixc(c, C('#8a7a5a'), rng.r(0.18, 0.5)));
+  }
+  return g;
+}
 const METAL = [null,
   /* bronze is brown, not gold: a deep burnt brown through to a warm tan.
      It is kept dark enough to stand off the sand of the chart. */
@@ -5365,6 +5570,17 @@ Art.steps = function () {
     Art.ui.codes = codesIcon().canvas();
     Art.ui.gear = gearIcon().canvas();
     Art.ui.doorBtn = doorBtnIcon().canvas();
+    /* The gilt rails for a phone held sideways.  They are drawn once, at the
+       height of the picture, and handed to the display to stand at its
+       sides.  The right hand rail is the left one turned about. */
+    {
+      const rail = frameRailSprite(VH);
+      Art.ui.railL = rail.canvas();
+      Art.ui.railR = rail.flipX().canvas();
+      try {
+        Screen.setRails(Art.ui.railL.toDataURL(), Art.ui.railR.toDataURL());
+      } catch (e) { console.error('[emberwood] rails', e); }
+    }
     Art.ui.swimBtn = swimBtnIcon().canvas();
     Art.ui.shop = shopIcon().canvas();
     Art.item.fireball = frames(4, (i, n) => fireballSprite(i, n));
