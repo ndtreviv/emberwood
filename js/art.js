@@ -92,7 +92,14 @@ const SUITS = {
   pSilver:  { name: 'SILVER REGALIA', realm: 'PRESTIGE II', cost: 40000, need: 2, shine: true,
               base: '#cfd8e6', dark: '#8a95a8', light: '#ffffff', legs: '#93a0b4', trim: '#eef4ff' },
   pGold:    { name: 'GOLD REGALIA', realm: 'PRESTIGE III', cost: 60000, need: 3, shine: true,
-              base: '#f0c93a', dark: '#a8862a', light: '#fff4c0', legs: '#a8862a', trim: '#fffbe0' }
+              base: '#f0c93a', dark: '#a8862a', light: '#fff4c0', legs: '#a8862a', trim: '#fffbe0' },
+  /* Two suits the weekly pass of the archipelago holds.  No purse and no
+     casket gives either one: you buy them with shards, in the week the
+     pass offers them, and not after it. */
+  tideward: { name: 'TIDEWARD', realm: 'THE WEEKLY PASS', cost: 0, pass: true, shine: true,
+              base: '#2f6fb0', dark: '#193f6e', light: '#8fd0e8', legs: '#1d3a58', trim: '#dff4ff' },
+  stormcut: { name: 'STORMCUT', realm: 'THE WEEKLY PASS', cost: 0, pass: true, shine: true,
+              base: '#4a3a6b', dark: '#261c3c', light: '#a86fe0', legs: '#2f2448', trim: '#f6d878' }
 };
 const SUIT_KEYS = Object.keys(SUITS);
 /* what the hero currently looks like; heroFrame reads this as it draws */
@@ -3561,6 +3568,258 @@ function sandBossFrame(variant, mode, i, n) {
   g.outline(GWP.out);
   return g;
 }
+/* ============================================================
+   THE ISLAND KEEPERS.  Five of them, one to each kind of
+   island.  No realm of the chapters holds any of these: the
+   archipelago keeps its own five, and they share no shape
+   with a guardian of the story.
+   ============================================================ */
+const IKP = {
+  ice: C('#8fd0e8'), iceD: C('#3f7f9e'), iceL: C('#dff4ff'),
+  rock: C('#2a2438'), rockL: C('#4a3a44'), rockD: C('#160f20'),
+  lava: C('#ff7a2a'), lavaL: C('#ffd06a'), lavaW: C('#fff4d6'),
+  sand: C('#e0b040'), sandD: C('#9c7418'), sandL: C('#f6d878'),
+  glass: C('#cfeaff'), glassD: C('#7fa8c8'),
+  ame: C('#a86fe0'), ameD: C('#5d3a86'), ameL: C('#e0c8ff'),
+  leaf: C('#4f7f4a'), leafL: C('#7ec44f'), bark: C('#6b4a28'),
+  gold: C('#f6d878'), goldD: C('#a4713f'), goldM: C('#e0b040'),
+  stone: C('#7b6338'), stoneD: C('#4a3a26'),
+  white: C('#ffffff'), eye: C('#fff4d6'), rage: C('#ff5a4a'), out: C('#120c1a')
+};
+/* one shard of a crystal, pointing away from a middle */
+function ikShard(g, x, y, a, len, wide, col) {
+  const dx = Math.cos(a), dy = Math.sin(a);
+  g.poly([[x + dx * len, y + dy * len],
+          [x - dy * wide, y + dx * wide],
+          [x - dx * wide, y - dy * wide],
+          [x + dy * wide, y - dx * wide]], col);
+}
+function isleKeeperFrame(variant, mode, i, n) {
+  const g = new Pix(96, 104);
+  const t = i / n * TAU;
+  const atk = mode === 'attack';
+  const cx = 48, foot = 100;
+  const bob = Math.sin(t) * (atk ? 3.2 : 2);
+  if (variant === 0) {
+    /* THE SHIVERING CROWN: a ring of ice that holds a cold star, and
+       nothing under it but a falling veil of frost. */
+    const my = foot - 46 - bob * 2;
+    /* the veil, hanging where legs would be */
+    for (let k = 0; k < 11; k++) {
+      const x = cx - 22 + k * 4.4;
+      const drop = foot - 6 - Math.abs(k - 5) * 3 + Math.sin(t + k) * 2;
+      g.thick(cx - 14 + k * 2.8, my + 12, x, drop, 3, k % 2 ? IKP.iceD : IKP.ice);
+    }
+    for (let k = 0; k < 9; k++) g.set(cx - 20 + k * 5, foot - 2 + (k % 3), IKP.iceL);
+    /* the outer ring, turning one way */
+    for (let k = 0; k < 12; k++) {
+      const a = t * 0.7 + k / 12 * TAU;
+      const x = cx + Math.cos(a) * 30, y = my + Math.sin(a) * 13;
+      ikShard(g, x, y, a + Math.PI / 2, 7, 2.4, k % 2 ? IKP.ice : IKP.iceD);
+    }
+    /* the inner ring, turning the other */
+    for (let k = 0; k < 8; k++) {
+      const a = -t * 1.1 + k / 8 * TAU;
+      const x = cx + Math.cos(a) * 18, y = my + Math.sin(a) * 20;
+      ikShard(g, x, y, a, 6, 2, IKP.iceL);
+    }
+    /* the cold star at the middle of it */
+    const pulse = atk ? 1.25 + Math.sin(t * 2) * 0.2 : 1;
+    g.disc(cx, my, 11 * pulse, IKP.iceD);
+    g.disc(cx, my, 8 * pulse, IKP.ice);
+    g.disc(cx, my, 5 * pulse, IKP.iceL);
+    g.disc(cx - 1, my - 1, 2.6 * pulse, IKP.white);
+    /* the two lights it watches with */
+    g.rect(cx - 6, my - 2, 4, 2, atk ? IKP.rage : IKP.iceD);
+    g.rect(cx + 3, my - 2, 4, 2, atk ? IKP.rage : IKP.iceD);
+    /* the crown above: five points, the middle one the tallest */
+    for (let k = -2; k <= 2; k++) {
+      const len = 20 - Math.abs(k) * 5;
+      ikShard(g, cx + k * 7, my - 12, -Math.PI / 2, len, 3, k ? IKP.ice : IKP.iceL);
+      g.set(cx + k * 7, my - 12 - len, IKP.white);
+    }
+  } else if (variant === 1) {
+    /* THE CINDER HEART: a giant of black glass, cracked open, with a
+       fire that never goes out held inside the chest. */
+    const hip = foot - 30 - bob;
+    for (const s2 of [-1, 1]) {
+      g.poly([[cx + s2 * 6, hip], [cx + s2 * 20, hip + 4], [cx + s2 * 22, foot], [cx + s2 * 5, foot]],
+             s2 < 0 ? IKP.rockD : IKP.rock);
+      g.rect(cx + s2 * 14 - 9, foot - 4, 19, 5, IKP.rockL);
+      for (let k = 0; k < 3; k++) g.line(cx + s2 * 8, hip + k * 6, cx + s2 * 20, hip + 3 + k * 7, IKP.lava);
+    }
+    /* the body: two slabs with a gap of fire between them */
+    g.poly([[cx - 24, hip - 36], [cx + 24, hip - 36], [cx + 19, hip + 3], [cx - 19, hip + 3]], IKP.rock);
+    g.poly([[cx - 22, hip - 34], [cx - 4, hip - 34], [cx - 9, hip + 1], [cx - 17, hip + 1]], IKP.rockL);
+    /* the heart, burning through the crack */
+    const beat = atk ? 1.3 + Math.sin(t * 3) * 0.25 : 1 + Math.sin(t) * 0.12;
+    g.disc(cx + 1, hip - 18, 12 * beat, IKP.lava);
+    g.disc(cx + 1, hip - 18, 8 * beat, IKP.lavaL);
+    g.disc(cx + 1, hip - 18, 4 * beat, IKP.lavaW);
+    for (let k = 0; k < 7; k++) {
+      const a = t + k / 7 * TAU;
+      g.line(cx + 1, hip - 18, cx + 1 + Math.cos(a) * 22, hip - 18 + Math.sin(a) * 17, IKP.lava);
+    }
+    /* the arms, ending in fists that drip */
+    const swing = atk ? clamp(i / Math.max(1, n - 1), 0, 1) : 0.3;
+    for (const s2 of [-1, 1]) {
+      const a = -1.1 + swing * 1.7 * s2;
+      const ex = cx + s2 * 28 + Math.cos(a) * 7, ey = hip - 24 + Math.sin(a) * 18;
+      g.thick(cx + s2 * 20, hip - 28, ex, ey, 10, s2 < 0 ? IKP.rockD : IKP.rock);
+      g.disc(ex, ey, 9, IKP.rockL);
+      g.disc(ex, ey + 2, 5, IKP.lava);
+      for (let k = 0; k < 3; k++) g.set(ex - 3 + k * 3, ey + 9 + (k % 2) * 3, IKP.lavaL);
+    }
+    /* the head: a wedge of glass with two coals in it */
+    const hy = hip - 46;
+    g.poly([[cx - 12, hy + 8], [cx - 9, hy - 10], [cx + 9, hy - 10], [cx + 12, hy + 8]], IKP.rock);
+    g.poly([[cx - 9, hy - 8], [cx - 2, hy - 8], [cx - 4, hy + 6], [cx - 9, hy + 4]], IKP.rockL);
+    g.rect(cx - 8, hy - 2, 6, 3, atk ? IKP.lavaW : IKP.lava);
+    g.rect(cx + 3, hy - 2, 6, 3, atk ? IKP.lavaW : IKP.lava);
+    for (let k = -1; k <= 1; k += 2)
+      g.poly([[cx + k * 8, hy - 9], [cx + k * 15, hy - 24], [cx + k * 3, hy - 10]], IKP.rockL);
+  } else if (variant === 2) {
+    /* THE GLASS SCARAB: a beetle the sand fused, with a sun disc set
+       between its horns and a shell you can half see through. */
+    const by = foot - 30 - bob;
+    /* six legs, three to a side, each one bent at a high knee */
+    for (const s2 of [-1, 1]) for (let k = 0; k < 3; k++) {
+      const step = Math.sin(t * 2 + k * 2 + (s2 > 0 ? Math.PI : 0)) * (atk ? 5 : 3);
+      const hx = cx + s2 * (14 + k * 2), hy = by + 2 + k * 3;
+      const kx = cx + s2 * (30 + k * 5), ky = by - 8 + k * 4;
+      const ex = cx + s2 * (26 + k * 8), ey = foot - 1 - k + step;
+      g.thick(hx, hy, kx, ky, 3, IKP.sandD);
+      g.thick(kx, ky, ex, ey, 2, IKP.sand);
+      g.set(ex, ey, IKP.stoneD);
+    }
+    /* the under body */
+    g.ell(cx, by + 6, 22, 11, IKP.sandD);
+    /* the shell, in two halves that open to strike */
+    const open = atk ? 0.9 + Math.sin(t) * 0.3 : 0.15;
+    for (const s2 of [-1, 1]) {
+      const lean = s2 * open * 9;
+      g.poly([[cx + lean, by - 20], [cx + s2 * 24 + lean, by - 8],
+              [cx + s2 * 20 + lean, by + 10], [cx + lean, by + 12]],
+             s2 < 0 ? IKP.glassD : IKP.glass);
+      for (let k = 0; k < 4; k++)
+        g.line(cx + lean, by - 16 + k * 5, cx + s2 * (20 - k * 2) + lean, by - 4 + k * 4, IKP.sandL);
+    }
+    /* the fire it carries under the shell, seen when the shell lifts */
+    if (atk) for (let k = 0; k < 6; k++) {
+      const a = t + k / 6 * TAU;
+      g.set(cx + Math.cos(a) * 8, by - 4 + Math.sin(a) * 6, IKP.sandL);
+    }
+    /* the head, low in front, under a pair of horns */
+    const hy = by - 18;
+    g.ell(cx, hy, 13, 7, IKP.sand);
+    g.ell(cx, hy - 1, 10, 4, IKP.sandL);
+    g.rect(cx - 8, hy - 1, 5, 3, atk ? IKP.rage : IKP.stoneD);
+    g.rect(cx + 4, hy - 1, 5, 3, atk ? IKP.rage : IKP.stoneD);
+    /* two horns, curving in, and the sun disc caught between the tips */
+    const sun = atk ? 9 : 7 + Math.sin(t) * 1;
+    const tipY = hy - 22;
+    for (const s2 of [-1, 1]) {
+      g.thick(cx + s2 * 9, hy - 4, cx + s2 * 15, hy - 13, 4, IKP.sandD);
+      g.thick(cx + s2 * 15, hy - 13, cx + s2 * (sun - 1), tipY, 3, IKP.sand);
+      g.set(cx + s2 * (sun - 1), tipY, IKP.sandL);
+    }
+    g.disc(cx, tipY, sun, IKP.sandD);
+    g.disc(cx, tipY, sun - 2, IKP.sandL);
+    g.disc(cx - 1, tipY - 1, 2, IKP.white);
+    for (let k = 0; k < 8; k++) {
+      const a = -t * 0.6 + k / 8 * TAU;
+      g.set(cx + Math.cos(a) * (sun + 3), tipY + Math.sin(a) * (sun + 3), IKP.sand);
+    }
+  } else if (variant === 3) {
+    /* THE AMETHYST BLOOM: a crystal flower that walks on its roots.
+       It shuts tight when it rests and opens when it strikes. */
+    const by = foot - 40 - bob;
+    /* the roots it stands on */
+    for (let k = 0; k < 7; k++) {
+      const s2 = k - 3;
+      const sway = Math.sin(t + k) * 3;
+      g.thick(cx + s2 * 3, by + 16, cx + s2 * 9 + sway, foot - 2, 4, k % 2 ? IKP.bark : IKP.leaf);
+      g.set(cx + s2 * 9 + sway, foot - 1, IKP.leafL);
+    }
+    /* the stem, and two leaves off it */
+    g.thick(cx, by + 18, cx, by - 4, 9, IKP.leaf);
+    g.thick(cx - 1, by + 16, cx - 1, by - 2, 4, IKP.leafL);
+    for (const s2 of [-1, 1]) {
+      const lift = atk ? -6 : Math.sin(t) * 3;
+      g.ell(cx + s2 * 16, by + 6 + lift, 11, 5, IKP.leaf);
+      g.ell(cx + s2 * 16, by + 5 + lift, 8, 3, IKP.leafL);
+    }
+    /* the petals: eight blades of amethyst about a bright seed */
+    const spread = atk ? 1 : 0.34;
+    for (let k = 0; k < 8; k++) {
+      const a = -Math.PI / 2 + (k - 3.5) / 8 * TAU * spread + Math.sin(t) * 0.05;
+      const len = 22 + (k % 2) * 5;
+      ikShard(g, cx, by - 10, a, len, 5, k % 2 ? IKP.ame : IKP.ameD);
+      ikShard(g, cx, by - 10, a, len - 7, 2.4, IKP.ameL);
+    }
+    const seed = atk ? 11 + Math.sin(t * 2) * 1.6 : 9;
+    g.disc(cx, by - 10, seed, IKP.ameD);
+    g.disc(cx, by - 10, seed - 3, IKP.ame);
+    g.disc(cx - 1, by - 12, 3, IKP.ameL);
+    /* the eye inside the seed */
+    g.ell(cx, by - 10, 4, 2.4, atk ? IKP.rage : IKP.white);
+    g.set(cx, by - 10, IKP.out);
+    /* the pollen it sheds */
+    for (let k = 0; k < 6; k++) {
+      const a = t * 1.3 + k / 6 * TAU;
+      g.set(cx + Math.cos(a) * 30, by - 10 + Math.sin(a) * 26, IKP.ameL);
+    }
+  } else {
+    /* THE GILDED ROC: a bird beaten out of gold plate, stood on a
+       stone perch, with a wing span that fills the room. */
+    const by = foot - 44 - bob;
+    /* the perch */
+    g.poly([[cx - 20, foot], [cx - 14, foot - 9], [cx + 15, foot - 9], [cx + 21, foot]], IKP.stone);
+    g.rect(cx - 13, foot - 9, 27, 2, IKP.stoneD);
+    /* the talons over the edge of it */
+    for (const s2 of [-1, 1]) for (let k = -1; k <= 1; k++) {
+      g.thick(cx + s2 * 8, by + 26, cx + s2 * 8 + k * 4, foot - 8, 2, IKP.goldD);
+      g.set(cx + s2 * 8 + k * 4, foot - 7, IKP.stoneD);
+    }
+    /* The wings.  It throws them wide to strike and folds them down its
+       back when it rests, so the two frames read at a glance. */
+    for (const s2 of [-1, 1]) {
+      const lift = atk ? -10 : Math.sin(t) * 2;
+      const sx = cx + s2 * 11, sy = by - 6 + lift;
+      for (let k = 0; k < 5; k++) {
+        const a = atk ? (-0.62 + k * 0.30) : (0.72 + k * 0.14);
+        const len = atk ? 28 + k * 6 : 20 + k * 4;
+        const ex = sx + Math.cos(a) * len * s2, ey = sy + Math.sin(a) * len * (atk ? 0.5 : 1);
+        g.thick(sx, sy, ex, ey, 5 - Math.floor(k / 2), k % 2 ? IKP.goldM : IKP.gold);
+        g.line(sx, sy, ex, ey, IKP.goldD);
+      }
+    }
+    /* the breast, plate over plate */
+    g.ell(cx, by + 10, 16, 18, IKP.goldM);
+    for (let k = 0; k < 5; k++) {
+      const w = 13 - k;
+      g.ell(cx, by + 1 + k * 6, w, 4, k % 2 ? IKP.gold : IKP.goldD);
+    }
+    /* the neck and the head */
+    const craneY = by - 18 + (atk ? -6 : 0);
+    g.thick(cx, by - 4, cx + 3, craneY, 9, IKP.goldM);
+    g.ell(cx + 4, craneY, 10, 8, IKP.gold);
+    g.ell(cx + 2, craneY - 2, 7, 5, IKP.goldD);
+    /* the stone beak, open to cry out */
+    const gape = atk ? 5 : 1;
+    g.poly([[cx + 10, craneY - 2], [cx + 26, craneY - 1], [cx + 10, craneY + 2]], IKP.stone);
+    g.poly([[cx + 10, craneY + 3], [cx + 24, craneY + 2 + gape], [cx + 10, craneY + 6]], IKP.stoneD);
+    g.rect(cx + 2, craneY - 3, 4, 3, atk ? IKP.rage : IKP.eye);
+    g.set(cx + 3, craneY - 2, IKP.out);
+    /* the crest of three plumes */
+    for (let k = -1; k <= 1; k++)
+      g.poly([[cx - 1 + k * 3, craneY - 6], [cx - 10 + k * 2, craneY - 20 - Math.abs(k) * -4], [cx + 3 + k * 3, craneY - 6]],
+             k === 0 ? IKP.gold : IKP.goldD);
+  }
+  g.shade({ top: 0.12, bot: 0.16, right: 0.08 });
+  g.outline(IKP.out);
+  return g;
+}
 /* ---------- the standing things of the two new chapters ---------- */
 function pineSprite(seed) {
   const g = new Pix(34, 62), r = new RNG(seed);
@@ -5050,6 +5309,18 @@ const CAPES = {
     name: 'GOLD MANTLE', short: 'GOLD', hint: 'PRESTIGE III', prestige: 3, shine: true,
     band: ['#fffbe0', '#fff4c0', '#f0c93a', '#d4ac2e', '#a8862a', '#7e641e', '#584614', '#3a2e0c'],
     edge: '#fffbe0'
+  },
+  /* Two mantles the weekly pass holds.  Shards buy them, and only in the
+     week the pass offers them. */
+  pass1: {
+    name: 'THE BROKEN SEA', short: 'SEA', hint: 'THE WEEKLY PASS', pass: true, shine: true,
+    band: ['#dff4ff', '#8fd0e8', '#5f9fe0', '#2f6fb0', '#1d4a80', '#143358', '#0e2340', '#081626'],
+    edge: '#dff4ff'
+  },
+  pass2: {
+    name: 'THE STORM CROWN', short: 'STORM', hint: 'THE WEEKLY PASS', pass: true, shine: true,
+    band: ['#fff4c0', '#f6d878', '#a86fe0', '#6d46a0', '#4a2f70', '#2f1c4a', '#1d1230', '#120b1e'],
+    edge: '#f6d878'
   }
 };
 /* the pattern across the cloth: which band a cell takes */
@@ -5801,6 +6072,18 @@ Art.steps = function () {
     Art.forgefiend = mk(forgefiendFrame);
     Art.ashTitan = mk(ashTitanFrame);
     Art.ifrit = mk(ifritFrame);
+  });
+  /* the five keepers of the archipelago, one to each kind of island */
+  push('THE ISLAND KEEPERS', () => {
+    const anch = { x: 48, y: 100 };
+    const mkk = (v) => ({ anchor: anch,
+                          idle: frames(4, (i, n) => isleKeeperFrame(v, 'idle', i, n)),
+                          attack: frames(4, (i, n) => isleKeeperFrame(v, 'attack', i, n)) });
+    Art.shiverCrown = mkk(0);
+    Art.cinderHeart = mkk(1);
+    Art.glassScarab = mkk(2);
+    Art.amethystBloom = mkk(3);
+    Art.gildedRoc = mkk(4);
   });
   push('THE WHITE SILENCE', () => {
     const anch = { x: 48, y: 100 };

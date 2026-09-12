@@ -326,8 +326,9 @@ hero turns on the spot beside the rows, so you see every change as you make it.
 
 ### Mantles
 
-Finish a chapter and you earn its mantle. Take a prestige and you earn another. All six hang
-on the same screen from the start, named and greyed, so you can see what is coming.
+Finish a chapter and you earn its mantle. Take a prestige and you earn another. Two more the
+weekly pass of the Archipelago sells for shards. All eight hang on the same screen from the
+start, named and greyed, so you can see what is coming.
 
 | Mantle | Earned by | Woven as |
 | --- | --- | --- |
@@ -337,6 +338,8 @@ on the same screen from the start, named and greyed, so you can see what is comi
 | **Bronze Mantle** | Prestige I | beaten bronze, with a light running down it |
 | **Silver Mantle** | Prestige II | beaten silver, with a light running down it |
 | **Gold Mantle** | Prestige III | beaten gold, with a light running down it |
+| **The Broken Sea** | The weekly pass | pale crests falling through deep blue to black |
+| **The Storm Crown** | The weekly pass | gold over violet, falling into a dark storm |
 
 A mantle is a rope of eleven short links hung from the shoulders, nineteen pixels of it, so
 the hem falls below the boots. It **trails behind a run**, **streams upward through a jump or
@@ -726,13 +729,13 @@ A pouch hangs at the top right of the screen, under the chart. Click it and it o
 It has **three slots**. Whatever sits in a slot works; whatever sits loose in the pouch does
 nothing. Click a find to wear it, click a slot to take it off.
 
-**There are a hundred and fifty artifacts**, and the pouch holds **up to five copies of
-each**. The list runs **eight to a page**, the best rank first, so a legendary never hides
+**There are a hundred and fifty six artifacts**, and the pouch holds **up to five copies
+of each**. The list runs **eight to a page**, the best rank first, so a legendary never hides
 behind a drawer of commons. The two arrows sit in the header beside the close button. A copy
 count sits as a badge on the corner of a picture: it turns red at five, the ceiling.
 
 Every artifact carries **its own face**, drawn at sixteen pixels square. Twenty are drawn by
-hand. The other hundred and thirty are built out of the shape and the colour their row
+hand. The other hundred and thirty six are built out of the shape and the colour their row
 names, with a band, a row of studs or a set stone taken from the key itself, so **no two of
 the hundred and fifty are the same picture**.
 
@@ -744,13 +747,14 @@ rule over a pouch row, on the plate behind a shop icon, and on the edge of a cas
 | Rank | Colour | How many | Where it comes from |
 | --- | --- | --- | --- |
 | **COMMON** | Grey | 54 | Caskets and chests |
-| **RARE** | Cyan | 55 | Caskets, chests, merges, and 11 of them in the shop at 20K |
-| **SUPER RARE** | Violet | 15 | Caskets, merges, and 5 of them in the shop at 50K |
-| **LEGENDARY** | Gold | 8 | Caskets, merges, and 3 of them in the shop at 100K |
-| **MYTHIC** | Rose | 18 | Merges, the King's Casket, and 14 cuts on the limited page |
+| **RARE** | Cyan | 57 | Caskets, chests, merges, 11 in the shop at 20K, and 2 in the pass |
+| **SUPER RARE** | Violet | 17 | Caskets, merges, 5 in the shop at 50K, and 2 in the pass |
+| **LEGENDARY** | Gold | 9 | Caskets, merges, 3 in the shop at 100K, and 1 in the pass |
+| **MYTHIC** | Rose | 19 | Merges, the King's Casket, 14 cuts on the limited page, 1 in the pass |
 
-**The shop sells twenty and no more.** Every one of the other hundred and thirty comes out
-of a casket, out of a chest at the head of a vault climb, or out of a merge.
+**The shop sells twenty and no more.** **Six belong to the weekly pass alone.** Every one of
+the other hundred and thirty comes out of a casket, out of a chest at the head of a vault
+climb, or out of a merge.
 
 The Pharaoh's Ring comes from the sphinx. The three mythical things of the waste come from
 its three guardians. Everything else comes out of a chest, a casket, a merge or the shop.
@@ -806,6 +810,11 @@ There are **fifty islands of each kind**, and each island holds **three levels a
 keeper** — a thousand levels in all. Nothing is cut until you sail there, so the islands
 cost nothing until you go.
 
+**An island run and a chapter run never mix.** Opening the chart or starting a realm closes
+the island run, no island is ever written down as the room a realm resumes in, and a realm's
+guardian pays in the realm's own coin — never in shards, and never by marking an island
+cleared.
+
 The fifty lie in one long chain. **Drag the row, roll the wheel, press the arrow keys, or
 tap the `<` and `>` buttons** to run along it. A bar under the row says how far out you are.
 The row opens on the next island you have yet to buy.
@@ -840,6 +849,82 @@ skip an island to reach the next one either.
 - An island's keeper pays **three to five whole shards** outright.
 
 The smithing table opens from either archipelago screen.
+
+### The five keepers
+
+**No island borrows a guardian from the chapters.** The archipelago keeps its own five, one
+to each kind of island, and none of the five shares a shape with anything the story raises:
+
+| Islands | Keeper | What it is |
+| --- | --- | --- |
+| The Frozen Isles | **The Shivering Crown** | A cold star inside two turning rings of ice, over a falling veil of frost |
+| The Burning Isles | **The Cinder Heart** | A giant of black glass, cracked open on a fire that never goes out |
+| The Sand Isles | **The Glass Scarab** | A beetle the sand fused, on six bent legs, with a sun disc held between its horns |
+| The Green Isles | **The Amethyst Bloom** | A crystal flower that walks on its roots and opens to strike |
+| The Mesa Isles | **The Gilded Roc** | A bird beaten out of gold plate, on a stone perch, with a stone beak |
+
+Each keeper wakes in one of **three aspects**, and the aspect comes from how far out the
+island lies: plain up to the seventeenth island, **RISEN** to the thirty fourth, **CROWNED**
+past it. The aspect decides what the keeper does, not what it looks like. The Shivering
+Crown plain throws a volley, a shock and a nova; risen, it calls ice wisps up as well;
+crowned, it takes you off the floor with them.
+
+### The weather of the week
+
+**Every week the sea throws something at two of the five kinds of island.** The week decides
+it on its own, so every file sees the same weather in the same week, and it turns over at
+the same hour for everybody.
+
+| Islands | What may fall |
+| --- | --- |
+| The Frozen Isles | A whiteout, an ice quake |
+| The Burning Isles | A volcano erupts, an ash fall |
+| The Sand Isles | A sandstorm, a sun flare |
+| The Green Isles | A crystal bloom, a deep flood |
+| The Mesa Isles | A rock slide, a thunderhead |
+
+A struck island **pays twice**: twice the shard parts, twice the whole shards its keeper
+leaves, and twice the coin. It is also worse to stand on — its creatures carry **half again
+the health** they otherwise would.
+
+The chart says where the weather is. The head of the pentagon reads the weather out, one
+kind at a time; a struck kind carries a ring of its own colour behind its picture and a
+**2X** on its plate; and the long row of fifty flies a red ribbon across the top. **The map
+of the chapters says it too**: stand on the archipelago page and the line at the foot names
+the weather rather than saying *click to sail*. The weather is drawn over the island itself
+as well — snow, ash, embers, driven sand, crystal dust, a standing sea or a sky that lights
+up.
+
+### The weekly pass
+
+**PASS** at the foot of either archipelago screen opens the card of the week. It holds **six
+rewards**, and **every row asks for the shards of a kind the week has struck** — so the
+weather says which islands to play, and the pass pays you for playing them.
+
+| Row | What it holds | It asks |
+| --- | --- | --- |
+| 1 | 25,000 coins | 6 shards |
+| 2 | 60 rubies | 10 shards |
+| 3 | A rare artifact of the pass | 14 shards |
+| 4 | A suit or a mantle of the pass | 22 shards |
+| 5 | A super rare artifact of the pass | 30 shards |
+| 6 | The legendary or the mythic of the pass | 52 shards |
+
+**The card is thrown away when the week turns over.** What you bought stays yours; what you
+left goes, and six new rows take its place.
+
+Nothing on the pass comes from anywhere else:
+
+- **Six artifacts** — Storm Glass and a Drift Mark (rare), the Salt Crown and the Wrack Ring
+  (super rare), the Kelp Sigil (legendary) and the Eye of the Storm (mythic). No casket rolls
+  one, no shop sells one, and no mythic cut is made from one. They **merge among themselves**:
+  two Storm Glass make a Salt Crown, two Salt Crowns make a Kelp Sigil, three Kelp Sigils make
+  the Eye of the Storm.
+- **Two suits** — **Tideward** and **Stormcut**, both of them shining.
+- **Two mantles** — **The Broken Sea** and **The Storm Crown**, both of them shining.
+
+The wardrobe and the profile both show the four cosmetics, locked, and say **THE WEEKLY
+PASS** against them, so you can see what a week may offer before it offers it.
 
 ## The item shop
 
@@ -897,9 +982,9 @@ own icon on a plate of its rank**, so the tier reads before the words do.
 | **SUPER RARE** | 50K | 5 |
 | **RARE** | 20K | 11 |
 
-The shop sells **twenty artifacts and no more**. The other hundred and thirty come out of
-caskets, chests and merges. The shop sells **up to five of each**, the same ceiling the
-pouch holds.
+The shop sells **twenty artifacts and no more**. **Six more belong to the weekly pass of the
+Archipelago** and nothing else gives them. The other hundred and thirty come out of caskets,
+chests and merges. The shop sells **up to five of each**, the same ceiling the pouch holds.
 
 ### Rubies and caskets
 
@@ -989,8 +1074,9 @@ running along the ground.
 ## The wardrobe
 
 **THE WARDROBE** on the profile page opens a shop of clothes, one suit cut to the pattern of
-each of the fifteen realms, and three more that only a prestige opens. That page is the only
-way in. They cost coins, and the coins come out of the file you are playing.
+each of the fifteen realms, three more that only a prestige opens, and two that only the
+weekly pass of the Archipelago sells. That page is the only way in. They cost coins, and the
+coins come out of the file you are playing.
 
 A suit dresses the whole body — shirt, legs and trim — and replaces the plain shirt colour.
 Click a suit you own to wear it, and click it again to take it off.
@@ -1015,15 +1101,18 @@ Click a suit you own to wear it, and click it again to take it off.
 | Prestige I | Bronze Regalia | 20,000 |
 | Prestige II | Silver Regalia | 40,000 |
 | Prestige III | Gold Regalia | 60,000 |
+| The weekly pass | Tideward | shards |
+| The weekly pass | Stormcut | shards |
 
-The last three shine, and no purse buys one before its mark is yours.
+The last five shine. **No purse buys any of them**: a prestige regalia waits on its mark,
+and the two of the pass are paid for in shards, in the week the pass offers them.
 
 Enemies get sturdier and drop far more with each chapter, so the deeper shop stock stays
 within reach. Aether City pays a coin more per kill than anywhere else.
 
 Guardians have three times the health they once did — except the Ember Wyrm, the first
-fight anyone has, which is left at its original strength, and Ifrit, the last of them,
-who has ten times. While a guardian is on its feet the air pierce is
+fight anyone has, which stands **twice** what it first did rather than three times, and
+Ifrit, the last of them, who has ten times. While a guardian is on its feet the air pierce is
 rationed to one dive a second; a bar under the dash meter shows when it is back.
 
 Dying costs you a fifth of your coins, and each realm claims them in its own words.
@@ -1209,7 +1298,7 @@ Sprites are drawn into a `Pix` buffer with primitives (`rect`, `disc`, `poly`,
 - `shade()` lights the top edge of every form and darkens the underside.
 - `outline()` traces a dark line around the silhouette.
 
-The hundred and thirty artifacts the shop does not sell get their faces the same way, but
+The hundred and thirty six artifacts the shop does not sell get their faces the same way, but
 from data rather than by hand. Each row of the table names a **shape** — a coin, a ring, a gem, a
 vial, a feather, a blade, a rune, an orb, a bead, a plate, a shell, a star, a fang, a horn,
 a key, a knot, a leaf, a scroll, an eye, a bell, a crown, a claw, an arrowhead, an ankh — and

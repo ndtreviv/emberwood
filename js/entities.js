@@ -3245,19 +3245,73 @@ const GUARDIANS = {
     proj: { col: '#ffd06a', col2: '#8a2410', dmg: 4, grav: 0, home: 1.2, fiery: true, snd: 'fireball' } }
 };
 
-/* The keeper of an island.  It borrows the shape of a guardian whose realm
-   matches the island, and it hardens the further out the island lies. */
-const ISLE_BOSS_ART = {
-  snow: ['rimeColossus', 'frostWyrm', 'paleMonarch'],
-  fire: ['forgefiend', 'ashTitan', 'ifrit'],
-  desert: ['duneMaw', 'sphinx', 'pharaoh'],
-  forest: ['tideWarden', 'kraken', 'leviathan'],
-  mesa: ['ashTitan', 'duneMaw', 'rimeColossus']
+/* ============================================================
+   THE FIVE KEEPERS OF THE ARCHIPELAGO
+   An island keeps its own guardian.  No chapter raises any of
+   these five, and none of the five shares a shape with a
+   guardian of the story.
+   Each keeper wakes in one of three aspects.  The aspect comes
+   from how far out the island lies, and it decides what the
+   keeper does, not what it looks like.
+   ============================================================ */
+const ISLE_KEEPERS = {
+  shiverCrown: { art: 'shiverCrown', title: 'THE SHIVERING CROWN', hp: 300, scale: 1.5,
+    attacks: ['volley', 'shock', 'nova'], shots: 9, spread: 2.2, minion: 'IceWisp', brood: 3,
+    strikeCol: '#dff4ff', touch: 5,
+    aspects: [['volley', 'shock', 'nova'],
+              ['nova', 'volley', 'summon', 'shock'],
+              ['nova', 'volley', 'summon', 'grasp', 'shock']],
+    graspDmg: 6,
+    proj: { col: '#dff4ff', col2: '#3f7f9e', dmg: 4, grav: 0, home: 0.9, snd: 'fire' } },
+  cinderHeart: { art: 'cinderHeart', title: 'THE CINDER HEART', hp: 340, scale: 1.6,
+    attacks: ['slam', 'aimed', 'quake'], shots: 7, spread: 1.6, minion: 'Emberling', brood: 3,
+    strikeCol: '#ff7a2a', touch: 5,
+    aspects: [['slam', 'aimed', 'quake'],
+              ['slam', 'quake', 'brand', 'aimed'],
+              ['quake', 'brand', 'slam', 'summon', 'volley']],
+    graspDmg: 7,
+    proj: { col: '#ff7a2a', col2: '#8a2410', dmg: 5, grav: 0.04, fiery: true, snd: 'fireball' } },
+  glassScarab: { art: 'glassScarab', title: 'THE GLASS SCARAB', hp: 320, scale: 1.5,
+    attacks: ['charge', 'volley', 'quake'], shots: 11, spread: 2.4, minion: 'Scarab', brood: 4,
+    strikeCol: '#f6d878', touch: 5,
+    aspects: [['charge', 'volley', 'quake'],
+              ['charge', 'spear', 'volley', 'summon'],
+              ['spear', 'charge', 'summon', 'nova', 'quake']],
+    proj: { col: '#f6d878', col2: '#9c7418', dmg: 5, grav: 0.03, snd: 'fire' } },
+  amethystBloom: { art: 'amethystBloom', title: 'THE AMETHYST BLOOM', hp: 310, scale: 1.5,
+    attacks: ['nova', 'volley', 'aimed'], shots: 13, spread: 2.8, minion: 'Sporeling', brood: 4,
+    strikeCol: '#a86fe0', touch: 5,
+    aspects: [['nova', 'volley', 'aimed'],
+              ['nova', 'summon', 'volley', 'grasp'],
+              ['nova', 'summon', 'grasp', 'spear', 'volley']],
+    graspDmg: 7,
+    proj: { col: '#a86fe0', col2: '#5d3a86', dmg: 5, grav: 0, home: 1.1, snd: 'gulp' } },
+  gildedRoc: { art: 'gildedRoc', title: 'THE GILDED ROC', hp: 330, scale: 1.5,
+    attacks: ['charge', 'aimed', 'strike'], shots: 9, spread: 2.0, minion: 'Soldier', brood: 3,
+    strikeCol: '#f6d878', touch: 6,
+    aspects: [['charge', 'aimed', 'strike'],
+              ['charge', 'strike', 'volley', 'nova'],
+              ['strike', 'charge', 'nova', 'volley', 'summon']],
+    proj: { col: '#fff4c0', col2: '#a4713f', dmg: 5, grav: 0, home: 1.3, snd: 'fire' } }
 };
-/* the three shapes a keeper may take are spread over the fifty islands */
-function isleBossKey(kind, tier) {
-  const list = ISLE_BOSS_ART[kind] || ISLE_BOSS_ART.forest;
-  return list[Math.min(list.length - 1, Math.floor(tier / 17))];
+for (const k in ISLE_KEEPERS) GUARDIANS[k] = ISLE_KEEPERS[k];
+/* which of the five keeps an island of this kind */
+const ISLE_KEEPER_OF = {
+  snow: 'shiverCrown', fire: 'cinderHeart', desert: 'glassScarab',
+  forest: 'amethystBloom', mesa: 'gildedRoc'
+};
+/* the three aspects, and what each one adds to the keeper's name */
+const ISLE_ASPECT_NAME = ['', ', RISEN', ', CROWNED'];
+function isleBossKey(kind) { return ISLE_KEEPER_OF[kind] || ISLE_KEEPER_OF.forest; }
+/* the aspect is spread over the fifty islands of a spoke */
+function isleAspect(tier) { return Math.min(2, Math.floor((tier | 0) / 17)); }
+function isleBossTitle(kind, tier) {
+  const cfg = ISLE_KEEPERS[isleBossKey(kind)];
+  return cfg.title + ISLE_ASPECT_NAME[isleAspect(tier)];
+}
+function isleBossAttacks(kind, tier) {
+  const cfg = ISLE_KEEPERS[isleBossKey(kind)];
+  return cfg.aspects[isleAspect(tier)];
 }
 class Guardian extends Enemy {
   /* `extra` lets the room that raises a guardian ask for more than the table
@@ -3268,6 +3322,15 @@ class Guardian extends Enemy {
        is folded in once, here, so every blow it lands carries it. */
     const mul = (cfg.dmgMul || 1) * ((extra && extra.dmgMul) || 1);
     const phases = (extra && extra.phases) || cfg.phases;
+    /* A room may also give a guardian its own habits and its own name.  An
+       island keeper wakes in one of three aspects, and the aspect decides
+       what it does. */
+    if (extra && (extra.attacks || extra.title)) {
+      cfg = Object.assign({}, cfg, {
+        attacks: extra.attacks || cfg.attacks,
+        title: extra.title || cfg.title
+      });
+    }
     /* A guardian may also carry a cap: the most any one blow of its may
        take, whatever the rest of its numbers say. */
     const cap = cfg.maxHit || 0;
@@ -3625,7 +3688,7 @@ class Guardian extends Enemy {
         if (this.shotT <= 0 && this.brood < cfg.brood + this.phase - 1) {
           this.shotT = 0.5; this.brood++;
           const Ctor = { Jelly: Jelly, Emberling: Emberling, IceWisp: IceWisp,
-                         Scarab: Scarab, Soldier: Soldier }[cfg.minion];
+                         Scarab: Scarab, Soldier: Soldier, Sporeling: Sporeling }[cfg.minion];
           const m = new Ctor(this.x + rr(-40, 40), this.y - 40);
           m.vy = -3;
           G.enemies.push(m);
@@ -5056,9 +5119,11 @@ class MotherSpore extends Enemy {
 /* ---------- the dragon ---------- */
 class Dragon extends Enemy {
   constructor(x, y) {
-    super({ x: x, y: y, w: 64, h: 52, hp: 48, damage: 2, coinDrop: 0, blood: '#9b3230' });
+    /* The Ember Wyrm stands twice what she did.  Her turns and her mending
+       are read off fractions of her whole health, so both follow. */
+    super({ x: x, y: y, w: 64, h: 52, hp: 96, damage: 2, coinDrop: 0, blood: '#9b3230' });
     this.kbScale = 0;                 /* a guardian holds its ground */
-    this.maxHp = 48;
+    this.maxHp = 96;
     this.face = -1; this.state = 'sleep'; this.stateT = 0;
     this.homeY = y; this.flyY = y - 70; this.phase = 1;
     this.awake = false; this.deathT = 0; this.dying = false;

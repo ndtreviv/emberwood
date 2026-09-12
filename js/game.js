@@ -129,7 +129,8 @@ function packSave() {
     archipelago: G.archipelago ? {
       open: G.archipelago.open, type: G.archipelago.type,
       shards: G.archipelago.shards, parts: G.archipelago.parts,
-      opened: G.archipelago.opened, cleared: G.archipelago.cleared
+      opened: G.archipelago.opened, cleared: G.archipelago.cleared,
+      pass: G.archipelago.pass || null
     } : null,
     artifacts: { owned: Object.assign({}, (G.artifacts && G.artifacts.owned) || {}),
                  slots: ((G.artifacts && G.artifacts.slots) || [null, null, null]).slice() },
@@ -144,6 +145,14 @@ G.saveGame = function () {
       G.state === 'archipelago' || G.state === 'files') return;
   if (!G.player) return;
   saveLevelState();
+  writeSlot(G.slot, packSave());
+  Store.write(SLOT_KEY, G.slot);
+};
+/* The chart, the wardrobe and the pass cannot use the ordinary save: that
+   one writes down the room the hero stands in, and those screens have no
+   room.  This one writes everything else and leaves the room alone. */
+G.saveNoRoom = function () {
+  if (!G.player) return;
   writeSlot(G.slot, packSave());
   Store.write(SLOT_KEY, G.slot);
 };
@@ -167,6 +176,8 @@ function applySave(d) {
   G.levelState = {};
   for (const k in (d.levelState || {})) {
     const st = d.levelState[k];
+    /* an older file may hold an island against a chapter level; drop it */
+    if (!st || st.roomId === 'isle') continue;
     G.levelState[k] = { roomId: st.roomId, x: st.x, y: st.y, hp: st.hp,
                         roomFlags: unpackFlags(st.roomFlags), flags: st.flags || {} };
   }
@@ -219,6 +230,12 @@ function applySave(d) {
         a.opened[t.key] = clamp((sv.opened && sv.opened[t.key]) || 1, 1, ISLES_PER_TYPE);
       }
       a.cleared = sv.cleared || {};
+      /* A card of the pass belongs to the week that made it.  An older
+         week's card is thrown away, so a new week starts with six rows
+         still to buy. */
+      if (sv.pass && sv.pass.week === storeWeekKey()) {
+        a.pass = { week: sv.pass.week, bought: sv.pass.bought || {} };
+      }
     }
     G.archipelago = a;
   }
@@ -475,6 +492,8 @@ G.spawnCoin = function (x, y, vx, vy, still, si, value) {
    heaps of five, so the later realms do not bury the room in single coins. */
 const COIN_LOOSE_MAX = 9, COIN_PER_HEAP = 5, COIN_MAX_OBJECTS = 22;
 G.payOut = function (n, x, y) {
+  /* an island under the weather of the week pays twice */
+  if (G.isleRun && G.disasterMul) n *= G.disasterMul(G.isleRun.key);
   n = Math.max(1, Math.round(n));
   if (n <= COIN_LOOSE_MAX) {
     for (let i = 0; i < n; i++) G.spawnCoin(x + rr(-4, 4), y, rr(-2.2, 2.2), rr(-3.4, -1.4));
@@ -678,6 +697,8 @@ G.enterRoom = function (id, spawn) {
     const f = room.isle.index / Math.max(1, ISLES_PER_TYPE - 1);
     hpScale = (3 + f * 21) * (1 + room.isle.level * 0.12);
     dmgScale = 1.5 + f * 2.5;
+    /* the weather of the week makes an island worse as well as richer */
+    if (G.disasterOf && G.disasterOf(room.isle.type)) hpScale *= DISASTER_HP;
   } else {
     /* a buffed run breeds harder creatures than the plain one did */
     const bt = clamp(G.buffTier | 0, 0, PRESTIGE_MAX);
@@ -770,11 +791,13 @@ G.enterRoom = function (id, spawn) {
            stands through five phases rather than three. */
         const tier = sp.tier | 0;
         const f = tier / Math.max(1, ISLES_PER_TYPE - 1);
-        const gd = new Guardian(sp.x, sp.y, isleBossKey(sp.kind, tier),
-                                { dmgMul: 1.5 + f * 2.5, phases: tier >= 25 ? 5 : 4 });
-        /* A keeper's health comes from the tier alone, not from the shape it
-           borrows: the shapes carry very different numbers, and the fight
-           must take the same long time whichever one turns up.  That is
+        const gd = new Guardian(sp.x, sp.y, isleBossKey(sp.kind),
+                                { dmgMul: 1.5 + f * 2.5, phases: tier >= 25 ? 5 : 4,
+                                  attacks: isleBossAttacks(sp.kind, tier),
+                                  title: isleBossTitle(sp.kind, tier) });
+        /* A keeper's health comes from the tier alone, not from its own
+           table: the five keepers carry very different numbers, and the
+           fight must take the same long time whichever one it is.  That is
            about a minute and a half at the first island and nine at the
            fiftieth, for a player who cuts well. */
         gd.hp = Math.round(3600 + tier * 440); gd.maxHp = gd.hp;
@@ -1179,6 +1202,11 @@ G.finishTutorial = function () {
   G.trans = { t: 0, phase: 'out', dur: 0.42, toProfile: true };
 };
 function openMap(fresh) {
+  /* The chart belongs to the chapters.  An island run left open behind it
+     would turn a chapter into an island: a death would throw the hero back
+     to the island, and the guardian at the end of a realm would pay in
+     shards and mark the island cleared. */
+  G.isleRun = null;
   G.state = 'map'; G.mapT = 0; G.mapSel = -1;
   G.shopOpen = false;
   G.particles.length = 0;
@@ -1197,6 +1225,9 @@ function saveLevelState() {
   if (!G.room || !G.player || G.player.dead) return;
   if (G.roomId === 'tutorial') return;      /* the tutorial is never resumed */
   if (G.roomId === 'gullet') return;        /* nor the inside of a Leviathan */
+  /* An island is not a room of any chapter.  Writing one here put the hero
+     back on the island the next time the chapter level began. */
+  if (G.roomId === 'isle' || G.room.isle) return;
   G.levelState[G.level] = {
     roomId: G.roomId,
     x: G.player.cx, y: G.player.y + G.player.h,
@@ -1220,6 +1251,8 @@ G.checkRelics = function () {
 G.startLevel = function (i) {
   const lv = World.LEVELS[i];
   if (!lv || i >= G.unlocked) { Snd.uiBad(); return; }
+  /* and no chapter level ever begins with an island run still open */
+  G.isleRun = null;
   G.level = i;
   G.player.dead = false;
   G.state = 'play';
@@ -1874,6 +1907,9 @@ G.enterIsle = function (typeKey, index, level) {
   G.player.hp = G.player.maxHp;
   G.player.dead = false;
   G.enterRoom('isle', null);
+  /* the weather of the week, said out loud on the way in */
+  const dis = G.disasterOf(typeKey);
+  if (dis) G.banner(dis.name + '   DOUBLE SHARDS', 3.2);
 };
 G.isleNext = function () {
   const w = G.isleRun;
@@ -1923,7 +1959,7 @@ function isleTypeAt(k) { return ISLE_TYPES[clamp(k | 0, 0, ISLE_TYPES.length - 1
 function newArchipelago() {
   const a = { open: false, type: 0, page: 0, isle: -1,
               scroll: 0, scrollTo: 0, drag: null,
-              shards: {}, parts: {}, opened: {}, cleared: {} };
+              shards: {}, parts: {}, opened: {}, cleared: {}, pass: null };
   for (const t of ISLE_TYPES) { a.shards[t.shard] = 0; a.parts[t.shard] = 0; a.opened[t.key] = 1; }
   return a;
 }
@@ -1937,6 +1973,7 @@ G.partsOf = function (shard) { return (archi().parts[shard] | 0); };
 G.dropShardParts = function (n) {
   const w = G.isleRun;
   if (!w) return;
+  n = Math.round(n * G.disasterMul(w.key));
   const a = archi();
   a.parts[w.shard] = (a.parts[w.shard] | 0) + n;
   G.texts.push(new FloatText(G.player.cx, G.player.cy - 16,
@@ -1945,6 +1982,7 @@ G.dropShardParts = function (n) {
 G.giveShards = function (n) {
   const w = G.isleRun;
   if (!w) return;
+  n = Math.round(n * G.disasterMul(w.key));
   const a = archi();
   a.shards[w.shard] = (a.shards[w.shard] | 0) + n;
   G.texts.push(new FloatText(G.player.cx, G.player.cy - 24,
@@ -1965,7 +2003,7 @@ G.forgeShard = function (shard, n) {
   a.shards[shard] = (a.shards[shard] | 0) + n;
   G.spendCoins(n * FORGE_COST);
   Snd.buy(); G.flash(0.2);
-  G.saveGame();
+  G.saveNoRoom();
   return n;
 };
 /* Buying the next island out along a spoke.  Nothing opens unless the
@@ -1983,15 +2021,182 @@ G.buyIsle = function (t, idx) {
   a.opened[t.key] = idx + 1;
   G.archMsg = 'THE ISLAND OPENS'; G.archMsgT = 2;
   Snd.unlock(); G.flash(0.35);
-  G.saveGame();
+  G.saveNoRoom();
   return true;
 };
 function isleOpened(typeKey) { return archi().opened[typeKey] | 0; }
 function isleCleared(typeKey, i) { return !!archi().cleared[typeKey + ':' + i]; }
 
+/* ============================================================
+   THE WEATHER OF THE WEEK
+   Every week the sea throws something at two of the five kinds
+   of island.  A struck island pays twice the shards, twice the
+   parts and twice the coin, and it breeds creatures that stand
+   a half again.  The week decides the weather on its own, so
+   every file sees the same weather in the same week.
+   ============================================================ */
+const WEEK_MS = 604800000;
+function storeWeekKey() { return Math.floor(Date.now() / WEEK_MS); }
+/* how long the week has left to run, in seconds */
+function weekLeft() { return (WEEK_MS - (Date.now() % WEEK_MS)) / 1000; }
+function weekLeftText() {
+  const s = weekLeft();
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600);
+  if (d > 0) return d + 'D ' + h + 'H';
+  return h + 'H ' + Math.floor((s % 3600) / 60) + 'M';
+}
+/* what may fall on each kind of island */
+const DISASTERS = {
+  snow: [{ key: 'whiteout', name: 'A WHITEOUT', blurb: 'THE SNOW BLINDS THE ISLES', col: '#dff4ff' },
+         { key: 'icequake', name: 'AN ICE QUAKE', blurb: 'THE FLOES BREAK APART', col: '#8fd0e8' }],
+  fire: [{ key: 'volcano', name: 'A VOLCANO ERUPTS', blurb: 'THE MOUNTAIN THROWS FIRE', col: '#ff7a2a' },
+         { key: 'ashfall', name: 'AN ASH FALL', blurb: 'THE SKY COMES DOWN GREY', col: '#c08a5a' }],
+  desert: [{ key: 'sandstorm', name: 'A SANDSTORM', blurb: 'THE DUNES GET UP AND WALK', col: '#e0b040' },
+           { key: 'sunflare', name: 'A SUN FLARE', blurb: 'THE SAND TURNS TO GLASS', col: '#f6d878' }],
+  forest: [{ key: 'bloom', name: 'A CRYSTAL BLOOM', blurb: 'THE WOOD GROWS TEETH', col: '#a86fe0' },
+           { key: 'flood', name: 'A DEEP FLOOD', blurb: 'THE SEA TAKES THE ROOTS', col: '#5f9fe0' }],
+  mesa: [{ key: 'rockslide', name: 'A ROCK SLIDE', blurb: 'THE MESA FALLS IN ON ITSELF', col: '#a4713f' },
+         { key: 'thunder', name: 'A THUNDERHEAD', blurb: 'THE STORM SITS ON THE ROCK', col: '#fff4c0' }]
+};
+const DISASTER_MUL = 2;        /* a struck island pays twice */
+const DISASTER_HP = 1.5;       /* and breeds creatures that stand a half again */
+const DISASTER_COUNT = 2;      /* two of the five kinds are struck each week */
+let DIS_CACHE = null;
+/* which kinds the week strikes, and with what */
+function weekDisasters(week) {
+  if (DIS_CACHE && DIS_CACHE.week === week) return DIS_CACHE.map;
+  const rng = new RNG(week * 104729 + 7);
+  const order = ISLE_TYPES.map((t, i) => i);
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = rng.i(0, i), s = order[i];
+    order[i] = order[j]; order[j] = s;
+  }
+  const map = {};
+  for (let k = 0; k < DISASTER_COUNT; k++) {
+    const t = ISLE_TYPES[order[k]];
+    map[t.key] = rng.pick(DISASTERS[t.key]);
+  }
+  DIS_CACHE = { week: week, map: map };
+  return map;
+}
+G.disasters = function () { return weekDisasters(storeWeekKey()); };
+G.disasterOf = function (typeKey) { return G.disasters()[typeKey] || null; };
+G.disasterMul = function (typeKey) { return G.disasterOf(typeKey) ? DISASTER_MUL : 1; };
+/* the weather over the island the hero stands on, or nothing */
+G.runDisaster = function () { return G.isleRun ? G.disasterOf(G.isleRun.key) : null; };
+/* the two kinds a week strikes, in the order the pentagon holds them */
+function struckTypesOf(week) {
+  const map = weekDisasters(week);
+  return ISLE_TYPES.filter(t => map[t.key]);
+}
+function struckTypes() { return struckTypesOf(storeWeekKey()); }
+
+/* What the chart says under the archipelago.  It names the weather of the
+   week, so the hero knows there is something new out there without sailing
+   first, and it turns between the struck kinds. */
+function archFootLine() {
+  const s = struckTypes();
+  if (!s.length) return 'THE ARCHIPELAGO   -   CLICK TO SAIL';
+  const t = s[Math.floor(G.mapT / 3) % s.length];
+  return G.disasterOf(t.key).name + '   -   ' + t.name.replace('THE ', '') + ' PAY DOUBLE';
+}
+
+/* ============================================================
+   THE WEEKLY PASS
+   Six rewards that change every week.  Every row asks for the
+   shards of a kind of island the week has struck, so the pass
+   pays you for the islands the weather made worth playing.
+   Three of the rows hold things no shop and no casket sells.
+   ============================================================ */
+const PASS_ROWS = 6;
+/* what each row costs, in shards */
+const PASS_COST = [6, 10, 14, 22, 30, 52];
+/* the things the pass may hold */
+const PASS_RARE = ['stormglass', 'driftmark'];
+const PASS_SUPER = ['saltcrown', 'wrackring'];
+const PASS_TOP = ['kelpsigil', 'stormeye'];
+const PASS_COSMETIC = [{ kind: 'cape', key: 'pass1' }, { kind: 'suit', key: 'tideward' },
+                       { kind: 'cape', key: 'pass2' }, { kind: 'suit', key: 'stormcut' }];
+let PASS_CACHE = null;
+function weekPass(week) {
+  if (PASS_CACHE && PASS_CACHE.week === week) return PASS_CACHE.rows;
+  const rng = new RNG(week * 15485863 + 91);
+  const struck = struckTypesOf(week);
+  const shardOf = i => (struck[i % struck.length] || ISLE_TYPES[0]);
+  const cos = PASS_COSMETIC[week % PASS_COSMETIC.length];
+  const rows = [
+    { kind: 'coins', amount: 25000, name: '25000 COINS', desc: 'PAID OUT OF THE ISLAND TRADE' },
+    { kind: 'rubies', amount: 60, name: '60 RUBIES', desc: 'THE ISLANDS TRADE THEM FOR SHARDS' },
+    { kind: 'art', key: rng.pick(PASS_RARE) },
+    cos.kind === 'cape' ? { kind: 'cape', key: cos.key } : { kind: 'suit', key: cos.key },
+    { kind: 'art', key: rng.pick(PASS_SUPER) },
+    { kind: 'art', key: PASS_TOP[week % PASS_TOP.length] }
+  ];
+  rows.forEach((r, i) => {
+    r.cost = PASS_COST[i];
+    r.type = shardOf(i);
+    if (r.kind === 'art') {
+      const a = artifactBy(r.key);
+      r.name = a ? a.name : r.key;
+      r.desc = a ? a.desc : '';
+      r.rank = a ? a.rank : 1;
+    } else if (r.kind === 'cape') {
+      const c = CAPES[r.key];
+      r.name = c.name + ' MANTLE'; r.desc = 'A MANTLE THE PASS ALONE GIVES'; r.rank = 4;
+    } else if (r.kind === 'suit') {
+      const s = SUITS[r.key];
+      r.name = s.name; r.desc = 'A SUIT THE PASS ALONE GIVES'; r.rank = 4;
+    } else {
+      r.rank = 2;
+    }
+  });
+  PASS_CACHE = { week: week, rows: rows };
+  return rows;
+}
+G.passRows = function () { return weekPass(storeWeekKey()); };
+/* the card of bought rows, thrown away when the week turns over */
+function passState() {
+  const a = archi();
+  const wk = storeWeekKey();
+  if (!a.pass || a.pass.week !== wk) a.pass = { week: wk, bought: {} };
+  return a.pass;
+}
+G.passBought = function (i) { return !!passState().bought[i]; };
+/* how many rows of this week's pass are still to buy */
+G.passLeft = function () {
+  let n = 0;
+  for (let i = 0; i < PASS_ROWS; i++) if (!G.passBought(i)) n++;
+  return n;
+};
+/* Buy one row.  The shards come out of the purse of that kind, and they
+   come out only when the reward goes in.  It answers true when it paid. */
+G.buyPassRow = function (i) {
+  const rows = G.passRows();
+  const row = rows[i];
+  if (!row || G.passBought(i)) return false;
+  const a = archi();
+  const held = a.shards[row.type.shard] | 0;
+  if (held < row.cost) return false;
+  if (row.kind === 'art' && G.artFull(row.key)) return false;
+  if (row.kind === 'art') { if (!G.giveArtifact(row.key, true)) return false; }
+  else if (row.kind === 'cape' || row.kind === 'suit') {
+    if (!G.wardrobe) G.wardrobe = { owned: {} };
+    G.wardrobe.owned[row.key] = 1;
+    if (row.kind === 'suit') { G.profile.suit = row.key; } else { G.profile.cape = row.key; }
+    applyProfile();
+  } else if (row.kind === 'coins') { if (G.player) G.player.coins += row.amount; }
+  else if (row.kind === 'rubies') { G.rubies = (G.rubies | 0) + row.amount; }
+  a.shards[row.type.shard] = held - row.cost;
+  passState().bought[i] = 1;
+  Snd.unlock(); G.flash(0.4);
+  G.saveNoRoom();
+  return true;
+};
+
 /* ---------- the three screens ---------- */
 const ARCH_BACK = { x: 6, y: VH - 22, w: 54, h: 16 };
 const ARCH_FORGE = { x: VW - 92, y: VH - 22, w: 86, h: 16 };
+const ARCH_PASS = { x: VW - 184, y: VH - 22, w: 86, h: 16 };
 /* the five kinds, set out as a pentagon about the middle of the chart */
 function archNodeRect(k) {
   const a = -Math.PI / 2 + k / 5 * TAU;
@@ -2028,6 +2233,7 @@ function openArchipelago(view) {
   G.archT = 0; G.archSel = -1; G.archMsgT = 0;
   G.particles.length = 0;
   if (!G.forgeOpen) G.forgeOpen = false;
+  G.passOpen = false; G.passSel = -1;
   Snd.play('title');
 }
 function archClose() {
@@ -2049,10 +2255,13 @@ function updateArchipelago(dt) {
   }));
 
   if (G.forgeOpen) { updateForge(dt); return; }
+  if (G.passOpen) { updatePassPanel(dt); return; }
   G.archBackHot = Input.over(ARCH_BACK);
   G.archForgeHot = Input.over(ARCH_FORGE);
+  G.archPassHot = Input.over(ARCH_PASS);
   if (Input.tap(ARCH_BACK) || Input.hit('Escape')) { archClose(); return; }
   if (Input.tap(ARCH_FORGE)) { G.forgeOpen = true; G.forgeSel = 0; Snd.ui(); return; }
+  if (Input.tap(ARCH_PASS)) { G.passOpen = true; G.passSel = -1; Snd.ui(); return; }
 
   if (G.archView === 'pentagon') {
     G.archSel = -1;
@@ -2135,6 +2344,108 @@ function updateArchipelago(dt) {
     }
   }
 }
+
+/* ---------- the weekly pass, as a card of six ---------- */
+const PASS_BOX = { x: 14, y: 14, w: 356, h: 188 };
+function passCardRect(i) {
+  const col = i % 2, row = (i / 2) | 0;
+  return { x: PASS_BOX.x + 10 + col * 174, y: PASS_BOX.y + 34 + row * 48, w: 168, h: 46 };
+}
+function updatePassPanel(dt) {
+  void dt;
+  const closeR = { x: PASS_BOX.x + PASS_BOX.w - 24, y: PASS_BOX.y + 4, w: 20, h: 16 };
+  G.passClose = Input.over(closeR);
+  if (Input.tap(closeR) || Input.hit('Escape')) { G.passOpen = false; Snd.ui(); return; }
+  G.passSel = -1;
+  let hit = -1;
+  for (let i = 0; i < PASS_ROWS; i++) {
+    const r = passCardRect(i);
+    if (Input.over(r)) G.passSel = i;
+    if (Input.tap(r)) hit = i;
+  }
+  if (hit < 0) return;
+  const row = G.passRows()[hit];
+  if (G.passBought(hit)) {
+    Snd.uiBad(); G.archMsg = 'YOU ALREADY TOOK THAT ONE'; G.archMsgT = 2; return;
+  }
+  if (row.kind === 'art' && G.artFull(row.key)) {
+    Snd.uiBad(); G.archMsg = 'THE POUCH HOLDS FIVE ALREADY'; G.archMsgT = 2.2; return;
+  }
+  if (G.buyPassRow(hit)) {
+    G.archMsg = row.name + ' IS YOURS'; G.archMsgT = 2.4;
+    for (let k = 0; k < 24; k++) G.particles.push(new Particle({
+      x: rr(PASS_BOX.x, PASS_BOX.x + PASS_BOX.w), y: PASS_BOX.y + PASS_BOX.h,
+      vx: rr(-1.4, 1.4), vy: rr(-3.4, -0.8), life: rr(0.5, 1.2),
+      col: row.type.col, col2: row.type.col2, size: rr(1, 2.6), grav: 0.05
+    }));
+  } else {
+    Snd.uiBad();
+    G.archMsg = 'IT ASKS ' + row.cost + ' ' + row.type.shardName + ' SHARDS';
+    G.archMsgT = 2.2;
+  }
+}
+/* the picture for one row of the pass */
+function passRowIcon(row) {
+  if (row.kind === 'art') return Art.item.artifact[row.key] || null;
+  if (row.kind === 'suit') return (Art.suitIcon && Art.suitIcon[row.key]) || null;
+  if (row.kind === 'rubies') return (Art.item.shop && Art.item.shop.ruby) || null;
+  if (row.kind === 'coins') return Art.item.coin[Math.floor(G.archT / 0.09) % 8];
+  return null;
+}
+function drawPassPanel() {
+  const B = PASS_BOX;
+  ctx.fillStyle = 'rgba(8,6,14,0.8)';
+  ctx.fillRect(0, 0, VW, VH);
+  panel(ctx, B.x, B.y, B.w, B.h);
+  drawText(ctx, 'THE WEEKLY PASS', B.x + 12, B.y + 7, '#ffeec0', 1, 'left', '#000000');
+  const struck = struckTypes();
+  const kinds = struck.map(t => t.shardName).join(' AND ');
+  drawText(ctx, kinds + ' SHARDS BUY IT', B.x + 12, B.y + 19, '#8fd0e8', 1, 'left');
+  drawText(ctx, 'A NEW PASS IN ' + weekLeftText(), B.x + B.w - 32, B.y + 19, '#ffd04a', 1, 'right');
+  const closeR = { x: B.x + B.w - 24, y: B.y + 4, w: 20, h: 16 };
+  ctx.fillStyle = G.passClose ? '#c9403a' : 'rgba(20,14,10,0.8)';
+  ctx.fillRect(closeR.x, closeR.y, closeR.w, closeR.h);
+  drawText(ctx, 'X', closeR.x + closeR.w / 2, closeR.y + 4, '#ffeec0', 1, 'center');
+
+  G.passRows().forEach((row, i) => {
+    const r = passCardRect(i), hot = G.passSel === i;
+    const got = G.passBought(i);
+    const held = G.shardsOf(row.type.shard);
+    const can = !got && held >= row.cost;
+    ctx.fillStyle = got ? 'rgba(20,34,22,0.9)' : (hot ? 'rgba(74,56,34,0.96)' : 'rgba(24,18,12,0.88)');
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.fillStyle = got ? '#6fc46a' : (can ? row.type.col : '#5b4a34');
+    ctx.fillRect(r.x, r.y, r.w, 1);
+    /* the rank band down the left edge says how good the thing is */
+    ctx.fillStyle = rankColour(row.rank);
+    ctx.fillRect(r.x, r.y, 2, r.h);
+    const img = passRowIcon(row);
+    if (img) ctx.drawImage(img, r.x + 5, r.y + 5);
+    else if (row.kind === 'cape') {
+      /* a scrap of the cloth itself, for a mantle */
+      for (let j = 0; j < 8; j++) for (let k = 0; k < 4; k++) {
+        ctx.fillStyle = capeCell(row.key, j, k, 8, 4);
+        ctx.fillRect(r.x + 5 + k * 4, r.y + 5 + j * 2, 4, 2);
+      }
+    }
+    drawText(ctx, fitText(row.name, r.w - 31), r.x + 25, r.y + 4,
+             got ? '#9be89a' : '#ffeec0', 1, 'left');
+    /* the word of what it does, over two lines, inside the card */
+    wrapText(row.desc, r.w - 31, 2).forEach((line, li) =>
+      drawText(ctx, line, r.x + 25, r.y + 13 + li * 8, '#a9b3c9', 1, 'left'));
+    drawShard(ctx, r.x + 9, r.y + 35, 6, row.type, 1);
+    drawText(ctx, row.cost + ' ' + row.type.shardName, r.x + 18, r.y + 32,
+             can ? '#9be89a' : (got ? '#6d7994' : '#c9403a'), 1, 'left');
+    drawText(ctx, got ? 'TAKEN' : (can ? 'CLICK TO TAKE' : 'YOU HOLD ' + held),
+             r.x + r.w - 6, r.y + 32, got ? '#9be89a' : (can ? '#ffe98a' : '#8a94a6'), 1, 'right');
+  });
+  if (G.archMsgT > 0) {
+    ctx.save(); ctx.globalAlpha = Math.min(1, G.archMsgT * 2);
+    drawText(ctx, G.archMsg, B.x + B.w / 2, B.y + B.h - 12, '#ffd04a', 1, 'center', '#2a1a10');
+    ctx.restore();
+  }
+}
+
 /* ---------- the smithing table ---------- */
 const FORGE_BOX = { x: 20, y: 20, w: 344, h: 176 };
 function forgeRowRect(i) { return { x: FORGE_BOX.x + 10, y: FORGE_BOX.y + 32 + i * 25, w: FORGE_BOX.w - 20, h: 23 }; }
@@ -2233,7 +2544,22 @@ function drawArchipelago() {
 
   if (G.archView === 'pentagon') {
     drawText(ctx, 'THE ARCHIPELAGO', VW / 2, 6, '#ffeec0', 2, 'center', '#0a1420');
-    drawText(ctx, 'FIVE KINDS, FIFTY ISLANDS OF EACH', VW / 2, 22, '#8fd0e8', 1, 'center', '#0a1420');
+    /* The weather of the week reads across the head of the chart, one kind
+       at a time.  A week with no weather says what the chart is instead. */
+    const struck = struckTypes();
+    if (struck.length) {
+      const step = Math.floor(G.archT / 3) % (struck.length * 2);
+      const t2 = struck[step >> 1];
+      const dis = G.disasterOf(t2.key);
+      const line = (step & 1) ? dis.blurb
+                             : dis.name + '  -  ' + t2.name.replace('THE ', '') + ' PAY DOUBLE';
+      ctx.save();
+      ctx.globalAlpha = 0.8 + Math.sin(G.archT * 4) * 0.2;
+      drawText(ctx, line, VW / 2, 22, dis.col, 1, 'center', '#2a1010');
+      ctx.restore();
+    } else {
+      drawText(ctx, 'FIVE KINDS, FIFTY ISLANDS OF EACH', VW / 2, 22, '#8fd0e8', 1, 'center', '#0a1420');
+    }
     /* the chains of the pentagon, drawn between the five */
     for (let k = 0; k < 5; k++) {
       const p1 = archNodeRect(k), p2 = archNodeRect((k + 1) % 5);
@@ -2242,6 +2568,13 @@ function drawArchipelago() {
     for (let k = 0; k < 5; k++) {
       const t = ISLE_TYPES[k], r = archNodeRect(k), hot = G.archSel === k;
       const bob = Math.sin(G.archT * 1.5 + k) * 1.6;
+      const wx = G.disasterOf(t.key);
+      if (wx) {
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.16 + Math.sin(G.archT * 3 + k) * 0.08;
+        ctx.fillStyle = wx.col;
+        ctx.beginPath(); ctx.arc(r.cx, r.cy + bob, 28, 0, TAU); ctx.fill(); ctx.restore();
+      }
       if (hot) {
         ctx.save(); ctx.globalCompositeOperation = 'lighter';
         ctx.globalAlpha = 0.18 + Math.sin(G.archT * 5) * 0.06;
@@ -2251,12 +2584,19 @@ function drawArchipelago() {
       ctx.drawImage(Art.map.isle[k], Math.round(r.cx - 24), Math.round(r.cy - 24 + bob));
       /* the name, and under it how far out you have bought */
       const short = t.name.replace('THE ', '');
-      const w = Math.max(textWidth(short) + 8, 34);
+      /* A struck kind says so on its own plate.  A badge beside the picture
+         ran into the plate of the kind above it: the pentagon is tight. */
+      const dis = G.disasterOf(t.key);
+      const line2 = isleOpened(t.key) + '/' + ISLES_PER_TYPE + (dis ? '   2X' : '');
+      const w = Math.max(textWidth(short) + 8, textWidth(line2) + 8, 34);
       ctx.fillStyle = 'rgba(10,20,32,0.9)';
       ctx.fillRect(Math.round(r.cx - w / 2), Math.round(r.cy + 22 + bob), Math.round(w), 20);
+      if (dis) {
+        ctx.fillStyle = dis.col;
+        ctx.fillRect(Math.round(r.cx - w / 2), Math.round(r.cy + 22 + bob), Math.round(w), 1);
+      }
       drawText(ctx, short, r.cx, r.cy + 24 + bob, hot ? '#ffeec0' : t.col, 1, 'center');
-      drawText(ctx, isleOpened(t.key) + '/' + ISLES_PER_TYPE,
-               r.cx, r.cy + 33 + bob, '#a9b3c9', 1, 'center');
+      drawText(ctx, line2, r.cx, r.cy + 33 + bob, dis ? dis.col : '#a9b3c9', 1, 'center');
     }
   } else {
     const t = isleTypeAt(a.type);
@@ -2270,6 +2610,20 @@ function drawArchipelago() {
     const last = clamp(first + Math.ceil(VW / ISLE_PITCH) + 1, 0, ISLES_PER_TYPE - 1);
     drawText(ctx, 'ISLANDS ' + (first + 1) + ' TO ' + (last + 1) + ' OF ' + ISLES_PER_TYPE,
              VW - 8, 26, '#a9b3c9', 1, 'right', '#0a1420');
+    /* the weather over this kind of island, said across the chart */
+    const dis = G.disasterOf(t.key);
+    if (dis) {
+      const line = dis.name + '!   DOUBLE SHARDS, PARTS AND COIN';
+      const bw = textWidth(line) + 12;
+      ctx.fillStyle = 'rgba(80,16,16,0.92)';
+      ctx.fillRect(Math.round(VW / 2 - bw / 2), 38, Math.round(bw), 12);
+      ctx.fillStyle = dis.col;
+      ctx.fillRect(Math.round(VW / 2 - bw / 2), 38, Math.round(bw), 1);
+      ctx.save();
+      ctx.globalAlpha = 0.82 + Math.sin(G.archT * 5) * 0.18;
+      drawText(ctx, line, VW / 2, 41, '#ffeec0', 1, 'center', '#2a1010');
+      ctx.restore();
+    }
     for (let idx = first; idx <= last; idx++) {
       const r = archIsleRect(idx), hot = G.archSel === idx;
       const isOpen = idx < open, isNext = idx === open;
@@ -2288,6 +2642,8 @@ function drawArchipelago() {
         ctx.beginPath(); ctx.arc(r.cx, r.cy, 26, 0, TAU); ctx.fill(); ctx.restore();
       }
       drawText(ctx, 'ISLAND ' + (idx + 1), r.cx, r.y - 12, isOpen ? '#ffeec0' : '#8a94a6', 1, 'center', '#0a1420');
+      /* the keeper waiting at the end of the island you point at */
+      if (hot && isOpen) drawText(ctx, isleBossTitle(t.key, idx), r.cx, r.y - 22, t.col, 1, 'center', '#0a1420');
       if (isNext) {
         const cost = isleCost(idx);
         const can = G.shardsOf(t.shard) >= cost;
@@ -2315,8 +2671,9 @@ function drawArchipelago() {
     }
   }
 
-  /* the two buttons at the foot */
+  /* the three buttons at the foot */
   for (const [r, label, hot] of [[ARCH_BACK, 'BACK', G.archBackHot],
+                                 [ARCH_PASS, 'PASS  ' + G.passLeft() + ' LEFT', G.archPassHot],
                                  [ARCH_FORGE, 'SMITHING TABLE', G.archForgeHot]]) {
     ctx.fillStyle = hot ? 'rgba(74,56,34,0.96)' : 'rgba(10,20,32,0.88)';
     ctx.fillRect(r.x, r.y, r.w, r.h);
@@ -2330,6 +2687,7 @@ function drawArchipelago() {
     ctx.restore();
   }
   if (G.forgeOpen) drawForge();
+  if (G.passOpen) drawPassPanel();
   if (G.flashAmt > 0) {
     ctx.save(); ctx.globalAlpha = Math.min(1, G.flashAmt); ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, VW, VH); ctx.restore();
@@ -2425,7 +2783,8 @@ function storeArtifactRows() {
   return rows;
 }
 function storeClothRows() {
-  return SUIT_KEYS.map(k => {
+  /* the two suits of the weekly pass are not for sale here */
+  return SUIT_KEYS.filter(k => !SUITS[k].pass).map(k => {
     const su = SUITS[k];
     return { name: su.name, desc: 'CUT TO THE PATTERN OF ' + su.realm, coins: su.cost,
              suit: k, need: su.need,
@@ -2520,7 +2879,7 @@ function boxRollRank(box, cap) {
 function rollBoxArtifact(box, taken, cap) {
   const rank = boxRollRank(box, cap);
   const pick = (want) => {
-    const pool = ARTIFACTS.filter(a => a.rank === want && !a.limited &&
+    const pool = ARTIFACTS.filter(a => a.rank === want && !a.limited && !a.pass &&
                                       !G.artFull(a.key) && !taken[a.key]);
     return pool.length ? pool[ri(0, pool.length - 1)] : null;
   };
@@ -2533,7 +2892,8 @@ function rollBoxArtifact(box, taken, cap) {
 /* a suit the wardrobe has not got yet, or nothing.  A casket never gives up
    a suit that waits on a prestige: those are earned. */
 function rollBoxSuit() {
-  const pool = SUIT_KEYS.filter(k => !SUITS[k].need && !(G.wardrobe && G.wardrobe.owned[k]));
+  const pool = SUIT_KEYS.filter(k => !SUITS[k].need && !SUITS[k].pass &&
+                                     !(G.wardrobe && G.wardrobe.owned[k]));
   return pool.length ? pool[ri(0, pool.length - 1)] : null;
 }
 function boxCoinItem() {
@@ -2992,9 +3352,11 @@ function updateWardrobe(dt) {
   for (let i = 0; i < keys.length; i++) if (Input.tap(wardRowRect(i))) wardTap = i;
   if (wardTap >= 0) {
     const key = keys[wardTap], suit = SUITS[key];
-    /* Three of the suits wait on a prestige.  No purse buys one early. */
+    /* Five of the suits are earned, not bought: three wait on a prestige
+       and two on the weekly pass.  No purse buys one early. */
     if (!suitUnlocked(key)) {
-      G.wardMsg = 'PRESTIGE ' + PRESTIGE_MARK[suit.need] + ' OPENS IT';
+      G.wardMsg = suit.pass ? 'THE WEEKLY PASS HOLDS IT'
+                            : 'PRESTIGE ' + PRESTIGE_MARK[suit.need] + ' OPENS IT';
       G.wardMsgT = 2.2;
       Snd.uiBad();
     } else if (G.wardrobe.owned[key]) {
@@ -3493,8 +3855,22 @@ const ARTIFACTS = [
   artRow('reedstay', 1, 'A REED STAY', 'REED STAY', 'THE GALE REACHES A TWELFTH FURTHER', { gale: 1.08 }, 'stormsail', 'horn', '#98a08c'),
   artRow('windchip', 1, 'A WIND CHIP', 'WIND CHIP', 'THE GALE REACHES A TENTH FURTHER', { gale: 1.1 }, 'stormsail', 'star', '#a6aeb6'),
   artRow('boneflake', 1, 'A BONE FLAKE', 'BONE FLAKE', 'A SIXTEENTH DEEPER, IN WHOLE ARROW POINTS', { arrow: 1.06 }, 'steelbarb', 'tooth', '#cfcabc'),
-  artRow('graynock', 1, 'A GREY NOCK', 'GREY NOCK', 'A TWELFTH DEEPER, IN WHOLE ARROW POINTS', { arrow: 1.08 }, 'sinewcord', 'arrowhead', '#888e96')
+  artRow('graynock', 1, 'A GREY NOCK', 'GREY NOCK', 'A TWELFTH DEEPER, IN WHOLE ARROW POINTS', { arrow: 1.08 }, 'sinewcord', 'arrowhead', '#888e96'),
+
+  /* ---------------- THE SIX OF THE WEEKLY PASS ----------------
+     No casket holds one of these and no shop sells one.  The pass
+     of the archipelago is the only place they come from, and the
+     pass changes every week.  They merge among themselves. */
+  artRow('stormglass', 2, 'STORM GLASS', 'STORMGLASS', 'THE GALE REACHES A FIFTH FURTHER', { gale: 1.2 }, 'saltcrown', 'vial', '#6fc4d8'),
+  artRow('driftmark', 2, 'A DRIFT MARK', 'DRIFTMARK', 'YOU SWIM A FIFTH FASTER', { swim: 1.2 }, 'saltcrown', 'rune', '#4f9ac8'),
+  artRow('saltcrown', 3, 'THE SALT CROWN', 'SALTCROWN', 'EVERY KILL PAYS A THIRD MORE', { coin: 1.33 }, 'kelpsigil', 'crown', '#9fe8ff'),
+  artRow('wrackring', 3, 'THE WRACK RING', 'WRACKRING', 'EVERY KILL PAYS A THIRD MORE EXPERIENCE', { xp: 1.33 }, 'kelpsigil', 'ring', '#7fc4a8'),
+  artRow('kelpsigil', 4, 'THE KELP SIGIL', 'KELPSIGIL', 'THREE HEARTS MORE. YOU SWIM A THIRD FASTER', { hp: 6, swim: 1.33 }, 'stormeye', 'ankh', '#3f8f8a'),
+  artRow('stormeye', 5, 'THE EYE OF THE STORM', 'STORM EYE', 'TWICE THE COIN AND TWICE THE EXPERIENCE', { coin: 2, xp: 2 }, null, 'eye', '#a86fe0')
 ];
+/* the six of the pass are marked, so no roll and no shelf ever offers one */
+for (const k of ['stormglass', 'driftmark', 'saltcrown', 'wrackring', 'kelpsigil', 'stormeye'])
+  for (const a of ARTIFACTS) if (a.key === k) a.pass = 1;
 const ARTIFACT_SLOTS = 3;
 /* the most copies of one artifact a pouch holds */
 const ART_MAX = 5;
@@ -3548,7 +3924,7 @@ function hexMix(a, b, t) {
   const hx = (n) => ('0' + (n | 0).toString(16)).slice(-2);
   return '#' + hx(m[0]) + hx(m[1]) + hx(m[2]);
 }
-ARTIFACTS.filter(a => a.rank === 3 && mythicCanCut(a)).forEach((b, i) => {
+ARTIFACTS.filter(a => a.rank === 3 && !a.pass && mythicCanCut(a)).forEach((b, i) => {
   const m = artRow('myth' + b.key, 5, 'MYTHIC ' + b.name, 'M ' + b.short,
                    'TWICE WHAT ' + b.short + ' GIVES',
                    mythicStats(b), null, b.shape, hexMix(b.col, '#ff5ad0', 0.55));
@@ -4354,8 +4730,7 @@ function drawMap() {
   }
 
   const foot = G.finalSel
-    ? (G.archipelago && G.archipelago.open ? 'THE ARCHIPELAGO   -   CLICK TO SAIL'
-                                           : 'THE ARCHIPELAGO   -   SEALED')
+    ? (G.archipelago && G.archipelago.open ? archFootLine() : 'THE ARCHIPELAGO   -   SEALED')
     : (G.mapSel >= 0
       ? (G.mapSel < G.unlocked ? World.LEVELS[G.mapSel].sub + '   -   CLICK TO ENTER'
                                : 'SEALED   -   CLEAR THE REALM BEFORE IT')
@@ -5459,6 +5834,7 @@ function drawWorld() {
   drawAcid(camX, camY);
   drawCanopyShade(camX, camY);
   drawLighting(camX, camY);
+  drawIsleWeather(camX, camY);
   drawHUD();
   drawTransition(ctx);
   if (G.flashAmt > 0) {
@@ -5487,6 +5863,101 @@ function drawWorld() {
   drawCursor();
 }
 
+
+/* ============================================================
+   THE WEATHER OVER A STRUCK ISLAND
+   The weather of the week is drawn over the island it fell on,
+   so the hero can see why the shards come twice as fast.  It is
+   drawn in screen space, over the world and under the HUD.
+   ============================================================ */
+function drawIsleWeather(camX, camY) {
+  if (!G.isleRun) return;
+  const dis = G.disasterOf(G.isleRun.key);
+  if (!dis) return;
+  const k = dis.key;
+  ctx.save();
+  if (k === 'whiteout' || k === 'ashfall') {
+    /* snow or ash, falling slowly and drifting across the wind */
+    const grey = k === 'ashfall';
+    ctx.fillStyle = grey ? 'rgba(140,120,104,0.13)' : 'rgba(223,244,255,0.15)';
+    ctx.fillRect(0, 0, VW, VH);
+    for (let i = 0; i < 90; i++) {
+      const sp = 14 + (i % 5) * 9;
+      const fx = ((i * 71 + Math.sin(G.t * 0.5 + i) * 26 - camX * 0.2) % (VW + 24) + VW + 24) % (VW + 24) - 12;
+      const fy = ((i * 37 + G.t * sp) % (VH + 24) + VH + 24) % (VH + 24) - 12;
+      ctx.globalAlpha = 0.3 + (i % 3) * 0.2;
+      ctx.fillStyle = grey ? (i % 4 ? '#8a7d6c' : '#c08a5a') : '#ffffff';
+      ctx.fillRect(Math.round(fx), Math.round(fy), 1, i % 6 ? 1 : 2);
+    }
+  } else if (k === 'icequake' || k === 'rockslide') {
+    /* stone and ice, shaken loose and falling straight down */
+    for (let i = 0; i < 26; i++) {
+      const fx = ((i * 131 - camX * 0.4) % (VW + 20) + VW + 20) % (VW + 20) - 10;
+      const fy = ((i * 61 + G.t * (46 + (i % 3) * 22)) % (VH + 30) + VH + 30) % (VH + 30) - 15;
+      ctx.globalAlpha = 0.6;
+      ctx.fillStyle = k === 'icequake' ? '#8fd0e8' : '#a4713f';
+      ctx.fillRect(Math.round(fx), Math.round(fy), 2, 3);
+    }
+    if (Math.floor(G.t * 0.7) % 7 === 0) {
+      ctx.globalAlpha = 0.08;
+      ctx.fillStyle = dis.col; ctx.fillRect(0, 0, VW, VH);
+    }
+  } else if (k === 'volcano' || k === 'sunflare') {
+    /* a hot sky, and embers going up through it */
+    ctx.globalAlpha = 0.12 + Math.sin(G.t * 1.4) * 0.04;
+    ctx.fillStyle = dis.col; ctx.fillRect(0, 0, VW, VH);
+    ctx.globalAlpha = 1;
+    for (let i = 0; i < 40; i++) {
+      const fx = ((i * 97 + Math.sin(G.t + i) * 14 - camX * 0.3) % (VW + 20) + VW + 20) % (VW + 20) - 10;
+      const fy = VH - ((i * 43 + G.t * (26 + (i % 4) * 12)) % (VH + 30));
+      ctx.globalAlpha = 0.35 + (i % 3) * 0.2;
+      ctx.fillStyle = i % 3 ? '#ffd06a' : '#ff7a2a';
+      ctx.fillRect(Math.round(fx), Math.round(fy), 1, 1);
+    }
+  } else if (k === 'sandstorm') {
+    /* sand, driven flat across the screen */
+    ctx.globalAlpha = 0.14;
+    ctx.fillStyle = '#e0b040'; ctx.fillRect(0, 0, VW, VH);
+    ctx.globalAlpha = 0.5;
+    for (let i = 0; i < 60; i++) {
+      const fy = (i * 53) % VH;
+      const fx = ((i * 29 + G.t * (150 + (i % 5) * 40)) % (VW + 60)) - 30;
+      ctx.fillStyle = i % 3 ? '#f6d878' : '#c9a06a';
+      ctx.fillRect(Math.round(fx), Math.round(fy), 6 + (i % 4) * 3, 1);
+    }
+  } else if (k === 'bloom') {
+    /* crystal dust, turning in the air */
+    for (let i = 0; i < 50; i++) {
+      const a = G.t * 0.4 + i;
+      const fx = ((i * 83 + Math.cos(a) * 20 - camX * 0.25) % (VW + 20) + VW + 20) % (VW + 20) - 10;
+      const fy = ((i * 47 + G.t * (10 + (i % 4) * 7)) % (VH + 20) + VH + 20) % (VH + 20) - 10;
+      ctx.globalAlpha = 0.3 + (i % 3) * 0.22;
+      ctx.fillStyle = i % 2 ? '#a86fe0' : '#e0c8ff';
+      ctx.fillRect(Math.round(fx), Math.round(fy), 1, 1);
+    }
+  } else if (k === 'flood') {
+    /* the sea, standing higher than it should, seen as bands of light */
+    ctx.globalAlpha = 0.1;
+    ctx.fillStyle = '#2f6fb0'; ctx.fillRect(0, 0, VW, VH);
+    ctx.globalAlpha = 0.12;
+    ctx.fillStyle = '#cfeaff';
+    for (let y = 6; y < VH; y += 9) {
+      const w = 30 + Math.sin(y * 0.3 + G.t * 1.2) * 18;
+      for (let x = -20; x < VW + 20; x += 64)
+        ctx.fillRect(Math.round(x + Math.sin((x + y) * 0.06 + G.t * 0.8) * 10), y, w, 1);
+    }
+  } else {
+    /* a thunderhead: a dark sky that lights up now and then */
+    ctx.globalAlpha = 0.16;
+    ctx.fillStyle = '#1a1626'; ctx.fillRect(0, 0, VW, VH);
+    const beat = (G.t * 0.5) % 3;
+    if (beat < 0.09 || (beat > 0.16 && beat < 0.2)) {
+      ctx.globalAlpha = 0.34; ctx.fillStyle = '#fff4c0';
+      ctx.fillRect(0, 0, VW, VH);
+    }
+  }
+  ctx.restore();
+}
 /* ============================================================
    HUD
    ============================================================ */
@@ -6812,11 +7283,14 @@ function drawRank(c2, x, y, scale, align) {
    once the tutorial is done, and from the chart after that.
    ============================================================ */
 G.profile = { hair: 0, hairCol: 0, outfit: 0, tee: 0, cape: 'none', suit: 'none' };
-const CAPE_ORDER = ['wood', 'tide', 'ember', 'pBronze', 'pSilver', 'pGold'];
-/* A mantle is earned: the first three by finishing a chapter, the last
-   three by taking a prestige. */
+const CAPE_ORDER = ['wood', 'tide', 'ember', 'pBronze', 'pSilver', 'pGold', 'pass1', 'pass2'];
+/* A mantle is earned: the first three by finishing a chapter, the next three
+   by taking a prestige, and the last two out of the weekly pass. */
 function capeUnlocked(key) {
   const des = CAPES[key];
+  /* A mantle of the weekly pass is bought with shards.  Nothing else gives
+     it, so the wardrobe alone says whether the hero has it. */
+  if (des && des.pass) return !!(G.wardrobe && G.wardrobe.owned[key]);
   if (des && des.prestige) return (G.prestige | 0) >= des.prestige;
   const ch = CAPE_ORDER.indexOf(key);
   if (ch < 0 || ch >= World.CHAPTERS.length) return true;
@@ -6830,6 +7304,8 @@ function hairUnlocked(i) {
 }
 function suitUnlocked(key) {
   const su = SUITS[key];
+  /* and a suit of the weekly pass, the same way */
+  if (su && su.pass) return !!(G.wardrobe && G.wardrobe.owned[key]);
   return !su || !su.need || (G.prestige | 0) >= su.need;
 }
 /* does anything the hero wears carry a shine? */
@@ -6884,9 +7360,11 @@ function profArrowRect(i, dir) {
 }
 /* six mantles in two columns, and a seventh tile that takes them all off */
 function profCapeRect(i) {
-  if (i >= CAPE_ORDER.length) return { x: PROF_BOX.x + 174, y: PROF_BOX.y + 146, w: 166, h: 14 };
+  /* Eight mantles stand in the grid now, so the tiles are shorter than they
+     were and the four rows still clear the button under them. */
+  if (i >= CAPE_ORDER.length) return { x: PROF_BOX.x + 174, y: PROF_BOX.y + 154, w: 166, h: 13 };
   const col = i % 2, row = (i / 2) | 0;
-  return { x: PROF_BOX.x + 174 + col * 86, y: PROF_BOX.y + 40 + row * 34, w: 80, h: 31 };
+  return { x: PROF_BOX.x + 174 + col * 86, y: PROF_BOX.y + 38 + row * 26, w: 80, h: 25 };
 }
 function profDoneRect() { return { x: PROF_BOX.x + 262, y: PROF_BOX.y + PROF_BOX.h - 24, w: 78, h: 16 }; }
 function profRandomRect() { return { x: PROF_BOX.x + 174, y: PROF_BOX.y + PROF_BOX.h - 24, w: 80, h: 16 }; }
@@ -7069,7 +7547,8 @@ function updateProfile(dt) {
       if (!capeUnlocked(key)) {
         Snd.uiBad();
         const des = CAPES[key];
-        G.profMsg = des.prestige ? ('PRESTIGE ' + PRESTIGE_MARK[des.prestige] + ' OPENS IT')
+        G.profMsg = des.pass ? 'THE WEEKLY PASS HOLDS IT'
+                  : des.prestige ? ('PRESTIGE ' + PRESTIGE_MARK[des.prestige] + ' OPENS IT')
                                  : ('FINISH ' + des.hint);
         G.profMsgT = 2.2;
         return;
@@ -7341,7 +7820,8 @@ function drawProfileLook() {
     }
     const name = got ? (des.short || des.name) : 'LOCKED';
     drawText(ctx, name, r.x + 21, r.y + 3, got ? '#ffeec0' : '#5b6480', 1, 'left');
-    const need = des.prestige ? ('NEEDS ' + PRESTIGE_MARK[des.prestige]) : des.hint;
+    const need = des.pass ? 'THE PASS'
+               : des.prestige ? ('NEEDS ' + PRESTIGE_MARK[des.prestige]) : des.hint;
     drawText(ctx, got ? (on ? 'WORN' : 'WEAR') : need,
              r.x + 21, r.y + 12, got ? (on ? '#6fc46a' : '#a9b3c9') : '#7f8aa3', 1, 'left');
   });
