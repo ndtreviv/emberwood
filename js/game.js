@@ -2299,7 +2299,7 @@ G.onEyeDead = function () {
      The million does not: it comes down as ONE COIN out of the dark over
      the road, and the hero walks into it. */
   G.rubies = (G.rubies | 0) + EYE_RUBIES;
-  G.texts.push(new FloatText(p.cx, p.cy - 40, '+' + EYE_RUBIES + ' RUBIES', '#ff8ba8'));
+  G.texts.push(new FloatText(p.cx, p.cy - 40, '+' + EYE_RUBIES + ' RUBIES', '#ff8ba8', true));
   const deckY = (G.room.viaduct ? G.room.viaduct.deck : 17) * TILE;
   const gc = new GreatCoin(p.cx, deckY - 260, EYE_COINS);
   gc.landY = deckY - 22;
@@ -7150,6 +7150,17 @@ function viewH() { return VH / (G.zoom || 1); }
 function viewMarginX() { return (viewW() - VW) / 2; }
 function viewMarginY() { return (viewH() - VH) / 2; }
 
+/* Every floating word, put where the zoom leaves it but drawn at the size
+   it was written at.  Inside the world's own frame they shrank with it. */
+function drawWorldTexts(camX, camY) {
+  const z = G.zoom || 1;
+  for (const tx of G.texts) {
+    const sx = VW / 2 + ((tx.x - camX) - VW / 2) * z;
+    const sy = VH / 2 + ((tx.y - camY) - VH / 2) * z;
+    tx.drawAt(ctx, sx, sy);
+  }
+}
+
 function drawWorld() {
   const sk = G.shakeAmt;
   const sx = sk > 0.2 ? rr(-sk, sk) : 0, sy = sk > 0.2 ? rr(-sk, sk) : 0;
@@ -7186,11 +7197,12 @@ function drawWorld() {
   for (const pr of G.projectiles) pr.draw(ctx);
   for (const wv of G.waves) wv.draw(ctx);
   for (const pa of G.particles) pa.draw(ctx);
-  for (const tx of G.texts) tx.draw(ctx);
   drawDecor(2, camX, camY);
   if (G.room.bg === 'eyeviaduct') drawEyeVines(camX, camY);
   ctx.restore();
   ctx.restore();                       /* and out of the zoom */
+  /* the words that float over the world, at the size the glass reads them */
+  drawWorldTexts(camX, camY);
   drawAcid(camX, camY);
   drawCanopyShade(camX, camY);
   drawLighting(camX, camY);

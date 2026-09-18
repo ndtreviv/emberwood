@@ -1154,6 +1154,19 @@ everything else painted on the glass are not scaled with it. The light the hero 
 laid on the glass rather than in the world, so it is put through the same zoom before it is
 punched out of the dark.
 
+**Nothing written is scaled with the world.** A floating word used to be drawn inside the
+world's own frame, so at seven tenths a five pixel font stopped being a word at all. Every
+floating word is now put where the zoom leaves it and drawn at the size it was written at, and
+the words the fight needs read at once — **JUMP**, **ROLL**, **KEEP MOVING**, **WINDED**, the
+stage it has reached and what the eye paid — are set at twice that.
+
+**The hero is drawn for the distance.** At seven tenths the ordinary blit drops every third
+row and column: a limb goes, the blade flickers, the face breaks up. Out here the frame is
+asked for every pixel it has, so the screen picks what it needs out of all of them rather than
+out of two in three, and a dark edge goes behind the sprite so the shape still cuts against
+the road. It costs two draws, and there is one hero. Every other room draws them exactly as it
+always did.
+
 And the road is barely lit. It was the brightest thing out here and read as daylight stone
 against a black sky; the deck, the lip and the wall above it all take a wash of the dark now,
 the wall most of all. Dust turns in the air between them, drawn off the camera rather than

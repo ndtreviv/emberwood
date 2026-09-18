@@ -62,6 +62,25 @@ function nearestFreePair(room, px, py) {
 /* a solid white copy of a sprite, built once and kept, so a struck creature
    can flash the whole of its silhouette rather than merely brighten */
 const _whiteCache = new WeakMap();
+/* THE SAME SPRITE WITH A DARK EDGE ROUND IT.
+   A hero drawn small on a dark road loses their outline into it.  This is
+   the silhouette pushed out a pixel on every side in near black, laid
+   behind the sprite, so the shape stays sharp however far back the view
+   stands.  It is cached against the frame, the way the white one is. */
+const _edgeCache = new WeakMap();
+function edgeSprite(img) {
+  let c = _edgeCache.get(img);
+  if (c) return c;
+  c = mkc(img.width + 2, img.height + 2);
+  const x = c.getContext('2d');
+  for (const [dx, dy] of [[0, 1], [2, 1], [1, 0], [1, 2], [0, 0], [2, 0], [0, 2], [2, 2]])
+    x.drawImage(img, dx, dy);
+  x.globalCompositeOperation = 'source-in';
+  x.fillStyle = '#05060a';
+  x.fillRect(0, 0, c.width, c.height);
+  _edgeCache.set(img, c);
+  return c;
+}
 function whiteSprite(img) {
   let c = _whiteCache.get(img);
   if (c) return c;
@@ -86,6 +105,32 @@ function blit(c2, img, x, y, ax, ay, flip, alpha, scale, rot) {
   c2.drawImage(img, -Math.round(ax), -Math.round(ay));
   c2.restore();
 }
+/* THE HERO, WHERE THE VIEW STANDS BACK FROM THE WORLD.
+   Drawn the ordinary way at seven tenths, a sprite loses every third row
+   and column: a limb goes, the blade flickers, the face breaks up.  Here
+   the frame is asked for every pixel it has instead, and the screen picks
+   what it needs out of all of them rather than out of two in three.  A
+   dark edge goes behind it so the shape still cuts against the road.
+   It costs two draws, and there is one hero. */
+function blitFine(c2, img, x, y, ax, ay, flip, alpha, scale, rot) {
+  if (!img) return;
+  const edge = edgeSprite(img);
+  c2.save();
+  if (alpha !== undefined && alpha < 1) c2.globalAlpha = Math.max(0, alpha);
+  c2.translate(Math.round(x), Math.round(y));
+  if (rot) c2.rotate(rot);
+  if (scale && scale !== 1) c2.scale(scale, scale);
+  if (flip) c2.scale(-1, 1);
+  const was = c2.imageSmoothingEnabled;
+  c2.imageSmoothingEnabled = true;
+  c2.imageSmoothingQuality = 'high';
+  c2.drawImage(edge, -Math.round(ax) - 1, -Math.round(ay) - 1);
+  c2.drawImage(img, -Math.round(ax), -Math.round(ay));
+  c2.imageSmoothingEnabled = was;
+  c2.restore();
+}
+/* which of the two the hero is drawn with */
+function heroBlit() { return (G.zoom && G.zoom !== 1) ? blitFine : blit; }
 
 /* ============================================================
    particles and floating text
@@ -125,12 +170,22 @@ class Particle {
   }
 }
 class FloatText {
-  constructor(x, y, txt, col) { this.x = x; this.y = y; this.txt = txt; this.col = col || '#ffe98a'; this.life = 0.9; this.dead = false; }
+  /* `big` sets it at twice the size.  A word the fight needs read at once -
+     JUMP, ROLL, KEEP MOVING - asks for it. */
+  constructor(x, y, txt, col, big) {
+    this.x = x; this.y = y; this.txt = txt; this.col = col || '#ffe98a';
+    this.life = big ? 1.3 : 0.9; this.big = !!big; this.dead = false;
+  }
   update(dt) { this.life -= dt; this.y -= 22 * dt; if (this.life <= 0) this.dead = true; }
-  draw(c2) {
+  draw(c2) { this.drawAt(c2, this.x, this.y); }
+  /* Drawn where the screen puts it rather than where the world does.  A
+     view that stands back would otherwise shrink the words with it, and a
+     word at seven tenths of a five pixel font is not a word any more. */
+  drawAt(c2, x, y) {
     const a = Math.min(1, this.life * 2.4);
     c2.save(); c2.globalAlpha = a;
-    drawText(c2, this.txt, this.x, this.y, this.col, 1, 'center', '#000000');
+    const sc = this.big ? 2 : 1;
+    drawText(c2, this.txt, x, y, this.col, sc, 'center', '#000000');
     c2.restore();
   }
 }
@@ -637,7 +692,8 @@ class Player {
     this.stamFlash = 0.3;
     if (this.windT > 0) return;
     this.windT = 1.0;
-    G.texts.push(new FloatText(this.cx, this.y - 6, 'WINDED', '#8fb6e8'));
+    G.texts.push(new FloatText(this.cx, this.y - 8, 'WINDED', '#8fb6e8',
+                               !!(G.zoom && G.zoom !== 1)));
     Snd.uiBad();
   }
   updateStam(dt) {
@@ -1721,11 +1777,11 @@ class Player {
         const dur = this.anim === 'flip' ? 0.42 : 0.34;
         turn = 1 - clamp(this.spinT / dur, 0, 1); dir = this.spinDir;
       }
-      blit(c2, img, sx, sy - 5, anchor.x, anchor.y - 5, flip, 1, 1, dir * turn * TAU);
+      heroBlit()(c2, img, sx, sy - 5, anchor.x, anchor.y - 5, flip, 1, 1, dir * turn * TAU);
       drawHeroShine(c2, img, sx, sy - 5, anchor.x, anchor.y - 5, flip);
       return;
     }
-    blit(c2, img, sx, sy, anchor.x, anchor.y, flip, 1, 1, 0);
+    heroBlit()(c2, img, sx, sy, anchor.x, anchor.y, flip, 1, 1, 0);
     drawHeroShine(c2, img, sx, sy, anchor.x, anchor.y, flip);
     this.drawBubble(c2);
   }
@@ -5721,8 +5777,8 @@ class TheEye extends Enemy {
     this.mode = 'shut'; this.modeT = 0; this.wantOpen = 0;
     this.clearBeams();
     Snd.eyeShut(); G.shake(14); G.hitStop(0.12);
-    G.texts.push(new FloatText(this.px, this.py - 30,
-      'STAGE ' + this.stage + ' OF ' + EYE_STAGES, '#ff8b7a'));
+    G.texts.push(new FloatText(this.px, this.py - 32,
+      'STAGE ' + this.stage + ' OF ' + EYE_STAGES, '#ff8b7a', true));
     for (let i = 0; i < 60; i++) G.particles.push(new Particle({
       x: this.px + rr(-60, 60), y: this.py + rr(-30, 30), vx: rr(-4, 4), vy: rr(-4, 2),
       life: rr(0.4, 1.1), col: '#d8dade', col2: '#3a3d44', size: rr(1, 3.4), grav: 0.06
@@ -5924,7 +5980,7 @@ class TheEye extends Enemy {
         }));
       }
       this.atkT = 2.4 + n * step * 0.5;
-      G.texts.push(new FloatText(p.cx, p.cy - 30, 'KEEP MOVING', '#ff8b7a'));
+      G.texts.push(new FloatText(p.cx, p.cy - 32, 'KEEP MOVING', '#ff8b7a', true));
       Snd.eyeCharge();
     } else {
       /* THE LASH: a beam straight along the deck.  The low one runs at the
@@ -5941,7 +5997,7 @@ class TheEye extends Enemy {
           warn: warn + 0.15, live: 0.55, hw: low ? 4 : 2
         }));
       }
-      G.texts.push(new FloatText(p.cx, p.cy - 28, low ? 'JUMP' : 'ROLL', '#ff8b7a'));
+      G.texts.push(new FloatText(p.cx, p.cy - 30, low ? 'JUMP' : 'ROLL', '#ff8b7a', true));
       Snd.eyeCharge();
     }
 
@@ -6012,7 +6068,7 @@ class GreatCoin {
     this.taken = true;
     const p = G.player;
     p.coins = (p.coins || 0) + this.amount;
-    G.texts.push(new FloatText(this.x, this.y - 18, '+' + shortCoin(this.amount), '#ffe98a'));
+    G.texts.push(new FloatText(this.x, this.y - 18, '+' + shortCoin(this.amount), '#ffe98a', true));
     Snd.coin(); Snd.buy(); Snd.unlock();
     G.flash(0.8); G.shake(7);
     for (let i = 0; i < 140; i++) G.particles.push(new Particle({
