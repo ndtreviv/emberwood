@@ -2374,6 +2374,9 @@ function updateEyeFall(dt) {
 function drawEyeBoss(camX, camY) {
   const e = G.boss;
   if (!e || !e.isEye) return;
+  /* NOTHING OF IT IS ON THE SCREEN UNTIL IT OPENS.  The walk out along the
+     road is meant to be a walk along an empty road. */
+  if (!e.awake || e.appear <= 0) return;
   const A = Art.eye;
   if (A.body && A.irisImg) { drawEyeImage(e, camX, camY, A); return; }
   if (!A.buf) return;
@@ -2502,15 +2505,18 @@ function drawEyeImage(e, camX, camY, A) {
   const ox = Math.round(e.ecx - camX - W / 2 - A.irisOX);
   const oy = Math.round(e.ecy - camY - H / 2 - A.irisOY);
   ctx.save();
+  /* it fades up out of the dark as it opens */
+  const app = clamp(e.appear === undefined ? 1 : e.appear, 0, 1);
+  ctx.globalAlpha = app;
   if (e.glitch > 0) {
     const g = e.glitch;
     for (let k = 0; k < 5; k++) {
       const sy = Math.floor(rr(0, H - 8)), sh2 = Math.floor(rr(4, 26));
-      ctx.globalAlpha = 0.85;
+      ctx.globalAlpha = app * 0.85;
       ctx.drawImage(A.imgBuf, 0, sy, W, sh2,
                     ox + Math.round(rr(-26, 26) * g), oy + sy, W, sh2);
     }
-    ctx.globalAlpha = 1 - g * 0.3;
+    ctx.globalAlpha = app * (1 - g * 0.3);
   }
   ctx.drawImage(A.imgBuf, ox, oy);
   ctx.restore();

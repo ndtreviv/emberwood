@@ -5634,7 +5634,11 @@ const EYE_STAGES = 10;
    slower; twenty minutes is the middle of them. */
 const EYE_HP = 31000;
 const EYE_PUPIL_R = 28;         /* how big a target the pupil is */
-const EYE_RISE = 34;            /* how far the pupil floats above the deck */
+/* How far the pupil rests above the deck.  It is the hero's own half
+   height, so the pupil sits at the height of the hero's chest: the eye
+   opens directly behind whoever is standing on the road, and they are
+   silhouetted against it the way the poster has them. */
+const EYE_RISE = PH / 2;
 /* How far the pupil can lean out of the eye.  It is kept short because the
    iris is a real sprite now and the sclera behind it is only painted in:
    lean it too far and the patch shows. */
@@ -5743,6 +5747,9 @@ class TheEye extends Enemy {
     this.dying = false; this.deathT = 0;
     this.lookX = 0; this.lookY = 0;
     this.glitch = 0;
+    /* Nothing of it is on the screen until it opens.  Until then there is
+       only the dark over the road, which is the whole of the walk. */
+    this.appear = 0;
   }
   /* only the pupil can be struck, and only while the eye is open */
   box() {
@@ -5756,9 +5763,15 @@ class TheEye extends Enemy {
   wake() {
     if (this.awake) return;
     this.awake = true; this.mode = 'open'; this.modeT = 0; this.wantOpen = 1;
-    /* it opens where the hero is standing, not where it was put */
+    /* IT OPENS DIRECTLY BEHIND THE HERO.  Not where it was put, and not
+       over their head: the pupil lands on them, so the first thing they
+       see of it is themselves standing in the middle of it. */
     const p = G.player;
-    if (p) { this.ecx = p.cx; this.px = p.cx; this.lookX = 0; this.lookY = 0; }
+    if (p) {
+      this.ecx = p.cx; this.px = p.cx;
+      this.ecy = p.cy; this.py = p.cy;
+      this.lookX = 0; this.lookY = 0;
+    }
     Snd.eyeOpen(); G.shake(9);
   }
   hurt(dmg, fx, fy, mult) {
@@ -5839,6 +5852,9 @@ class TheEye extends Enemy {
     this.charge = Math.max(0, this.charge - dt * 1.6);
 
     this.open += (this.wantOpen - this.open) * Math.min(1, dt * 2.6);
+    /* it comes out of the dark as it opens, rather than being there all
+       along with its lids shut */
+    this.appear = Math.min(1, this.appear + dt * 1.15);
     this.modeT += dt;
 
     switch (this.mode) {

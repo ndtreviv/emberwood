@@ -1146,7 +1146,14 @@ fourteen tiles at the least, and a red word comes up and tears away:
 
 > **WAIT**
 
-Then the eye opens in the dark behind the viaduct, and the health bar comes with it.
+**Nothing of the eye is on the screen until that moment.** The walk out along the road is a
+walk along an empty road: no shut lids waiting in the dark, nothing over your head. Then it
+comes up out of the dark as it opens, over about a second, and the health bar comes with it.
+
+**It opens directly behind you.** The pupil lands on the hero — not where the eye was put, and
+not over their head — so the first thing anybody sees of it is themselves standing in the
+middle of it, which is how the poster has them. Its resting height is the hero's own half
+height, so the pupil sits at the height of their chest for the rest of the fight.
 
 **The view stands back out here**, and only out here: the world is drawn at seven tenths, so
 half as much again of the road and of the eye is on the glass at once. The bar, the purse and
