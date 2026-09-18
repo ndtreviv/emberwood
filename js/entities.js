@@ -5,6 +5,10 @@
 
 /* What the three worn artifacts add up to.  game.js holds the table and
    loads after this file, so every call goes through a guard. */
+/* Is the hero on the bare stone of the corridor?  There is no music down
+   there and no wind: the footsteps are the whole of the sound, so they are
+   worth a harder one. */
+function onStone() { return !!(G.room && G.room.bg === 'eyehall'); }
 function aMul(stat) { return G.artMul ? G.artMul(stat) : 1; }
 function aAdd(stat) { return G.artAdd ? G.artAdd(stat) : 0; }
 function aOn(stat) { return !!(G.artOn && G.artOn(stat)); }
@@ -141,6 +145,21 @@ const COIN_PULL = 4.2;
 const FLIP_CD = 0.85, ROLLCUT_CD = 0.9;
 /* how long the sword must be held before the gale is ready */
 const CHARGE_FULL = 0.62;
+/* ------------------------------------------------------------
+   STAMINA — what stops the hero mashing one button.
+   Every cut, dash and dive spends from one pool of a hundred.  The pool
+   fills again on its own, but only after a short rest, so a player who
+   paces the blows keeps swinging and a player who hammers the key runs
+   dry.  The numbers below are the whole rule: nothing else limits it.
+   ------------------------------------------------------------ */
+const STAM_MAX = 100;
+const STAM_REGEN = 85;       /* points a second, once the rest is over */
+const STAM_REST = 0.30;      /* seconds of quiet before the pool fills */
+/* what each move costs.  A plain swing is cheap; the showy moves are not. */
+const STAM_COST = {
+  swing: 17, flurry: 30, flip: 30, rollcut: 30,
+  dash: 28, pierce: 26, roll: 12
+};
 /* snow is measured every four pixels across a room */
 const SNOW_STEP = 4;
 
@@ -163,6 +182,7 @@ class Player {
     this.wallDir = 0; this.wallT = 0; this.wallCd = 0;
     this.sinkT = 0; this.sinkSaid = false;
     this.tapT = 0; this.flurryT = 0; this.flurryCd = 0; this.flurryHit = null;
+    this.stam = STAM_MAX; this.stamRest = 0; this.windT = 0; this.stamFlash = 0;
     this.heldBy = null; this.heldT = 0; this.heldDmg = 0; this.heldPaid = 0;
     this.heldMode = 'squeeze'; this.slamDir = 0; this.slamHit = false;
     this.burnT = 0; this.burnAcc = 0;
@@ -395,13 +415,16 @@ class Player {
     if (this.dead || this.rollT > 0 || this.rollCd > 0) return;
     if (this.dashT > 0 || this.pierceT > 0 || this.onLadder || this.swimming) return;
     if (!this.grounded || G.room.mode !== 'side') return;
+    /* a roll that cannot be paid for simply does not start: the hero keeps
+       running, which is a plainer answer than a word on the screen */
+    if (!this.spendStam(STAM_COST.roll)) { this.stamFlash = 0.3; return; }
     this.rollT = 0.42; this.rollCd = 0.62;
     this.rollDir = dir; this.face = dir;
     this.vx = dir * (3.9 * (1 + this.up.speed * 0.10));
     this.atkT = 0; this.atkHit = null;
     /* the tuck carries you through a blow, but only for the first half */
     this.invuln = Math.max(this.invuln, 0.24);
-    Snd.step(1.4);
+    Snd.step(1.4, onStone());
     for (let i = 0; i < 10; i++) G.particles.push(new Particle({
       x: this.cx - dir * 4 + rr(-3, 3), y: this.y + this.h, vx: -dir * rr(0.6, 2.2), vy: rr(-1.2, -0.1),
       life: rr(0.2, 0.45), col: '#e0d6b6', col2: '#95886a', size: rr(1, 2.2), grav: 0.12
@@ -597,6 +620,33 @@ class Player {
      both shrug off the knock of a blow, and both pay double coins.
      In the air with a direction held: a front flip.
      Part way through a roll: a low cut that keeps the roll going. */
+  /* ---------- stamina ---------- */
+  get stamMax() { return STAM_MAX; }
+  get stamFrac() { return clamp(this.stam / STAM_MAX, 0, 1); }
+  /* Pay for a move.  It answers whether the hero can afford it, and takes
+     the cost when they can.  It says nothing either way: the caller knows
+     whether a refusal is worth a word. */
+  spendStam(cost) {
+    if (this.stam < cost) return false;
+    this.stam -= cost;
+    this.stamRest = STAM_REST;
+    return true;
+  }
+  /* the one word a refused move says, and not more than once a second */
+  winded() {
+    this.stamFlash = 0.3;
+    if (this.windT > 0) return;
+    this.windT = 1.0;
+    G.texts.push(new FloatText(this.cx, this.y - 6, 'WINDED', '#8fb6e8'));
+    Snd.uiBad();
+  }
+  updateStam(dt) {
+    this.windT = Math.max(0, this.windT - dt);
+    this.stamFlash = Math.max(0, this.stamFlash - dt);
+    if (this.stamRest > 0) { this.stamRest -= dt; return; }
+    this.stam = Math.min(STAM_MAX, this.stam + STAM_REGEN * dt);
+  }
+
   get spinning() { return this.spinT > 0; }
   beginSpin(kind, dir, dur, cd) {
     G.stats.specials = (G.stats.specials || 0) + 1;
@@ -618,6 +668,7 @@ class Player {
     if (this.dead || this.spinT > 0 || this.atkCd > 0 || this.flipCd > 0) return false;
     if (G.room.mode !== 'side' || this.grounded) return false;
     if (this.dashT > 0 || this.pierceT > 0 || this.onLadder || this.swimming || this.inWater) return false;
+    if (!this.spendStam(STAM_COST.flip)) return false;
     this.linkChain('flip');
     this.beginSpin('flip', dir, 0.42, 0.30);
     this.flipCd = FLIP_CD;
@@ -629,6 +680,7 @@ class Player {
   startRollCut() {
     if (this.dead || this.spinT > 0 || this.rollT <= 0 || this.rollCutCd > 0) return false;
     if (G.room.mode !== 'side') return false;
+    if (!this.spendStam(STAM_COST.rollcut)) return false;
     this.linkChain('rollcut');
     this.beginSpin('rollcut', this.rollDir, 0.34, 0.28);
     this.rollCutCd = ROLLCUT_CD;
@@ -751,6 +803,7 @@ class Player {
   startFlurry() {
     if (this.dead || this.flurryT > 0 || this.flurryCd > 0) return false;
     if (G.room.mode !== 'side') return false;
+    if (!this.spendStam(STAM_COST.flurry)) return false;
     this.flurryT = 0.001; this.flurryHit = new Set();
     this.flurryCd = 0.85;
     this.atkT = 0; this.atkCd = 0.2;
@@ -835,6 +888,7 @@ class Player {
   }
   startAttack() {
     if (this.atkT > 0 || this.atkCd > 0 || this.dead) return;
+    if (!this.spendStam(STAM_COST.swing)) { this.winded(); return; }
     if (G.room.mode === 'top') {
       /* from above there is no left or right to face, so swing at the cursor */
       const a = G.aim(this.cx, this.cy);
@@ -854,7 +908,7 @@ class Player {
     }
     if (this.grounded && G.room.mode === 'side') this.vx += this.face * 0.9;
   }
-  /* the air pierce: dive blade-first, no cooldown, double coins on the kill */
+  /* the air pierce: dive blade-first, paid for in stamina, double coins on the kill */
   startPierce() {
     if (this.dead || this.pierceT > 0 || this.dashT > 0) return;
     if (G.room.mode !== 'side' || this.grounded || this.inWater) return;
@@ -884,6 +938,7 @@ class Player {
       }
       return;
     }
+    if (!this.spendStam(STAM_COST.pierce)) { this.winded(); return; }
     this.pierceT = 0.001; this.pierceHit = new Set();
     G.stats.specials = (G.stats.specials || 0) + 1;
     this.linkChain('pierce');
@@ -934,6 +989,7 @@ class Player {
   }
   startDash() {
     if (this.dashCd > 0 || this.dashT > 0 || this.dead) return;
+    if (!this.spendStam(STAM_COST.dash)) { this.winded(); return; }
     const a = G.aim(this.cx, this.cy - 2);
     const dx = a.x, dy = a.y;
     const sp = 6.4;
@@ -967,6 +1023,7 @@ class Player {
 
     this.rollCd = Math.max(0, this.rollCd - dt);
     this.flipCd = Math.max(0, this.flipCd - dt);
+    this.updateStam(dt);
     this.updateCharge(dt);
     this.rollCutCd = Math.max(0, this.rollCutCd - dt);
     this.hurtT = Math.max(0, this.hurtT - dt);
@@ -977,11 +1034,15 @@ class Player {
        can be held or tapped together */
     const L = Input.act('left'), Rk = Input.act('right');
     const U = Input.act('up'), D = Input.act('down');
-    if (Input.actHit('dash')) this.startDash();
-    if (Input.actHit('pierce')) this.startPierce();
+    /* On the viaduct, before the eye has found you, there is nothing to do
+       but walk.  No blade, no dash, no dive, and no jump either: the road
+       is the whole of it until the eye opens. */
+    const walkOnly = !!(G.eyeWalkOnly && G.eyeWalkOnly());
+    if (!walkOnly && Input.actHit('dash')) this.startDash();
+    if (!walkOnly && Input.actHit('pierce')) this.startPierce();
     this.tapT = Math.max(0, this.tapT - dt);
     this.flurryCd = Math.max(0, this.flurryCd - dt);
-    if (Input.actHit('attack') || G.clickAttack) {
+    if (!walkOnly && (Input.actHit('attack') || G.clickAttack)) {
       const dir = (Rk ? 1 : 0) - (L ? 1 : 0);
       /* two taps inside a quarter of a second throw a flurry */
       const quick = this.tapT > 0;
@@ -1109,7 +1170,7 @@ class Player {
     if (!this.onLadder && lad && into && this.ladderOffT <= 0 &&
         this.dashT <= 0 && this.pierceT <= 0 && !this.swimming) {
       this.onLadder = true; this.vx = 0; this.vy = 0;
-      Snd.step(0.8);
+      Snd.step(0.8, onStone());
     }
 
     if (this.pierceT > 0) {
@@ -1149,7 +1210,7 @@ class Player {
       this.dropThrough = false;
       if (Math.abs(this.vy) > 0.2) {
         this.climbT -= dt;
-        if (this.climbT <= 0) { this.climbT = 0.26; Snd.step(0.6); G.tutMark('climb'); }
+        if (this.climbT <= 0) { this.climbT = 0.26; Snd.step(0.6, onStone()); G.tutMark('climb'); }
       }
     } else if (this.swimming) {
       /* hold S in water to swim freely, with no gravity pulling you down */
@@ -1275,7 +1336,8 @@ class Player {
 
       /* jump */
       this.coyote = this.grounded ? 0.11 : Math.max(0, this.coyote - dt);
-      if (Input.actHit('up')) this.jumpBuf = 0.13;
+      /* the walk along the viaduct keeps the hero's feet on the deck */
+      if (Input.actHit('up') && !(G.eyeWalkOnly && G.eyeWalkOnly())) this.jumpBuf = 0.13;
       else this.jumpBuf = Math.max(0, this.jumpBuf - dt);
       if (this.grounded) this.airJumps = 0;
       const canDouble = this.up.wings > 0 && this.airJumps < this.up.wings &&
@@ -1362,7 +1424,7 @@ class Player {
       this.stepT -= dt * Math.abs(this.vx);
       if (this.stepT <= 0) {
         this.stepT = 0.5;
-        Snd.step(Math.abs(this.vx) > 1.4 ? 1.2 : 0.8);
+        Snd.step(Math.abs(this.vx) > 1.4 ? 1.2 : 0.8, onStone());
         if (Math.abs(this.vx) > 1.3) G.particles.push(new Particle({
           x: this.cx - this.face * 5, y: this.y + this.h - 1, vx: -this.face * rr(0.4, 1.4), vy: rr(-0.8, -0.1),
           life: rr(0.22, 0.45), col: '#dfd6b8', col2: '#95886a', size: rr(1, 2), grav: 0.06
@@ -1404,7 +1466,7 @@ class Player {
     this.grounded = true;
     if (Math.abs(this.vx) + Math.abs(this.vy) > 0.5) {
       this.stepT -= dt * (Math.abs(this.vx) + Math.abs(this.vy));
-      if (this.stepT <= 0) { this.stepT = 0.6; Snd.step(0.7); }
+      if (this.stepT <= 0) { this.stepT = 0.6; Snd.step(0.7, onStone()); }
     }
   }
 
@@ -2038,9 +2100,14 @@ class Enemy {
      for a moment after every blow, so a steady attack still gains on it. */
   bossRegen(dt, perSecond) {
     if (this.dead || this.dying || !this.awake) return;
+    /* A rate of nought means nought.  It used to fall through to the
+       default, so a guardian asked to mend at no rate at all mended at the
+       ordinary one instead, and nothing could turn the mending off. */
+    const rate = perSecond === undefined ? 0.006 : perSecond;
+    if (rate <= 0) return;
     this.regenHold = Math.max(0, (this.regenHold || 0) - dt);
     if (this.regenHold > 0 || this.hp >= this.maxHp) return;
-    this.regenAcc = (this.regenAcc || 0) + this.maxHp * (perSecond || 0.006) * dt;
+    this.regenAcc = (this.regenAcc || 0) + this.maxHp * rate * dt;
     if (this.regenAcc >= 1) {
       const n = Math.floor(this.regenAcc);
       this.regenAcc -= n;
@@ -3300,19 +3367,127 @@ const ISLE_KEEPER_OF = {
   snow: 'shiverCrown', fire: 'cinderHeart', desert: 'glassScarab',
   forest: 'amethystBloom', mesa: 'gildedRoc'
 };
-/* the three aspects, and what each one adds to the keeper's name */
-const ISLE_ASPECT_NAME = ['', ', RISEN', ', CROWNED'];
+/* ============================================================
+   THE FIFTY KEEPERS.
+   A spoke of the archipelago is fifty islands, and it used to be
+   one keeper along the whole of it wearing three names.  It is
+   ten keepers now, a new one every five islands: its own name,
+   its own habits, its own colours and its own creatures to call
+   up.  Five spokes of ten is fifty, and no two of them fight
+   alike.
+
+   A row is [ name, what it does, the colour it is washed in,
+              how strongly, its shot's two colours, what it calls ].
+   ============================================================ */
+const ISLE_BAND_SIZE = 5;
+const ISLE_BANDS = 10;
+const ISLE_KEEPER_BANDS = {
+  snow: [
+    ['THE SHIVERING CROWN',  ['volley', 'shock', 'nova'],                           '#dff4ff', 0.00, '#dff4ff', '#3f7f9e', 'IceWisp'],
+    ['THE HOARFROST WIDOW',  ['nova', 'grasp', 'volley'],                           '#9fd8ff', 0.18, '#bfe8ff', '#2f6f9e', 'IceWisp'],
+    ['THE GLASS TSAR',       ['shock', 'spear', 'nova', 'volley'],                  '#7fc4f0', 0.26, '#a8dcff', '#25587f', 'Jelly'],
+    ['THE BLUE SILENCE',     ['nova', 'summon', 'shock', 'grasp'],                  '#5fa8e8', 0.32, '#8fd0f8', '#1d4a72', 'IceWisp'],
+    ['THE RIMEBOUND HERALD', ['spear', 'volley', 'shock', 'summon'],                '#8fb8ff', 0.34, '#cfe4ff', '#3a5a9e', 'Jelly'],
+    ['THE WINTER THROAT',    ['grasp', 'nova', 'spear', 'volley', 'shock'],         '#6f8fe0', 0.38, '#b0c8ff', '#2e3f86', 'IceWisp'],
+    ['THE PALE CONCLAVE',    ['summon', 'volley', 'nova', 'grasp', 'spear'],        '#a89fe8', 0.40, '#d8d0ff', '#4a3f8a', 'Sporeling'],
+    ['THE FROZEN ORACLE',    ['shock', 'nova', 'spear', 'summon', 'volley', 'grasp'], '#c8b8f8', 0.42, '#e8dcff', '#5a4a9e', 'Jelly'],
+    ['THE SLEET SOVEREIGN',  ['nova', 'spear', 'shock', 'grasp', 'volley', 'summon'], '#e0d0ff', 0.44, '#f4ecff', '#6a5ab0', 'IceWisp'],
+    ['THE LAST COLD',        ['nova', 'grasp', 'spear', 'shock', 'summon', 'volley'], '#ffffff', 0.48, '#ffffff', '#7f8fc8', 'Jelly']
+  ],
+  fire: [
+    ['THE CINDER HEART',     ['slam', 'aimed', 'quake'],                            '#ff7a2a', 0.00, '#ff7a2a', '#8a2410', 'Emberling'],
+    ['THE ASH BISHOP',       ['quake', 'brand', 'aimed'],                           '#e8632a', 0.18, '#ff8f3c', '#7a2008', 'Emberling'],
+    ['THE SMELTING KING',    ['slam', 'brand', 'quake', 'aimed'],                   '#d94f2a', 0.26, '#ff6f30', '#6a1806', 'Scarab'],
+    ['THE EMBER CHOIR',      ['summon', 'volley', 'brand', 'slam'],                 '#ff9a4a', 0.30, '#ffb45c', '#8a3410', 'Emberling'],
+    ['THE FURNACE WIDOW',    ['brand', 'quake', 'charge', 'aimed'],                 '#c93a2a', 0.34, '#f0502e', '#5a1204', 'Soldier'],
+    ['THE COAL PROPHET',     ['quake', 'summon', 'brand', 'volley', 'slam'],        '#8a3a2a', 0.38, '#c04a2a', '#3a0e04', 'Emberling'],
+    ['THE SLAG COLOSSUS',    ['slam', 'quake', 'charge', 'brand', 'aimed'],         '#a84a30', 0.40, '#d8663a', '#4a1606', 'Scarab'],
+    ['THE BURNING ANSWER',   ['brand', 'volley', 'quake', 'summon', 'slam', 'aimed'], '#ff5a3a', 0.42, '#ff7a4a', '#8a1a08', 'Soldier'],
+    ['THE MAGMA SOVEREIGN',  ['quake', 'brand', 'slam', 'charge', 'volley', 'summon'], '#ffb45c', 0.44, '#ffd07a', '#a04010', 'Emberling'],
+    ['THE LAST HEAT',        ['brand', 'quake', 'slam', 'volley', 'summon', 'charge'], '#fff4c0', 0.48, '#fff4c0', '#c05a1a', 'Scarab']
+  ],
+  desert: [
+    ['THE GLASS SCARAB',     ['charge', 'volley', 'quake'],                         '#f6d878', 0.00, '#f6d878', '#9c7418', 'Scarab'],
+    ['THE DUST VIZIER',      ['volley', 'spear', 'quake'],                          '#e0c070', 0.18, '#f0d488', '#8a6a18', 'Scarab'],
+    ['THE SALT IDOL',        ['quake', 'nova', 'charge', 'volley'],                 '#efe8d0', 0.26, '#fff8e0', '#a09878', 'Soldier'],
+    ['THE MIRAGE THRONE',    ['charge', 'spear', 'summon', 'volley'],               '#9fd8d0', 0.30, '#c8f0e8', '#4a8a80', 'Jelly'],
+    ['THE BURIED CHOIR',     ['summon', 'quake', 'nova', 'spear'],                  '#c9a86a', 0.34, '#e0c088', '#7a5a20', 'Scarab'],
+    ['THE SUNSTRUCK KING',   ['nova', 'charge', 'volley', 'spear', 'quake'],        '#ffd04a', 0.38, '#ffe98a', '#a87418', 'Soldier'],
+    ['THE GLASS LOCUST',     ['summon', 'charge', 'volley', 'nova', 'spear'],       '#a8e0d8', 0.40, '#d0f4ec', '#4a8a80', 'Scarab'],
+    ['THE THIRSTING CROWN',  ['spear', 'quake', 'nova', 'charge', 'summon', 'volley'], '#e8a84a', 0.42, '#ffc46a', '#8a5410', 'Soldier'],
+    ['THE DUNE ORACLE',      ['nova', 'spear', 'summon', 'quake', 'charge', 'volley'], '#fff0b0', 0.44, '#fff8d0', '#b08a28', 'Scarab'],
+    ['THE LAST DRY',         ['quake', 'nova', 'spear', 'charge', 'volley', 'summon'], '#ffffff', 0.48, '#ffffff', '#c8b078', 'Soldier']
+  ],
+  forest: [
+    ['THE AMETHYST BLOOM',   ['nova', 'volley', 'aimed'],                           '#a86fe0', 0.00, '#a86fe0', '#5d3a86', 'Sporeling'],
+    ['THE ROTTING CROWN',    ['volley', 'grasp', 'nova'],                           '#8f5fc0', 0.18, '#a86fe0', '#4a2f70', 'Sporeling'],
+    ['THE SPORE CARDINAL',   ['summon', 'nova', 'volley', 'aimed'],                 '#c94f8a', 0.26, '#e86fa8', '#7a2050', 'Sporeling'],
+    ['THE VIOLET THROAT',    ['grasp', 'spear', 'nova', 'volley'],                  '#6f4fb0', 0.32, '#8f6fd0', '#3a2060', 'Jelly'],
+    ['THE CREEPING SYNOD',   ['summon', 'grasp', 'volley', 'nova'],                 '#5faf6a', 0.34, '#8fd08a', '#2f6f3a', 'Sporeling'],
+    ['THE MOULDERING KING',  ['spear', 'nova', 'summon', 'grasp', 'volley'],        '#7a8f4a', 0.38, '#a8c46a', '#3a4a20', 'Sporeling'],
+    ['THE ORCHID WIDOW',     ['grasp', 'volley', 'spear', 'nova', 'summon'],        '#e06fb0', 0.40, '#ff8fd0', '#8a2f60', 'Jelly'],
+    ['THE SEEDING ORACLE',   ['nova', 'summon', 'grasp', 'spear', 'volley', 'aimed'], '#9be89a', 0.42, '#c0ffc0', '#4a8a4a', 'Sporeling'],
+    ['THE BRIAR SOVEREIGN',  ['grasp', 'spear', 'nova', 'volley', 'summon', 'aimed'], '#c8a0e8', 0.44, '#e8d0ff', '#6a4a9e', 'Jelly'],
+    ['THE LAST GREEN',       ['nova', 'grasp', 'summon', 'spear', 'volley', 'aimed'], '#e8ffe8', 0.48, '#ffffff', '#7fb07f', 'Sporeling']
+  ],
+  mesa: [
+    ['THE GILDED ROC',       ['charge', 'aimed', 'strike'],                         '#f6d878', 0.00, '#fff4c0', '#a4713f', 'Soldier'],
+    ['THE COPPER VULTURE',   ['strike', 'volley', 'charge'],                        '#c97a3a', 0.20, '#e8a05a', '#6a3a18', 'Soldier'],
+    ['THE CANYON KING',      ['quake', 'charge', 'strike', 'aimed'],                '#a4713f', 0.28, '#c99060', '#5a3a1a', 'Scarab'],
+    ['THE BRASS CHOIR',      ['summon', 'strike', 'volley', 'charge'],              '#d8b84a', 0.32, '#f0d878', '#8a6a18', 'Soldier'],
+    ['THE GOLDSTRUCK WIDOW', ['strike', 'nova', 'aimed', 'volley'],                 '#ffd04a', 0.36, '#ffe98a', '#a08018', 'Scarab'],
+    ['THE RED MESA ORACLE',  ['nova', 'strike', 'summon', 'charge', 'volley'],      '#c94f3a', 0.38, '#e8735a', '#7a2018', 'Soldier'],
+    ['THE TALON THRONE',     ['charge', 'strike', 'spear', 'nova', 'aimed'],        '#8a6a3a', 0.40, '#c9a06a', '#4a3418', 'Scarab'],
+    ['THE BULLION COLOSSUS', ['quake', 'strike', 'volley', 'summon', 'charge', 'nova'], '#f0c93a', 0.42, '#fff4c0', '#a8862a', 'Soldier'],
+    ['THE SUNSET SOVEREIGN', ['strike', 'nova', 'charge', 'spear', 'volley', 'summon'], '#ff8b5a', 0.44, '#ffb48a', '#8a3a20', 'Scarab'],
+    ['THE LAST GOLD',        ['nova', 'strike', 'spear', 'charge', 'summon', 'volley'], '#fff4c0', 0.48, '#ffffff', '#c8a02c', 'Soldier']
+  ]
+};
+/* which keeper of the ten a given island carries: one every five */
+function isleBand(tier) { return clamp(Math.floor((tier | 0) / ISLE_BAND_SIZE), 0, ISLE_BANDS - 1); }
+function isleBandRow(kind, tier) {
+  const rows = ISLE_KEEPER_BANDS[kind] || ISLE_KEEPER_BANDS.forest;
+  return rows[isleBand(tier)];
+}
 function isleBossKey(kind) { return ISLE_KEEPER_OF[kind] || ISLE_KEEPER_OF.forest; }
-/* the aspect is spread over the fifty islands of a spoke */
-function isleAspect(tier) { return Math.min(2, Math.floor((tier | 0) / 17)); }
-function isleBossTitle(kind, tier) {
-  const cfg = ISLE_KEEPERS[isleBossKey(kind)];
-  return cfg.title + ISLE_ASPECT_NAME[isleAspect(tier)];
+function isleBossTitle(kind, tier) { return isleBandRow(kind, tier)[0]; }
+function isleBossAttacks(kind, tier) { return isleBandRow(kind, tier)[1]; }
+/* everything else that makes one keeper not another */
+function isleBossKit(kind, tier) {
+  const r = isleBandRow(kind, tier);
+  return { title: r[0], attacks: r[1], tint: r[2], tintAmt: r[3],
+           proj: { col: r[4], col2: r[5] }, strikeCol: r[4], minion: r[6] };
 }
-function isleBossAttacks(kind, tier) {
-  const cfg = ISLE_KEEPERS[isleBossKey(kind)];
-  return cfg.aspects[isleAspect(tier)];
+/* What a room may hand a guardian over the top of its own table.  An island
+   keeper is a different keeper every five islands, and this is the list of
+   what may be made different. */
+const GUARD_OVERRIDE = ['attacks', 'title', 'regen', 'minion', 'brood',
+                        'strikeCol', 'tint', 'tintAmt', 'scale'];
+/* THE KEEPER'S OWN COLOUR, laid over its sprite.
+   Fifty keepers out of five sprites: the frame goes into one buffer, the
+   colour is laid over whatever is in it, and the result goes to the world.
+   Colouring the frames at build time instead would be four hundred of
+   them, and they would all sit in memory for the one that is on screen. */
+let guardTint = null, guardTintX = null;
+function tintedFrame(img, col, amt) {
+  if (!guardTint || guardTint.width !== img.width || guardTint.height !== img.height) {
+    guardTint = mkc(img.width, img.height);
+    guardTintX = guardTint.getContext('2d');
+  }
+  const b = guardTintX;
+  b.globalCompositeOperation = 'source-over';
+  b.globalAlpha = 1;
+  b.clearRect(0, 0, img.width, img.height);
+  b.drawImage(img, 0, 0);
+  b.globalCompositeOperation = 'source-atop';
+  b.globalAlpha = amt;
+  b.fillStyle = col;
+  b.fillRect(0, 0, img.width, img.height);
+  b.globalCompositeOperation = 'source-over';
+  b.globalAlpha = 1;
+  return guardTint;
 }
+
 class Guardian extends Enemy {
   /* `extra` lets the room that raises a guardian ask for more than the table
      gives it: a heavier blow, or more phases to stand through. */
@@ -3325,11 +3500,13 @@ class Guardian extends Enemy {
     /* A room may also give a guardian its own habits and its own name.  An
        island keeper wakes in one of three aspects, and the aspect decides
        what it does. */
-    if (extra && (extra.attacks || extra.title)) {
-      cfg = Object.assign({}, cfg, {
-        attacks: extra.attacks || cfg.attacks,
-        title: extra.title || cfg.title
-      });
+    if (extra) {
+      const over = {};
+      let any = false;
+      for (const k of GUARD_OVERRIDE) if (extra[k] !== undefined) { over[k] = extra[k]; any = true; }
+      /* the shot keeps its own damage and habits and takes only the colours */
+      if (extra.proj) { over.proj = Object.assign({}, cfg.proj, extra.proj); any = true; }
+      if (any) cfg = Object.assign({}, cfg, over);
     }
     /* A guardian may also carry a cap: the most any one blow of its may
        take, whatever the rest of its numbers say. */
@@ -3741,7 +3918,8 @@ class Guardian extends Enemy {
   draw(c2) {
     const set = Art[this.cfg.art];
     const a = set.anchor;
-    const img = (this.mode === 'attack' ? set.attack : set.idle)[this.frame % 4];
+    let img = (this.mode === 'attack' ? set.attack : set.idle)[this.frame % 4];
+    if (this.cfg.tint && this.cfg.tintAmt > 0) img = tintedFrame(img, this.cfg.tint, this.cfg.tintAmt);
     let alpha = 1;
     if (this.dying) alpha = 0.55 + Math.sin(this.deathT * 22) * 0.45;
     c2.save();
@@ -5378,5 +5556,506 @@ class KeyItem {
     c2.beginPath(); c2.arc(this.x, this.y + bob, 13 + Math.sin(this.t * 3) * 2, 0, TAU); c2.fill();
     c2.restore();
     blit(c2, Art.item.key, this.x, this.y + bob, 8, 5);
+  }
+}
+
+/* ============================================================
+   THE LAST GUARDIAN — one eye over an endless viaduct.
+   It has ten stages.  Each one is a tenth of its health, and
+   every time you take one the eye shuts, the viaduct shakes,
+   and it opens again with more to throw at you.
+   The eye itself drifts after the hero rather than standing
+   still, so a hero who runs finds the pupil out of reach and
+   has to come back to it.  There is no other way to hurt it.
+   ============================================================ */
+const EYE_STAGES = 10;
+/* THE HEALTH OF THE WHOLE FIGHT, and it is a measured number rather than
+   a guessed one.  A hero with every upgrade at its ceiling and the three
+   hardest artifacts worn deals 25.9 points a second over a real fight,
+   counting the seconds the eye spends shut between its stages.  Twenty
+   minutes of that is 31,000, so that is what it stands at.  A hero who
+   works the dive in goes faster; one who loses time to the beams goes
+   slower; twenty minutes is the middle of them. */
+const EYE_HP = 31000;
+const EYE_PUPIL_R = 28;         /* how big a target the pupil is */
+const EYE_RISE = 34;            /* how far the pupil floats above the deck */
+/* How far the pupil can lean out of the eye.  It is kept short because the
+   iris is a real sprite now and the sclera behind it is only painted in:
+   lean it too far and the patch shows. */
+const EYE_REACH = 40;
+const EYE_BEAM_DMG = 3;
+
+/* one beam: a line of light that warns before it bites */
+class EyeBeam {
+  constructor(o) {
+    this.x = o.x; this.y = o.y;                 /* where it starts */
+    this.a = o.a;                               /* which way it points */
+    this.len = o.len || 620;
+    this.hw = o.hw === undefined ? 4 : o.hw;    /* half the width of the beam */
+    this.warn = o.warn === undefined ? 1.1 : o.warn;
+    this.live = o.live === undefined ? 0.42 : o.live;
+    this.spin = o.spin || 0;                    /* how fast it turns as it burns */
+    this.t = 0; this.dead = false;
+    this.dmg = o.dmg || EYE_BEAM_DMG;
+  }
+  get firing() { return this.t >= this.warn; }
+  update(dt) {
+    this.t += dt;
+    /* The line is fixed where it was thrown.  One that chased the eye
+       would move while the hero was still reading it, and a warning you
+       cannot read is not a warning. */
+    if (this.spin) this.a += this.spin * dt;
+    if (this.t > this.warn + this.live) { this.dead = true; return; }
+    if (!this.firing) return;
+    /* sparks off the line while it burns */
+    if (Math.random() < 0.7) {
+      const d = rr(20, this.len);
+      G.particles.push(new Particle({
+        x: this.x + Math.cos(this.a) * d, y: this.y + Math.sin(this.a) * d,
+        vx: rr(-1, 1), vy: rr(-1, 1), life: rr(0.1, 0.3),
+        col: '#ff5a5a', col2: '#8a1010', size: rr(1, 2.2), grav: 0, drag: 0.9
+      }));
+    }
+    this.bite();
+  }
+  /* Does it cross the hero?  The line is walked in short steps and each
+     step is tested against the body, which at this size is exact enough
+     and costs nothing. */
+  bite() {
+    const p = G.player;
+    if (p.dead || p.invuln > 0) return;
+    const box = { x: p.x - this.hw, y: p.y - this.hw, w: p.w + this.hw * 2, h: p.h + this.hw * 2 };
+    const dx = Math.cos(this.a), dy = Math.sin(this.a);
+    for (let d = 0; d <= this.len; d += 4) {
+      const x = this.x + dx * d, y = this.y + dy * d;
+      if (x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h) {
+        p.hurt(this.dmg, x, y);
+        return;
+      }
+    }
+  }
+  draw(c2) {
+    const dx = Math.cos(this.a), dy = Math.sin(this.a);
+    const x1 = this.x + dx * this.len, y1 = this.y + dy * this.len;
+    c2.save();
+    if (!this.firing) {
+      /* the warning: a thin thread that brightens as the moment comes */
+      const f = this.t / this.warn;
+      c2.globalAlpha = 0.25 + f * 0.55;
+      c2.strokeStyle = '#c9403a';
+      c2.lineWidth = 1;
+      c2.setLineDash([4, 5]);
+      c2.lineDashOffset = -G.t * 26;
+      c2.beginPath(); c2.moveTo(this.x, this.y); c2.lineTo(x1, y1); c2.stroke();
+      c2.setLineDash([]);
+    } else {
+      const f = 1 - (this.t - this.warn) / this.live;
+      c2.globalCompositeOperation = 'lighter';
+      c2.strokeStyle = '#6a0e12'; c2.lineWidth = this.hw * 2 + 4;
+      c2.globalAlpha = 0.55 * f;
+      c2.beginPath(); c2.moveTo(this.x, this.y); c2.lineTo(x1, y1); c2.stroke();
+      c2.strokeStyle = '#ff3a3a'; c2.lineWidth = this.hw * 2;
+      c2.globalAlpha = 0.9 * f;
+      c2.beginPath(); c2.moveTo(this.x, this.y); c2.lineTo(x1, y1); c2.stroke();
+      c2.strokeStyle = '#ffe0e0'; c2.lineWidth = Math.max(1, this.hw * 0.7);
+      c2.globalAlpha = f;
+      c2.beginPath(); c2.moveTo(this.x, this.y); c2.lineTo(x1, y1); c2.stroke();
+    }
+    c2.restore();
+  }
+}
+
+class TheEye extends Enemy {
+  constructor(x, y) {
+    super({ x: x, y: y, w: EYE_PUPIL_R * 2, h: EYE_PUPIL_R * 2, hp: EYE_HP, damage: 0,
+            coinDrop: 0, blood: '#8f949c' });
+    this.kbScale = 0;
+    this.isEye = true;
+    this.maxHp = EYE_HP;
+    this.title = 'THE LAST GUARDIAN';
+    this.awake = false;
+    this.stage = 1;                 /* which tenth of the fight this is */
+    this.open = 0;                  /* 0 shut, 1 wide */
+    this.wantOpen = 0;
+    this.mode = 'wait';             /* wait, open, fight, shut, dying */
+    this.modeT = 0;
+    this.atkT = 2.6;
+    this.pattern = 0;
+    this.px = x; this.py = y;       /* where the pupil is, in the world */
+    this.ecx = x; this.ecy = y;     /* the middle of the whole eye */
+    this.charge = 0;                /* how lit the pupil is, just before it throws */
+    this.dying = false; this.deathT = 0;
+    this.lookX = 0; this.lookY = 0;
+    this.glitch = 0;
+  }
+  /* only the pupil can be struck, and only while the eye is open */
+  box() {
+    return { x: this.px - EYE_PUPIL_R, y: this.py - EYE_PUPIL_R,
+             w: EYE_PUPIL_R * 2, h: EYE_PUPIL_R * 2 };
+  }
+  get cx() { return this.px; }
+  get cy() { return this.py; }
+  /* the tenth of its health this stage ends at */
+  stageFloor(n) { return Math.round(this.maxHp * (EYE_STAGES - n) / EYE_STAGES); }
+  wake() {
+    if (this.awake) return;
+    this.awake = true; this.mode = 'open'; this.modeT = 0; this.wantOpen = 1;
+    /* it opens where the hero is standing, not where it was put */
+    const p = G.player;
+    if (p) { this.ecx = p.cx; this.px = p.cx; this.lookX = 0; this.lookY = 0; }
+    Snd.eyeOpen(); G.shake(9);
+  }
+  hurt(dmg, fx, fy, mult) {
+    if (this.dying || !this.awake) return;
+    /* a shut eye takes nothing: that is the whole of its guard */
+    if (this.mode === 'shut' || this.open < 0.55) { Snd.hitHard(); G.shake(1); return; }
+    super.hurt(dmg, fx, fy, mult);
+    if (this.dead || this.dying) return;
+    /* never past the floor of this stage until the eye has shut on it */
+    const floor = this.stageFloor(this.stage);
+    if (this.hp <= floor) { this.hp = floor; this.closeStage(); }
+  }
+  /* the eye shuts, the viaduct shakes, and the next stage begins */
+  closeStage() {
+    if (this.stage >= EYE_STAGES) { this.beginDeath(); return; }
+    this.mode = 'shut'; this.modeT = 0; this.wantOpen = 0;
+    this.clearBeams();
+    Snd.eyeShut(); G.shake(14); G.hitStop(0.12);
+    G.texts.push(new FloatText(this.px, this.py - 30,
+      'STAGE ' + this.stage + ' OF ' + EYE_STAGES, '#ff8b7a'));
+    for (let i = 0; i < 60; i++) G.particles.push(new Particle({
+      x: this.px + rr(-60, 60), y: this.py + rr(-30, 30), vx: rr(-4, 4), vy: rr(-4, 2),
+      life: rr(0.4, 1.1), col: '#d8dade', col2: '#3a3d44', size: rr(1, 3.4), grav: 0.06
+    }));
+  }
+  clearBeams() {
+    for (const b of G.projectiles) if (b instanceof EyeBeam) b.dead = true;
+  }
+  beginDeath() {
+    if (this.dying) return;
+    this.dying = true; this.deathT = 0; this.mode = 'dying';
+    this.clearBeams();
+    Snd.eyeShut(); G.shake(18); G.flash(0.7);
+  }
+  kill() { this.beginDeath(); }
+
+  update(dt) {
+    this.flash = Math.max(0, this.flash - dt);
+    this.animT += dt;
+    const p = G.player;
+    const room = G.room;
+    const deckY = (room.viaduct ? room.viaduct.deck : 17) * TILE;
+
+    if (this.dying) {
+      this.deathT += dt;
+      this.wantOpen = Math.max(0, 1 - this.deathT / 2.2);
+      this.open += (this.wantOpen - this.open) * Math.min(1, dt * 3);
+      this.glitch = Math.max(0, 1 - this.deathT / 4);
+      if (Math.random() < 0.8) G.particles.push(new Particle({
+        x: this.ecx + rr(-150, 150), y: this.ecy + rr(-70, 70), vx: rr(-3, 3), vy: rr(-3, 1),
+        life: rr(0.5, 1.4), col: rpick(['#d8dade', '#ff5a5a', '#ffffff']),
+        col2: '#1d2026', size: rr(1, 3.6), grav: 0.03
+      }));
+      if (Math.random() < 0.12) { G.shake(7); Snd.eyeGlitch(); }
+      if (this.deathT > 4.2 && !this.dead) {
+        this.dead = true;
+        Snd.explode(); G.shake(20); G.flash(1);
+        G.payOut(60, p.cx, p.cy - 20);
+        if (G.onEyeDead) G.onEyeDead();
+      }
+      return;
+    }
+    if (!this.awake) return;
+
+    /* ---- where the eye is, and where it is looking ---- */
+    /* The eye drifts after the hero.  It never quite catches up, which is
+       what makes a hero who runs have to turn round and come back. */
+    this.ecx += (p.cx - this.ecx) * Math.min(1, dt * 1.35);
+    this.ecy = deckY - EYE_RISE;
+    /* the pupil leans out of the eye toward you, as far as it can */
+    const lx = clamp(p.cx - this.ecx, -EYE_REACH, EYE_REACH);
+    const ly = clamp(p.cy - this.ecy, -16, 16);
+    this.lookX += (lx - this.lookX) * Math.min(1, dt * 4.5);
+    this.lookY += (ly - this.lookY) * Math.min(1, dt * 4.5);
+    this.px = this.ecx + this.lookX;
+    this.py = this.ecy + this.lookY;
+    this.x = this.px; this.y = this.py + EYE_PUPIL_R;
+    this.charge = Math.max(0, this.charge - dt * 1.6);
+
+    this.open += (this.wantOpen - this.open) * Math.min(1, dt * 2.6);
+    this.modeT += dt;
+
+    switch (this.mode) {
+      case 'open':
+        if (this.modeT > 1.3) { this.mode = 'fight'; this.modeT = 0; this.atkT = 1.4; }
+        break;
+      case 'shut':
+        if (this.modeT > 1.0 && this.wantOpen === 0) {
+          /* the viaduct takes the shock of it */
+          G.shake(10); Snd.eyeRumble();
+        }
+        if (this.modeT > 2.1) {
+          this.stage++;
+          this.wantOpen = 1;
+          this.mode = 'open'; this.modeT = 0;
+          Snd.eyeOpen(); G.shake(8);
+          G.banner('STAGE ' + this.stage + ' OF ' + EYE_STAGES, 2.2);
+        }
+        break;
+      default: {
+        this.atkT -= dt;
+        if (this.atkT <= 0) { this.throwPattern(); }
+        break;
+      }
+    }
+  }
+
+  /* ---- the attacks ---- */
+  /* How hard this stage is, from nothing at the first to everything at
+     the tenth.  Every number below reads off it. */
+  get heat() { return (this.stage - 1) / (EYE_STAGES - 1); }
+  /* THE LAST THREE STAGES ARE A DIFFERENT FIGHT.  Everything below reads
+     off this as well as off the heat: the rings close their gaps, the
+     sweeps grow an arm, a spiral comes out that has to be run from rather
+     than stood through, and nothing arrives on its own any more. */
+  get late() { return clamp((this.stage - 7) / 3, 0, 1); }
+  throwPattern() {
+    const h = this.heat, L = this.late;
+    /* the rest between attacks shortens as the stages go by, and then
+       shortens again over the last three */
+    this.atkT = 2.3 - h * 1.05 - L * 0.42;
+    /* the pool of attacks opens up one at a time */
+    const pool = ['ring', 'lash'];
+    if (this.stage >= 2) pool.push('volley');
+    if (this.stage >= 3) pool.push('rain');
+    if (this.stage >= 5) pool.push('sweep');
+    if (this.stage >= 7) pool.push('ring', 'rain');
+    if (this.stage >= 8) pool.push('spiral', 'ring');
+    if (this.stage >= 9) pool.push('spiral', 'sweep');
+    const kind = pool[(this.pattern++) % pool.length];
+    this.charge = 1;
+    /* The warning still lasts three quarters of a second at the very last
+       stage.  It is the one number that is not allowed to fall away: an
+       attack you cannot read is not hard, it is unfair. */
+    const warn = 1.25 - h * 0.35 - L * 0.15;
+    const p = G.player;
+    const room = G.room;
+    const deckY = (room.viaduct ? room.viaduct.deck : 17) * TILE;
+
+    if (kind === 'ring') {
+      /* a circle of beams out of the pupil, with one gap to stand in */
+      /* Two beams' worth of gap, three while the stages are early, and
+         only one over the last three - and that one turns while it burns,
+         so standing in it is not enough.  You have to go round with it. */
+      const n = 10 + Math.round(h * 6) + Math.round(L * 4);
+      const base = Math.random() * TAU;
+      const gap = Math.floor(Math.random() * n);
+      const wide = L > 0.6 ? 1 : (h < 0.5 ? 3 : 2);
+      const turn = (Math.random() < 0.5 ? -1 : 1) * (0.10 * h + 0.55 * L);
+      for (let k = 0; k < n; k++) {
+        let inGap = false;
+        for (let q = 0; q < wide; q++) if (k === (gap + q) % n) inGap = true;
+        if (inGap) continue;
+        G.projectiles.push(new EyeBeam({
+          x: this.px, y: this.py, a: base + k / n * TAU, warn: warn,
+          live: 0.45 + L * 0.55, hw: 3, spin: turn
+        }));
+      }
+      Snd.eyeCharge();
+    } else if (kind === 'sweep') {
+      /* Two arms turning like a clock, slowly enough to be jumped - and
+         three of them, turning faster, once the stages are late. */
+      const dir = Math.random() < 0.5 ? -1 : 1;
+      const a0 = Math.random() * TAU;
+      const arms = L > 0.5 ? 3 : 2;
+      for (let k = 0; k < arms; k++) {
+        G.projectiles.push(new EyeBeam({
+          x: this.px, y: this.py, a: a0 + k * TAU / arms, warn: warn, live: 3.4,
+          hw: 4, spin: dir * (0.55 + h * 0.35 + L * 0.45)
+        }));
+      }
+      this.atkT = 4.6 - h * 0.9 - L * 0.8;
+      Snd.eyeCharge();
+    } else if (kind === 'volley') {
+      /* aimed shots, one after another, each one warned on its own */
+      const n = 3 + Math.round(h * 3);
+      for (let k = 0; k < n; k++) {
+        const tx = p.cx + rr(-10, 10), ty = p.cy + rr(-8, 8);
+        G.projectiles.push(new EyeBeam({
+          x: this.px, y: this.py, a: Math.atan2(ty - this.py, tx - this.px),
+          warn: warn + k * 0.42, live: 0.3, hw: 3
+        }));
+      }
+      Snd.eyeCharge();
+    } else if (kind === 'rain') {
+      /* Beams straight down along the deck, with gaps left to stand in -
+         two of them, and one at the end, and a second volley behind the
+         first that puts its gap somewhere else. */
+      const n = 7 + Math.round(h * 5) + Math.round(L * 4);
+      const x0 = p.cx - 200, span = 400;
+      const waves = L > 0.35 ? 2 : 1;
+      for (let wv = 0; wv < waves; wv++) {
+        const gap = Math.floor(Math.random() * n);
+        const wide = L > 0.5 ? 1 : 2;
+        for (let k = 0; k < n; k++) {
+          let inGap = false;
+          for (let q = 0; q < wide; q++) if (k === (gap + q) % n) inGap = true;
+          if (inGap) continue;
+          const x = x0 + (k + 0.5) / n * span;
+          G.projectiles.push(new EyeBeam({
+            x: x, y: deckY - 210, a: Math.PI / 2, len: 240,
+            warn: warn + wv * 0.85, live: 0.5, hw: 4
+          }));
+        }
+      }
+      Snd.eyeCharge();
+    } else if (kind === 'spiral') {
+      /* THE SPIRAL.  Not a shape to stand in the gap of: the beams come
+         out one after another all the way round, so the only answer is to
+         keep moving the way it is turning and stay ahead of it. */
+      const n = 16 + Math.round(L * 8);
+      const dir = Math.random() < 0.5 ? -1 : 1;
+      const a0 = Math.random() * TAU;
+      const step = 0.135 - L * 0.045;
+      for (let k = 0; k < n; k++) {
+        G.projectiles.push(new EyeBeam({
+          x: this.px, y: this.py, a: a0 + dir * k * (TAU / n) * 1.7,
+          warn: warn + k * step, live: 0.34, hw: 3
+        }));
+      }
+      this.atkT = 2.4 + n * step * 0.5;
+      G.texts.push(new FloatText(p.cx, p.cy - 30, 'KEEP MOVING', '#ff8b7a'));
+      Snd.eyeCharge();
+    } else {
+      /* THE LASH: a beam straight along the deck.  The low one runs at the
+         hero's shins and has to be jumped.  The high one runs at their
+         chest and has to be gone under, which means the crouch or the
+         roll.  The hero stands sixteen pixels and crouches ten, and the
+         two heights are set off those two numbers and nothing else. */
+      const low = Math.random() < 0.5;
+      const dir = p.cx < this.px ? Math.PI : 0;
+      const y = low ? deckY - 4 : deckY - 13;
+      for (let k = 0; k < (h > 0.6 ? 2 : 1); k++) {
+        G.projectiles.push(new EyeBeam({
+          x: this.px, y: y, a: dir + k * Math.PI, len: 700,
+          warn: warn + 0.15, live: 0.55, hw: low ? 4 : 2
+        }));
+      }
+      G.texts.push(new FloatText(p.cx, p.cy - 28, low ? 'JUMP' : 'ROLL', '#ff8b7a'));
+      Snd.eyeCharge();
+    }
+
+    /* AND AT THE END, NOTHING COMES ON ITS OWN.  Whatever was thrown, a
+       lash follows it along the deck a beat later.  It is the most legible
+       thing the eye has, so the second thing to dodge is always one that
+       can be read while the first is still burning. */
+    if (L > 0.3 && kind !== 'lash' && kind !== 'spiral') {
+      const low = Math.random() < 0.5;
+      const dir = p.cx < this.px ? Math.PI : 0;
+      G.projectiles.push(new EyeBeam({
+        x: this.px, y: low ? deckY - 4 : deckY - 13, a: dir, len: 700,
+        warn: warn + 0.75, live: 0.55, hw: low ? 4 : 2
+      }));
+      if (L > 0.75) G.projectiles.push(new EyeBeam({
+        x: this.px, y: low ? deckY - 4 : deckY - 13, a: dir + Math.PI, len: 700,
+        warn: warn + 0.75, live: 0.55, hw: low ? 4 : 2
+      }));
+    }
+  }
+
+  /* ---- the painting of it ---- */
+  draw() { /* the eye is a backdrop, not a sprite: drawEyeBoss paints it */ }
+}
+
+/* ============================================================
+   THE GREAT COIN.
+   A million coins is not a heap of coins.  It is one coin, and
+   it comes down out of the dark over the viaduct slowly enough
+   to watch it come.  Walk into it and it is yours.  Leave it and
+   it settles on the road and waits, because nobody is meant to
+   miss the only one of these there is.
+   ============================================================ */
+class GreatCoin {
+  constructor(x, y, amount) {
+    this.x = x; this.y = y;
+    this.amount = amount;
+    this.vy = 0;
+    this.t = 0;
+    this.rest = 0;                /* how long it has sat on the road */
+    this.landY = y;               /* set by whoever drops it */
+    this.dead = false;
+    this.taken = false;
+  }
+  update(dt) {
+    this.t += dt;
+    const p = G.player;
+    /* it falls, and it slows as it comes, so the last of the way is a drift */
+    if (this.y < this.landY) {
+      this.vy = Math.min(46, this.vy + 42 * dt);
+      const left = this.landY - this.y;
+      if (left < 46) this.vy = Math.min(this.vy, 10 + left * 0.7);
+      this.y = Math.min(this.landY, this.y + this.vy * dt);
+    } else {
+      this.rest += dt;
+    }
+    /* sparks off it the whole way down */
+    if (Math.random() < dt * 34) G.particles.push(new Particle({
+      x: this.x + rr(-11, 11), y: this.y + rr(-11, 11), vx: rr(-0.5, 0.5), vy: rr(-1.2, -0.2),
+      life: rr(0.3, 0.9), col: rpick(['#ffe98a', '#fff4c0', '#f0c93a']),
+      col2: '#8a6a3a', size: rr(1, 2.4), grav: -0.02, drag: 0.94
+    }));
+    if (this.taken || p.dead) return;
+    if (Math.hypot(p.cx - this.x, p.cy - this.y) < 22) this.take();
+  }
+  take() {
+    if (this.taken) return;
+    this.taken = true;
+    const p = G.player;
+    p.coins = (p.coins || 0) + this.amount;
+    G.texts.push(new FloatText(this.x, this.y - 18, '+' + shortCoin(this.amount), '#ffe98a'));
+    Snd.coin(); Snd.buy(); Snd.unlock();
+    G.flash(0.8); G.shake(7);
+    for (let i = 0; i < 140; i++) G.particles.push(new Particle({
+      x: this.x, y: this.y, vx: rr(-6, 6), vy: rr(-6, 4), life: rr(0.5, 1.5),
+      col: rpick(['#ffe98a', '#f0c93a', '#fff4c0', '#ffffff']),
+      col2: '#8a6a3a', size: rr(1, 3.4), grav: 0.08, drag: 0.94
+    }));
+    if (G.onGreatCoin) G.onGreatCoin(this);
+    this.dead = true;
+  }
+  draw(c2) {
+    const bob = this.y >= this.landY ? Math.sin(this.t * 2.4) * 2 : 0;
+    const y = this.y + bob;
+    /* the light it carries down with it */
+    c2.save();
+    c2.globalCompositeOperation = 'lighter';
+    c2.globalAlpha = 0.22 + Math.sin(this.t * 3.4) * 0.08;
+    c2.fillStyle = '#ffd04a';
+    c2.beginPath(); c2.arc(this.x, y, 34 + Math.sin(this.t * 2) * 5, 0, TAU); c2.fill();
+    c2.globalAlpha = 0.3;
+    c2.beginPath(); c2.arc(this.x, y, 18, 0, TAU); c2.fill();
+    c2.restore();
+    /* the coin itself, turning: a disc squeezed flat and back again */
+    const turn = Math.abs(Math.cos(this.t * 2.2));
+    const rx = Math.max(1.5, 13 * turn), ry = 13;
+    c2.save();
+    c2.fillStyle = '#8a6a3a';
+    c2.beginPath(); c2.ellipse(this.x, y, rx + 1.5, ry + 1.5, 0, 0, TAU); c2.fill();
+    c2.fillStyle = '#f0c93a';
+    c2.beginPath(); c2.ellipse(this.x, y, rx, ry, 0, 0, TAU); c2.fill();
+    if (rx > 5) {
+      c2.fillStyle = '#fff4c0';
+      c2.beginPath(); c2.ellipse(this.x - rx * 0.28, y - ry * 0.28, rx * 0.42, ry * 0.42, 0, 0, TAU); c2.fill();
+      c2.fillStyle = '#c8a02c';
+      c2.beginPath(); c2.ellipse(this.x, y, rx * 0.62, ry * 0.62, 0, 0, TAU); c2.fill();
+    }
+    c2.restore();
+    /* and what it is worth, written under it once it has landed */
+    if (this.rest > 0.35) {
+      const a = Math.min(1, (this.rest - 0.35) * 2);
+      c2.save(); c2.globalAlpha = a * (0.65 + Math.sin(this.t * 4) * 0.35);
+      drawText(c2, shortCoin(this.amount), this.x, y + 18, '#ffe98a', 1, 'center', '#2a1a10');
+      c2.restore();
+    }
   }
 }

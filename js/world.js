@@ -10,10 +10,12 @@ const T_EMPTY = 0, T_GRASS = 1, T_DIRT = 2, T_ROCK = 3, T_ROCKTOP = 4,
       T_LADDER = 21,
       /* the white silence and the golden waste */
       T_SNOW = 22, T_SNOWTOP = 23, T_ICE = 24, T_POWDER = 25,
-      T_SANDTOP = 26, T_QUICK = 27, T_TOMB = 28, T_TOMBTOP = 29;
+      T_SANDTOP = 26, T_QUICK = 27, T_TOMB = 28, T_TOMBTOP = 29,
+      /* the road to the last guardian: dark brick, and the pale viaduct deck */
+      T_EYEWALL = 30, T_VIA = 31, T_VIATOP = 32;
 
 const SOLID_TILE = { 1: 1, 2: 1, 3: 1, 4: 1, 10: 1, 11: 1, 12: 1, 14: 1, 15: 1, 16: 1, 17: 1, 18: 1, 19: 1, 20: 1,
-                     22: 1, 23: 1, 24: 1, 26: 1, 28: 1, 29: 1 };
+                     22: 1, 23: 1, 24: 1, 26: 1, 28: 1, 29: 1, 30: 1, 31: 1, 32: 1 };
 const ONEWAY_TILE = { 5: 1, 13: 1 };
 const WET_TILE = { 6: 1, 7: 1 };
 const BOUNCE_TILE = { 10: 1 };
@@ -1656,6 +1658,86 @@ function buildIsle(typeKey, index, level) {
 }
 World.buildIsle = buildIsle;
 
+/* ============================================================
+   THE ROAD TO THE LAST GUARDIAN
+   Two rooms.  The first is a straight stone corridor with a door
+   at the end of it and words on the walls that ask you to go
+   back.  The second is a viaduct that has no end in either
+   direction, and one eye over it.
+   ============================================================ */
+/* how tall the door is drawn, so both rooms can stand it on their floor */
+const EYE_DOOR_H = 52;
+/* the corridor: five tiles of headroom, a hundred and twenty long */
+const EYE_HALL_W = 124, EYE_HALL_H = 16;
+const EYE_HALL_FLOOR = 11;             /* the row the hero walks on */
+/* Four words, each at its own distance down the corridor.  They are read
+   in order and none of them is a lie. */
+World.EYE_WORDS = [
+  { at: 22, text: 'TURN BACK' },
+  { at: 44, text: 'LEAVE' },
+  { at: 68, text: 'RUN' },
+  { at: 92, text: 'ESCAPE' }
+];
+function buildEyeHall() {
+  const W = EYE_HALL_W, H = EYE_HALL_H;
+  const room = new Room({ id: 'eyehall', name: 'THE CORRIDOR', mode: 'side', w: W, h: H,
+                          /* NO MUSIC AT ALL down here, and no wind either.
+                             All there is to hear is your own feet. */
+                          music: 'silence', bg: 'eyehall', ambient: 0, dark: 0.72 });
+  room.fillRect(0, 0, W, H, T_EYEWALL);
+  /* the corridor itself, cut out of the solid */
+  room.fillRect(1, EYE_HALL_FLOOR - 5, W - 2, 5, T_EMPTY);
+  for (let x = 1; x < W - 1; x++) room.set(x, EYE_HALL_FLOOR, T_EYEWALL);
+  room.start = { x: 4 * TILE, y: EYE_HALL_FLOOR * TILE };
+  /* the door at the far end.  It is the only way on, and it creaks. */
+  const dx = W - 5;
+  room.eyeDoor = { x: dx * TILE, y: EYE_HALL_FLOOR * TILE - EYE_DOOR_H };
+  room.exits.push({ x: (dx - 1) * TILE, y: (EYE_HALL_FLOOR - 4) * TILE, w: 3 * TILE, h: 4 * TILE,
+                    to: '@eyeviaduct', label: 'OPEN IT', kind: 'door' });
+  return room;
+}
+
+/* ---------- the viaduct ---------- */
+/* It is wide enough to run along for a while, and it wraps where the
+   arches line up, so a hero who keeps running never reaches an end and
+   never sees the join. */
+const VIA_TILES_W = 400, VIA_TILES_H = 26;
+const VIA_DECK = 17;                   /* the row the deck's face sits on */
+const VIA_MID = 200 * TILE;            /* the middle of the room, in pixels */
+/* How far you go before it repeats.  It is eight strips of the picture,
+   and the picture is eight arches wide, so sixty four arches pass between
+   one wrap and the next and the join never falls anywhere but on a pier. */
+const VIA_PERIOD = 2048;
+const VIA_ENTRY = 30;                  /* the tile the door stands at */
+function buildEyeViaduct() {
+  const W = VIA_TILES_W, H = VIA_TILES_H;
+  const room = new Room({ id: 'eyeviaduct', name: 'THE VIADUCT', mode: 'side', w: W, h: H,
+                          music: 'silence', bg: 'eyeviaduct', ambient: 0, dark: 0.34 });
+  /* The deck: one course, and open air under the whole of it.  One course
+     is what the picture has - its coping band is seventeen pixels against
+     an arch pitch of thirty two - and the deck the hero walks on is cut to
+     the picture rather than the other way about. */
+  for (let x = 0; x < W; x++) room.set(x, VIA_DECK, T_VIATOP);
+  /* The wall you came through, with the door in it.  It stands until the
+     door is out of sight, and then there is no wall and no way back. */
+  room.viaWall = { x0: VIA_ENTRY - 4, x1: VIA_ENTRY - 1, y0: 2, y1: VIA_DECK - 1 };
+  for (let x = room.viaWall.x0; x <= room.viaWall.x1; x++)
+    for (let y = room.viaWall.y0; y <= room.viaWall.y1; y++) room.set(x, y, T_EYEWALL);
+  room.eyeDoor = { x: (VIA_ENTRY - 3) * TILE, y: VIA_DECK * TILE - EYE_DOOR_H };
+  /* THE HERO ARRIVES ON THE DECK, and two tiles clear of the wall they came
+     through.  A spawn that straddles the wall does not fit, and the rescue
+     that looks for room around it searches downward as readily as upward:
+     it found the open air under the viaduct and put the hero there. */
+  room.start = { x: (VIA_ENTRY + 2) * TILE, y: VIA_DECK * TILE };
+  room.viaduct = { mid: VIA_MID, period: VIA_PERIOD, deck: VIA_DECK, entry: VIA_ENTRY };
+  room.spawns.push({ type: 'theEye', x: (VIA_ENTRY + 60) * TILE, y: VIA_DECK * TILE });
+  return room;
+}
+World.buildEyeRooms = function () {
+  World.rooms.eyehall = buildEyeHall();
+  World.rooms.eyeviaduct = buildEyeViaduct();
+};
+
 function buildChapterArena(o) {
   const rng = new RNG(o.seed);
   const W = 52, H = 26;
@@ -1793,6 +1875,15 @@ World.build = function () {
   World.rooms.deep = deep;
 
   World.rooms.maze = buildMaze(31337);
+  /* THE HOLLOW MAZE IS NEVER THE SAME MAZE TWICE.  It was always generated
+     rather than drawn, but always from the one seed, so every hero walked
+     the same corridors.  This lays it out again from a fresh seed, and the
+     game calls it every time anybody steps into it. */
+  World.reshuffleMaze = function (seed) {
+    World.rooms.maze = buildMaze(seed === undefined ? ((Math.random() * 0x7ffffffe) | 0) + 1 : seed);
+    World.rooms.maze.level = 0;
+    return World.rooms.maze;
+  };
   World.rooms.cave = buildCave(5150);
   World.rooms.mine = buildMine(2468);
   World.rooms.tutorial = buildTutorial(1717);

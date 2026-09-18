@@ -152,7 +152,7 @@ page in Settings.
 | Space, X, Z or left click | Swing the sword |
 | Hold the sword instead of tapping | **Charge a gale.** Let go on a full charge and a blade of wind goes out, cutting through everything in a line and batting shots back. It works in the maze too, where it goes whichever of the four ways the blade points |
 | D | Dash toward the cursor (has a cooldown) |
-| F, in the air, two tiles up | Air pierce: stab straight down. No cooldown, double coins |
+| F, in the air, two tiles up | Air pierce: stab straight down. Costs stamina, double coins |
 | S (hold), in water | Swim freely in any direction |
 | Arrow up again, in mid-air | Double jump, once you own the Wings |
 | Click the doorway, or its **CLICK TO ENTER** button | Enter it. E also works |
@@ -166,6 +166,64 @@ Directions are read one at a time, so any two of them hold together — up and l
 diagonally, down and right to roll.
 
 On a phone, tap the on-screen buttons instead; see **Settings** above.
+
+## Stamina
+
+Under the dash meter there is a second bar, and every swing, dash, dive, roll and spinning
+cut is paid out of it. It holds **a hundred points**. A plain swing costs 17, the air pierce
+26, the dash 28, a flurry or a spinning cut 30, and a roll 12. So a hero who starts full can
+throw **five swings** one after another, or three of anything showier.
+
+| | |
+| --- | --- |
+| Green | Plenty left |
+| Amber | A swing or two left, and no flurry |
+| Red, reading **WINDED** | Nothing left. The bar flashes white and the move is refused |
+
+The bar fills again at **85 points a second**, but only after **0.3 seconds** in which nothing
+was spent. That one rule is the whole point of it: a player who hammers the key never gets
+the rest, so the pool stays near empty and the blows come no faster than the bar allows.
+
+The numbers work out like this. Hold the sword key down and you land about **2.4 swings a
+second**. Space the swings half a second apart and you land **2.0 a second and are never once
+refused**. Mashing therefore buys a fifth more blows than pacing, where before it bought a
+half more, and it costs you the dash, the dive and the flurry while it does. Without the bar
+at all the sword caps out at 2.9 a second.
+
+Two things cost nothing. A **charged gale** is free, because holding the sword for two thirds
+of a second is its own limit — so a winded hero always has the slow, deliberate answer. An
+**arrow** is free too, because it already costs an arrow.
+
+The pool comes back full at every doorway and at every respawn. Nobody walks into a new room
+out of breath.
+
+## The chart's own picture
+
+The archipelago's node on the chart is a ring of green islands with a far peak behind them.
+Two things about it were wrong and are not any more. **The peak stood on a palm tree** — it is
+painted over the islands, and it swallowed that palm's leaves and left the bare trunk
+sticking out beneath the mountain, so the island the peak stands on carries no palm now. And
+**every island is drawn before any palm is**, because an island in front used to swallow the
+leaves of the palm behind it and leave another bare trunk standing on nothing. The leaves are
+darker than the turf they hang over, for the same reason.
+
+## The Hollow Maze
+
+The maze has always been **generated** rather than drawn — a recursive backtracker over
+thirteen cells by nine, with a dozen extra holes knocked through it so it has loops and not
+just one path. But it was generated from **one fixed seed**, so every hero who ever walked it
+walked the same corridors.
+
+It is laid out again from a fresh seed **every time anybody steps into it**. Leave and come
+back and it is a different maze, with the key somewhere else and different dead ends worth
+searching. Its coins are forgotten along with it, because they are not the same coins in the
+same places any more.
+
+Seen from above a wall had nothing to say it was standing up, and the rock and the floor ran
+together. Now every wall gets the two things that say it is a block on a floor: **a lit lip
+along its top**, and **a shadow thrown down onto the floor at its foot**, with a dark edge
+down whichever side the floor is on. It is done in the drawing rather than in the tiles, so
+the same rock in the cave and the deep wood is exactly as it was.
 
 ## Doorways
 
@@ -193,6 +251,9 @@ you down until you are clear of it.
 Jumping while a direction is held throws you along that direction at once, so a jump out of
 a run and a jump from standing both leave at the same diagonal.
 
+A roll costs 12 **stamina**. A hero with none left keeps running instead, and the stamina bar
+flashes to say why.
+
 ## The spinning cuts
 
 Two swings come out of a move rather than a standing stance. Both pay **double coins** on
@@ -211,6 +272,10 @@ Tap the sword **twice, fast** — inside a quarter of a second — and the hero 
 two crossing cuts, one high and one low, with half again the reach of a plain swing. Each
 cut hits for four fifths of a sword blow, so the pair beats one swing. The flurry has its
 own cooldown of under a second.
+
+A flurry costs 30 **stamina**, and so does either spinning cut. When there is not enough for
+one, the tap falls through to a plain swing, which costs 17. Only when even that is beyond
+the hero does the screen say **WINDED**.
 
 Both cuts keep a **close reach**. The whetstone adds a little to it, but a cap holds the
 reach at the last upgrade step: the flip bites 24 pixels each side of you, and the roll cut
@@ -850,7 +915,7 @@ skip an island to reach the next one either.
 
 The smithing table opens from either archipelago screen.
 
-### The five keepers
+### The fifty keepers
 
 **No island borrows a guardian from the chapters.** The archipelago keeps its own five, one
 to each kind of island, and none of the five shares a shape with anything the story raises:
@@ -863,11 +928,40 @@ to each kind of island, and none of the five shares a shape with anything the st
 | The Green Isles | **The Amethyst Bloom** | A crystal flower that walks on its roots and opens to strike |
 | The Mesa Isles | **The Gilded Roc** | A bird beaten out of gold plate, on a stone perch, with a stone beak |
 
-Each keeper wakes in one of **three aspects**, and the aspect comes from how far out the
-island lies: plain up to the seventeenth island, **RISEN** to the thirty fourth, **CROWNED**
-past it. The aspect decides what the keeper does, not what it looks like. The Shivering
-Crown plain throws a volley, a shock and a nova; risen, it calls ice wisps up as well;
-crowned, it takes you off the floor with them.
+Those five are the **shapes**, and a spoke has ten keepers wearing them. **The keeper changes
+every five islands** — fifty islands, ten bands of five, and no two of the fifty fight alike.
+A band decides the keeper's **name**, **what it does**, **the colour it is washed in**, **the
+colour of its shots** and **what it calls up out of the ground**.
+
+The Frozen Isles, band by band:
+
+| Islands | Keeper | What it does |
+| --- | --- | --- |
+| 1–5 | The Shivering Crown | volley · shock · nova |
+| 6–10 | The Hoarfrost Widow | nova · grasp · volley |
+| 11–15 | The Glass Tsar | shock · spear · nova · volley |
+| 16–20 | The Blue Silence | nova · summon · shock · grasp |
+| 21–25 | The Rimebound Herald | spear · volley · shock · summon |
+| 26–30 | The Winter Throat | grasp · nova · spear · volley · shock |
+| 31–35 | The Pale Conclave | summon · volley · nova · grasp · spear |
+| 36–40 | The Frozen Oracle | shock · nova · spear · summon · volley · grasp |
+| 41–45 | The Sleet Sovereign | nova · spear · shock · grasp · volley · summon |
+| 46–50 | The Last Cold | nova · grasp · spear · shock · summon · volley |
+
+The other four spokes run the same way and none of the names repeat: the Burning Isles go
+from the Cinder Heart to **The Last Heat**, the Sand Isles to **The Last Dry**, the Green
+Isles to **The Last Green** and the Mesa Isles to **The Last Gold**. Three attacks at the
+first band, six at the last.
+
+The colour is laid over the sprite **when it is drawn**, not baked into it. Ten washes of
+five shapes would be four hundred frames sitting in memory for the one keeper that is on
+screen; instead the frame goes through a single buffer, the colour goes over it, and the
+result goes out to the world.
+
+**No keeper mends itself.** A guardian of a chapter does, and a chapter is one fight at the
+end of a walk; a spoke is fifty of them, and a keeper that claws its health back turns a long
+fight into an unwinnable one for anybody whose blade is not already deep enough. The last
+guardian does not mend either, and never did.
 
 ### The weather of the week
 
@@ -897,7 +991,8 @@ up.
 
 ### The weekly pass
 
-**PASS** at the foot of either archipelago screen opens the card of the week. It holds **six
+**PASS** opens the card of the week. It sits at the foot of either archipelago screen,
+**directly over SMITHING TABLE** in the bottom right corner rather than beside it. It holds **six
 rewards**, and **every row asks for the shards of a kind the week has struck** — so the
 weather says which islands to play, and the pass pays you for playing them.
 
@@ -926,6 +1021,298 @@ Nothing on the pass comes from anywhere else:
 The wardrobe and the profile both show the four cosmetics, locked, and say **THE WEEKLY
 PASS** against them, so you can see what a week may offer before it offers it.
 
+## What the guardians are worth
+
+Every guardian's health is its own base multiplied by its realm's, and a **buffed run
+multiplies all of it again** — ×2 at the first prestige, ×3.2 at the second, ×5 at the third.
+Both places that raise a guardian read that number from **one function**, which is the point
+of the function: the throne room raises its dragon itself, and it used to work the number out
+on its own and leave the buff out. The Emberwood dragon stood at **96 on every prestige**
+while every other guardian went to five times itself.
+
+On an unbuffed run:
+
+| Realm | Guardian | Health |
+| --- | --- | ---: |
+| Emberwood | The Dragon of Briardeep | 96 |
+| Aether City | The Storm on the Mountain | 186 |
+| Sporewood | The Mother Spore | 1,680 |
+| Tidewrack | The Tide Warden | 2,520 |
+| Drowned Hall | The Kraken Maw | 1,936 |
+| The Trench | The Leviathan | 5,408 |
+| Cinder Fields | The Forgefiend | 1,680 |
+| Obsidian Steps | The Ashen Titan | 2,240 |
+| Molten Crown | Ifrit, the Molten Crown | 9,072 |
+| Frostfell | The Rime Colossus | 3,040 |
+| Glacier Heart | The Frost Wyrm | 3,960 |
+| Aurora Crown | The Pale Monarch | 5,200 |
+| The Dune Sea | The Dune Maw | 16,000 |
+| Sphinx Hollow | The Sphinx | 17,600 |
+| The Sun Tomb | The Pharaoh | 20,400 |
+
+All fifteen together come to **90,922**. The last guardian alone stands at **31,000** — about a
+third of every chapter put together — and **nothing scales it**: not the realm, not a
+prestige, and it does not mend itself either. See its own section for why.
+
+## The Last Guardian
+
+In the middle of the pentagon, inside the ring of five spokes, there is an eye. It is drawn
+at **eighty four pixels against the islands' forty eight**, so nobody mistakes it for an
+island, and it has no name plate of its own kind: it says **THE LAST GUARDIAN** across its
+own lower lid.
+
+It is **SEALED** until you have taken the keeper of every one of the five kinds at least
+once. The code `CHEESE2` opens it outright, and fits you out for it at the same time.
+
+**Clicking the eye is the only way on to the road.** Its two rooms are entered from an open
+eye run and from nothing else, and an eye run is only ever opened by that one click. Anything
+else that asks for them — a save written before this was caught, a transition left over, a
+realm resuming where it should not — is sent to that realm's own start instead and says so in
+the console. Nobody arrives on the viaduct by clicking Emberwood.
+
+### The corridor
+
+Click the eye and there is no map, no shop sign and no way back. There is a **stone
+corridor**, dark brick, five tiles of headroom, a hundred and twenty long, and a pool of
+light that goes with you.
+
+**There is no music down here, and no wind either.** The room asks for `silence` by name, so
+the scheduler plays nothing at all. All there is to hear is **your own feet**, and the
+footstep is a different one on bare stone: a harder edge on it, and a tail that comes back
+off the walls a tenth of a second later.
+
+Four words come up in red as you pass the places they are written, one after another:
+
+> **TURN BACK** · **LEAVE** · **RUN** · **ESCAPE**
+
+Press the chart, or the map key, anywhere in this level and **the game does not open the
+chart**. The screen goes black, one eye fills it, and it says:
+
+> **THERES NO ESCAPE**
+
+It arrives **the way a picture arrives on a set that is not holding the signal**. The whole
+thing is painted once into a buffer and then put on the screen badly: the vertical hold
+slips, whole bands of it tear sideways, the colour comes apart into a red pass and a cyan one
+pulled either side, a hum bar rolls slowly down the tube, scanlines sit over all of it, snow
+drifts across it, and now and then the signal goes altogether and there is nothing left but
+static.
+
+At the end of the corridor is a door. Stand at it, press `E`, and it **creaks** the whole
+way open over two seconds before the corridor goes.
+
+### The viaduct
+
+Past the door is a viaduct. **It is the one picture the game loads** — everything else in
+`art.js` is drawn pixel by pixel, but the arches are the artist's own, out of
+`images/viaduct.png`.
+
+That file is cut from the original by `tools/extract-viaduct.py`: the arcade in the source
+has its pier centres **105.6 pixels apart**, so the script takes **eight bays centre to
+centre** and scales them to **256 by 200**, which puts one arch on 32 pixels. Eight bays
+repeat exactly, so the strip tiles with no seam, and the room wraps on **2048 pixels, which
+is eight strips**, so the join never falls anywhere but on a pier. The cream sky between the
+arches is keyed out — the key is a distance from the sky's own warm colour rather than a
+brightness, because the coping's top course is nearly as bright as the sky and a brightness
+key ate it. Behind the arches there is no sky: there is the eye.
+
+The deck the hero walks on is **one course**, cut to the picture rather than the other way
+about: the picture's coping band is seventeen pixels against an arch pitch of thirty two.
+The picture is drawn **after** the tiles, so its own coping covers the tile that carries you.
+Over the top there is a lip of old brick with **vines hanging in front of everything**, and
+they are the artist's own too, out of `images/vines.png`. `tools/extract-vines.py` cuts them
+from the background picture and keys the cream wall out, because behind the vines there is no
+wall — there is the eye.
+
+Vines have **no natural period to cut on**, so the strip is made seamless rather than found
+to be: a margin wider than the tile is taken and its overhang is faded back over the start.
+Foliage hides a fade of that width completely, and the tile is **256 wide like the viaduct**,
+so eight of it make the 2048 the room wraps on. It is hung at a **fixed height in the world**
+and tiled on its own width, exactly as the viaduct is, so it travels with the road one pixel
+for one rather than sliding against it.
+
+Under the arches the piers fade into black rather than stopping.
+
+If the picture ever fails to load the game says so in the console and falls back to a drawn
+arcade, so the level is never unplayable.
+
+Until the eye finds you there is nothing to do but walk. **The sword, the dash, the dive and
+the jump are all refused** — the road is the whole of it. Walk east for **twenty seconds**
+and a red word comes up and tears away:
+
+> **WAIT**
+
+Then the eye opens in the dark behind the viaduct, and the health bar comes with it.
+
+### The eye
+
+**The eye is the artist's own**, out of `images/eye-body.png` and `images/eye-iris.png`.
+`tools/extract-eye.py` cuts them from the original, which is an eye on a transparency
+checkerboard saved as a JPEG, so the checkerboard is baked into it. It **cannot be keyed on
+brightness** — the sclera is nearly as pale as the light squares. It is keyed by **flooding
+in from the border** instead: the eye is one blob with an unbroken black outline, and the
+flood stops dead at that outline, so the sclera is safe however generous the key is.
+
+The iris is taken out of the body and **the hole it leaves is filled with the sclera that
+surrounds it**, drawn inward along the radius. That is what lets the iris move without a hole
+opening up behind it. Finding the iris took three tries: measuring the widest dark run across
+a row swallowed the dark corners of the eye, and stepping over the catch of light let the
+cracks in the sclera reset the gap counter and walk out to the corner anyway. What works is
+to find the **pupil** — the only pure black thing in the middle — and walk left and right
+from it until the sclera *stays* bright for a good stretch.
+
+It is painted the way the poster has it: **dimmed to about half of itself**, shaded off
+toward its edges with a radial vignette, and breathing very slightly, so it does not read as
+a picture pasted on the dark but as something barely lit inside it.
+
+**Nothing is ever stretched.** The picture is drawn at its own size and **eyelids are closed
+over it**. When the eye's body loads, the game reads it column by column and writes down the
+topmost and bottommost pixel of the white — the shape of the hole the lids have to close. The
+lids are then two shapes cut to that hole, coming down from above and up from below until
+they meet on the middle line. They are **dark grey**, barely off the dark the eye hangs in,
+so a shut eye is a thing you can only just find.
+
+If either piece fails to load the game says so in the console and falls back to a drawn eye,
+so the fight is never unplayable.
+
+**The viaduct has no end.** It repeats every 2048 pixels, which is exactly sixty four
+arches and eight whole strips of the picture, so the hero, the view, the beams and
+everything else shift together and the join never shows. Once the door is twenty six tiles behind you **the wall it stood in is taken
+out of the room**, and from then on the road runs both ways for ever.
+
+### Five tonics
+
+Out here **the pedlar carries one thing**. Open the shop on the viaduct and there is a single
+row on it — the **Forest Tonic** — and nothing else: no upgrades, no relics, no stocking up in
+the middle of the last fight.
+
+And only **five of them**. The row counts down — **5 LEFT**, **4 LEFT** — and when they are
+gone the panel says **THE EYE ALLOWS NO MORE**, however deep the purse is. Walk into any other
+realm afterwards and the pedlar has all twelve rows back.
+
+### Ten stages
+
+The bar is cut into **ten**, and the number of the stage is written beside it. Push the eye
+past a tenth of its health and it **shuts**: it takes nothing at all while it is shut, the
+viaduct takes the shock and shakes, and after two seconds it opens again on the next stage,
+faster and with more to throw.
+
+The eye **drifts after you** rather than standing still, and its pupil leans out of it
+toward you as far as the white allows. Run and the pupil falls out of reach; the only way to
+hurt it is to come back to it.
+
+### What it throws
+
+Every attack warns first. The warning is a thin dashed red thread along the line the beam
+will take, and it lasts **a second and a quarter at the first stage and nine tenths of a
+second at the last**. The lines are **fixed where they are thrown** — one that chased the eye
+would move while you were still reading it.
+
+| | What it does | What gets you out of it |
+| --- | --- | --- |
+| **RING** | Ten to sixteen beams out of the pupil in a full circle, with two beams' worth of gap left in it (three early on) | Step into the gap. At arm's length the gap is a hand's width, so **dash out first** and it becomes a stride |
+| **LASH** | One beam straight along the deck. The low one runs at your shins; the high one runs at your chest | The low one is **jumped**. The high one is **rolled or crouched under** — the hero stands sixteen pixels and crouches ten, and the two heights are cut off exactly those numbers |
+| **VOLLEY** | Three to six beams aimed where you were standing, one after another | Keep moving. Each one is aimed once and never re-aimed |
+| **RAIN** | Seven to twelve beams straight down across four hundred pixels of deck, with a gap | Get to the gap. It can be two hundred pixels away, which is further than a walk covers in the warning — that one **needs the dash** |
+| **SWEEP** | Two beams turning like the hands of a clock, from stage five | Jump the low arm, walk under the high one |
+
+The lash writes **JUMP** or **ROLL** over your head as it warns, so the first one never kills
+anybody.
+
+### The last three stages
+
+From the eighth stage it is a different fight. The **SPIRAL** joins the pool — not a shape to
+stand in the gap of, because the beams come out one after another all the way round, so the
+only answer is to keep moving the way it turns and stay ahead of it. It writes **KEEP MOVING**
+over your head.
+
+And everything else tightens at the same time:
+
+| | Stage 1 | Stage 8 | Stage 10 |
+| --- | ---: | ---: | ---: |
+| Beams in an attack | 4.0 | 10.3 | **17.2** |
+| The warning | 1.25s | 0.93s | **0.75s** |
+| The rest between attacks | 2.30s | 1.81s | **1.62s** |
+| Beams' worth of gap in a ring | 3 | 2 | **1** |
+| A lash following whatever was thrown | — | yes | yes, **both ways** |
+
+The ring's one remaining gap **turns while it burns**, so standing in it is not enough — you
+have to go round with it. The sweep grows a third arm. The rain throws a second volley behind
+the first with its gap somewhere else.
+
+A hero who never moves is caught **886 times in twenty seconds at the first stage and 5,905
+times at the tenth** — near seven times the danger on the screen.
+
+**The warning is the one number that never falls away.** It is three quarters of a second at
+the very last stage, because an attack you cannot read is not hard, it is unfair.
+
+### Twenty minutes
+
+The health is a **measured** number, not a guessed one. A hero with every upgrade at its
+ceiling and the three hardest artifacts worn (`myththunderfang`, `tempestedge`, `stormcrown`,
+five copies each) deals **24.6 points a second** over a real fight, counting the nineteen
+seconds the eye spends shut across its ten stages. Twenty minutes of that is **31,000**, and
+31,000 is what it stands at. Working the dive in beats it; losing time to the beams does not.
+
+### The end screen
+
+Killing the last guardian is the end of the game, so it is not answered with a banner. The
+screen goes to black and comes back in **five beats**:
+
+| | |
+| --- | --- |
+| **1** | The last of the light going out of the eye — it narrows to a line and is gone |
+| **2** | **IT IS DEAD**, alone in the dark |
+| **3** | **THE LAST GUARDIAN OF THE ARCHIPELAGO**, and the road under it, with one figure still standing on it |
+| **4** | The tally: ten stages, how long it took you, and what it left |
+| **5** | What it left you, and then **I WILL RETURN**, tearing in red |
+
+Embers rise through the whole of it, and it is shown on the same bad tube the refusal was:
+scanlines over everything and the corners of the glass gone dark. Anything on the keyboard
+carries it forward a beat; a press after the last one goes back to the chart.
+
+### The fall
+
+There is nothing under the viaduct. Die out here and you are not left in a heap on the road:
+the blow takes you off your feet, over the parapet and **past the deck**, and you keep going.
+The view goes down with you and the dark comes up. It says **YOU FELL**, and under it
+**THERE IS NO BOTTOM TO IT**.
+
+A hero who dies is **let go**. The eye keeps nobody it has already finished with, and the
+chart is where you come back to — otherwise a file could be stuck out there for good.
+
+### What it leaves
+
+It pays **a million coins and five thousand rubies**.
+
+The rubies go straight in; there is nothing to pick up about a ruby. **The million does not.**
+A million coins is not a heap of coins — it is **one coin**, and it comes down out of the dark
+over the road, turning, carrying its own light, slowing as it falls so you can watch it come.
+Walk into it and it is yours. Leave it and it settles on the deck and waits with its worth
+written under it, because nobody is meant to miss the only one of these there is.
+
+The end screen **waits for the coin**. It does not go black over your head while the thing is
+still falling. If you will not take it, after sixteen seconds the coin takes itself and the
+end comes anyway.
+
+And it gives three things nothing else in the game gives, and it never quite goes away
+afterwards.
+
+| | |
+| --- | --- |
+| **EYE ROBES** | A suit for the wardrobe. No purse, no casket and no weekly pass carries it |
+| **THE EYE** | An eleventh portrait: the eye, and the dark it keeps. The arrows on the profile page skip it until you have earned it |
+| **EYES** | A frame for that portrait — not brick at all, but **fourteen small eyes laid round the picture, every one of them looking at whoever is looking at it**. They blink out of step and they follow the pointer |
+
+And the chart of the chapters is never the same chart again. **Fourteen eyes open across
+it**, at their own times, all of them turning to follow the pointer, and two lines come and
+go in red with the picture tearing under them:
+
+> **IM ALWAYS WATCHING** · **I WILL RETURN**
+
+There is **white noise** under the chart from then on, a filtered hiss that breathes slowly
+and never quite settles. It belongs to the chart and the Archipelago and nowhere else, and it
+rides the sound-effects slider like everything else.
+
 ## The item shop
 
 **SHOP** on the chart, directly under **PROFILE**, opens it. Five pages, and the purse along
@@ -945,6 +1332,19 @@ Only the shard page writes its prices plain, in shards.
 
 One figure after the point under ten, and none at all over it. A purse a hair under the next
 step goes up rather than reading a thousand of this one: 999,999 is **1M**, not 1000K.
+
+### Wearing what you already hold
+
+A row has **two things you can click**. The **price button** on the right always buys, so a
+second copy of an artifact is still one click away. **The rest of the row puts the thing on**:
+
+- A **suit** you own is worn, and clicking it again takes it off.
+- An **artifact** you hold goes into the pouch, and clicking it again takes it out. The pouch
+  holds three, and a full one says so rather than swallowing the click.
+
+A row you hold carries a tag beside its price — **WEAR IT** in gold, or **WORN** in green —
+so the click is never a guess. The shop used to answer a click on something you owned with
+*YOU HOLD IT ALREADY* and nothing else.
 
 | Page | What it sells |
 | --- | --- |
@@ -1170,6 +1570,8 @@ A few codes need no paper at all:
 | --- | --- |
 | `DYLAN` | Unlocks **ginger hair** for the look page. The save file keeps it |
 | `CHEESE` | Opens **the Archipelago**, the last page of the chart |
+| `D4N` | Hands every tune to **a rock band**. Type it again to put the old music back |
+| `CHEESE2` | Opens **the Last Guardian** on the chart, and fits you out to fight it |
 | `XP10` | Hands you **ten levels** |
 | `XP50` | Hands you **fifty levels** |
 | `XP100` | Hands you **a hundred levels**, so you stand at the top |
@@ -1189,6 +1591,19 @@ shop, the wardrobe and the forge all say so.
 The three level codes may be used **again and again** until the hundredth level, and then
 they say so rather than doing nothing. `XP100` leaves you one point of experience past the
 hundredth, so the **PRESTIGE** button is showing when you close the box.
+
+`D4N` is a switch, not a gift. The first time you type it a rock band takes over: the same
+chords and the same tune, played by a rhythm guitar, a bass, a lead guitar and a drummer,
+all through a guitar amplifier, and about a third faster. There is no voice in it — the lead
+guitar sings the melody instead. Type `D4N` again and the old music comes straight back. The
+choice is a sound setting rather than progress, so **the machine keeps it**, not the save file,
+and it holds across all three files.
+
+`CHEESE2` is the one code that hands over a fight rather than a purse. It opens the
+Archipelago, unseals the eye in the middle of it, sets **every upgrade to its ceiling**, pays
+500K, and puts the three hardest artifacts in the pouch at five copies each and wears all
+three: the **Mythic Thunder Fang**, the **Tempest Edge** and the **Storm Crown**. That is the
+kit the twenty minutes is measured against.
 
 Every other code only works while you are carrying its paper — knowing the word is not
 enough.
@@ -1283,10 +1698,17 @@ All eight together come to 539 coins.
 | --- | --- |
 | `index.html` | Canvas, page shell, script order |
 | `js/core.js` | Maths, seeded RNG, the `Pix` pixel buffer, the 5x7 bitmap font, input, keybinds, local storage, display scaling and fullscreen |
-| `js/audio.js` | Web Audio synthesizer: sound effects, thirteen music tracks, wind and birdsong |
-| `js/art.js` | Every sprite, tile, prop, backdrop and the map, drawn pixel by pixel |
-| `js/world.js` | Tile types, the `Room` type, the level generators and the realm table |
-| `js/entities.js` | Hero, all enemies, four bosses, projectiles, coins, particles |
+| `js/audio.js` | Web Audio synthesizer: sound effects, fourteen music tracks, a rock band for `D4N`, wind, birdsong, stone footsteps and the static the chart keeps |
+| `js/art.js` | Every sprite, tile, prop, backdrop and the map, drawn pixel by pixel. The exceptions are the viaduct and the eye, which it loads |
+| `images/viaduct.png` | The viaduct, eight arches wide and tileable, cut from the artist's original |
+| `images/eye-body.png` | The eye, with the iris taken out of it and the hole filled in |
+| `images/eye-iris.png` | That iris, so it can still move inside the eye |
+| `images/vines.png` | The hanging vines, faded into themselves so they tile |
+| `tools/extract-viaduct.py` | What cut the viaduct, to run again if the original changes |
+| `tools/extract-eye.py` | What cut the eye, the same way |
+| `tools/extract-vines.py` | And the vines |
+| `js/world.js` | Tile types, the `Room` type, the level generators, the realm table and the two rooms of the Last Guardian |
+| `js/entities.js` | Hero, stamina, all enemies, four bosses, the Last Guardian and its beams, projectiles, coins, particles |
 | `js/game.js` | State machine, camera, transitions, render pipeline, HUD, shop, title, save files, settings, map |
 | `tools/browser-test.html` | Headless test rig — see below |
 

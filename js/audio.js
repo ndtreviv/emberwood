@@ -1,6 +1,10 @@
 /* ============================================================
    audio.js — Web Audio synthesizer.
-   Sound effects, thirteen music tracks and forest ambience.
+   Sound effects, fourteen music tracks and forest ambience.
+   The D4N code hands every track to a rock band, which plays the same
+   chords and the same tune through a guitar amplifier.
+   The last guardian brings its own sounds, and the static that stays on
+   the chart once it is dead.
    No external files: every sound is generated.
    ============================================================ */
 'use strict';
@@ -14,6 +18,9 @@ const Snd = {
   noiseBuf: null,
   track: null, nextNote: 0, seqStep: 0, timer: null,
   windSrc: null, birdTimer: 0,
+  /* the D4N code puts a rock band on every tune.  rockCache holds the
+     rearranged tracks, so each one is built once. */
+  rock: false, rockCache: {},
 
   init() {
     if (this.ready || this.failed) return;
@@ -45,6 +52,30 @@ const Snd = {
     const lp = this.ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2200;
     dl.connect(lp); lp.connect(fb); fb.connect(dl); dl.connect(this.musVol);
     this.echo = dl;
+
+    /* THE GUITAR AMPLIFIER, for the rock arrangement.  A gain stage pushes
+       the sound into a soft clip, and a cabinet filter takes the fizz off
+       the top.  This is what makes a plain sawtooth sound like a guitar.
+       Only the rock rhythm and the rock lead go through it. */
+    const pre = this.ac.createGain(); pre.gain.value = 3.2;
+    const shaper = this.ac.createWaveShaper();
+    const N = 1024, curve = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      const x = i * 2 / (N - 1) - 1;
+      curve[i] = Math.tanh(x * 2.6);
+    }
+    shaper.curve = curve; shaper.oversample = '4x';
+    const cab = this.ac.createBiquadFilter();
+    cab.type = 'lowpass'; cab.frequency.value = 2800; cab.Q.value = 0.9;
+    const cut = this.ac.createBiquadFilter();
+    cut.type = 'highpass'; cut.frequency.value = 90; cut.Q.value = 0.7;
+    const post = this.ac.createGain(); post.gain.value = 0.34;
+    pre.connect(shaper); shaper.connect(cab); cab.connect(cut);
+    cut.connect(post); post.connect(this.mus);
+    /* a little of the amplifier goes to the delay, for room around the band */
+    const send = this.ac.createGain(); send.gain.value = 0.22;
+    post.connect(send); send.connect(this.echo);
+    this.drive = pre;
 
     /* one second of white noise, reused everywhere */
     const n = this.ac.sampleRate;
@@ -145,7 +176,22 @@ const Snd = {
     this.tone({ f: 600, f2: 1440, d: 0.09, v: 0.05, type: 'triangle', t: t });
   },
   land() { this.noise({ fc: 260, fc2: 110, d: 0.1, v: 0.16, filt: 'lowpass', q: 0.6 }); },
-  step(v) {
+  /* A footstep.  On bare stone in a shut corridor it is the only thing
+     there is to hear, so it is given a harder edge and a tail that comes
+     back off the walls. */
+  step(v, stone) {
+    if (stone) {
+      const t = this.t();
+      this.noise({ fc: 1600 + Math.random() * 900, fc2: 380, d: 0.05,
+                   v: (v || 1) * 0.14, q: 1.6, filt: 'bandpass', t: t });
+      this.noise({ fc: 300, fc2: 140, d: 0.09, v: (v || 1) * 0.10, q: 0.7,
+                   filt: 'lowpass', t: t });
+      this.tone({ f: 170, f2: 90, d: 0.07, v: (v || 1) * 0.05, type: 'triangle', t: t });
+      /* the corridor answering */
+      this.noise({ fc: 1200, fc2: 400, d: 0.34, v: (v || 1) * 0.05, q: 0.9,
+                   filt: 'bandpass', t: t + 0.09, echo: true });
+      return;
+    }
     this.noise({ fc: 420 + Math.random() * 260, fc2: 180, d: 0.055, v: (v || 1) * 0.075, q: 0.8, filt: 'lowpass' });
   },
   splash() {
@@ -341,6 +387,83 @@ const Snd = {
     this.tone({ f: 1200, f2: 100, d: 0.5, v: 0.12, type: 'square', t: t });
   },
 
+  /* ---------- the last guardian ---------- */
+  /* a door that has not been opened in a long time */
+  creak() {
+    const t = this.t();
+    for (let i = 0; i < 7; i++) {
+      const f = 150 + i * 26 + Math.random() * 40;
+      this.tone({ f: f, f2: f * 1.7, d: 0.16, v: 0.06, type: 'sawtooth',
+                  filt: 'bandpass', fc: 900, q: 6, t: t + i * 0.13, echo: true });
+    }
+    this.noise({ fc: 300, fc2: 90, d: 1.4, v: 0.12, q: 0.5, filt: 'lowpass', t: t + 0.7 });
+    this.tone({ f: 70, f2: 40, d: 1.2, v: 0.16, type: 'sawtooth', t: t + 0.8 });
+  },
+  /* the lid coming up off it */
+  eyeOpen() {
+    const t = this.t();
+    this.noise({ fc: 200, fc2: 2600, d: 0.9, v: 0.20, q: 0.5, filt: 'lowpass', t: t });
+    this.tone({ f: 48, f2: 150, d: 1.1, v: 0.22, type: 'sawtooth', t: t, echo: true });
+    this.tone({ f: 1200, f2: 240, d: 0.7, v: 0.07, type: 'triangle', t: t + 0.1, echo: true });
+  },
+  /* and coming down again, which is what a stage ending sounds like */
+  eyeShut() {
+    const t = this.t();
+    this.noise({ fc: 2400, fc2: 70, d: 0.7, v: 0.32, q: 0.5, filt: 'lowpass', t: t });
+    this.tone({ f: 190, f2: 36, d: 0.8, v: 0.28, type: 'sawtooth', t: t });
+    this.tone({ f: 90, f2: 28, d: 1.3, v: 0.20, type: 'sine', t: t + 0.05, echo: true });
+  },
+  /* the stone taking the shock of it */
+  eyeRumble() {
+    const t = this.t();
+    this.noise({ fc: 160, fc2: 40, d: 1.8, v: 0.30, q: 0.3, filt: 'lowpass', t: t });
+    this.tone({ f: 44, f2: 26, d: 1.6, v: 0.24, type: 'sine', t: t });
+    this.tone({ f: 66, f2: 33, d: 1.4, v: 0.12, type: 'sawtooth', t: t + 0.08 });
+  },
+  /* the pupil gathering the light before it throws it */
+  eyeCharge() {
+    const t = this.t();
+    this.tone({ f: 130, f2: 1500, d: 0.95, v: 0.10, type: 'sawtooth',
+                filt: 'lowpass', fc: 300, fc2: 4200, t: t, echo: true });
+    this.noise({ fc: 400, fc2: 5000, d: 0.9, v: 0.07, q: 1.2, t: t });
+  },
+  /* the sound of something going wrong with the picture */
+  eyeGlitch() {
+    const t = this.t();
+    for (let i = 0; i < 5; i++) {
+      this.noise({ fc: 600 + Math.random() * 6000, d: 0.03 + Math.random() * 0.05,
+                   v: 0.13, q: 3.4, filt: 'bandpass', t: t + i * 0.035 });
+      this.tone({ f: 80 + Math.random() * 2400, d: 0.03, v: 0.07,
+                  type: 'square', t: t + i * 0.035 });
+    }
+  },
+  /* ---------- the static that stays after it ---------- */
+  /* Once the guardian is dead the chart never goes quiet again.  This is
+     a loop of noise under it, turned up and down like any other bus. */
+  startStatic() {
+    if (!this.ready || this.staticSrc) return;
+    const ac = this.ac;
+    const s = ac.createBufferSource(); s.buffer = this.noiseBuf; s.loop = true;
+    const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 900;
+    const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 7000;
+    const g = ac.createGain(); g.gain.value = 0;
+    /* it breathes, so it never sits perfectly still */
+    const lfo = ac.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 0.13;
+    const lg = ac.createGain(); lg.gain.value = 0.35;
+    lfo.connect(lg); lg.connect(g.gain);
+    s.connect(hp); hp.connect(lp); lp.connect(g); g.connect(this.sfxVol);
+    s.start(); lfo.start();
+    this.staticSrc = s; this.staticGain = g;
+  },
+  staticLevel(v, time) {
+    if (!this.ready) return;
+    this.startStatic();
+    if (!this.staticGain) return;
+    this.staticGain.gain.cancelScheduledValues(this.t());
+    this.staticGain.gain.setValueAtTime(this.staticGain.gain.value, this.t());
+    this.staticGain.gain.linearRampToValueAtTime(v, this.t() + (time || 1.4));
+  },
+
   /* ---------- ambience ---------- */
   startAmbience() {
     if (!this.ready || this.windSrc) return;
@@ -492,6 +615,17 @@ const Snd = {
              415.30, 523.25, 415.30, 698.46, 622.25, 523.25, 466.16, 392.00],
       padGain: 0.07, leadGain: 0.115, bassGain: 0.16, drums: true, leadType: 'sawtooth'
     },
+    /* There is no track for the corridor.  There is no music in the
+       corridor: the footsteps are the whole of it. */
+    /* THE LAST GUARDIAN: C minor, low and turning, with a drum under it. */
+    eye: {
+      bpm: 128,
+      chords: [[130.81, 155.56, 185.00], [116.54, 138.59, 174.61],
+               [123.47, 146.83, 185.00], [103.83, 130.81, 155.56]],
+      lead: [523.25, 0, 622.25, 0, 587.33, 0, 466.16, 0,
+             415.30, 0, 466.16, 523.25, 0, 622.25, 0, 587.33],
+      padGain: 0.115, leadGain: 0.085, bassGain: 0.16, drums: true, leadType: 'sawtooth'
+    },
     victory: {
       bpm: 96,
       chords: [[261.63, 329.63, 392.00], [349.23, 440.00, 523.25],
@@ -507,11 +641,73 @@ const Snd = {
     if (this.trackName === name) return;
     this.trackName = name;
     /* a room may ask for silence by name, and get no track at all */
-    this.track = (name === 'silence') ? null : (this.MUSIC[name] || null);
+    this.track = (name === 'silence') ? null
+               : (this.rock ? this.rockify(name) : (this.MUSIC[name] || null));
     this.seqStep = 0;
     this.nextNote = this.t() + 0.1;
   },
   stop() { this.trackName = null; this.track = null; },
+
+  /* ---------- the rock band ---------- */
+  /* A rock version of any track.  The chords and the tune stay as they are:
+     the band plays them faster, harder and through the amplifier. */
+  rockify(name) {
+    const src = this.MUSIC[name];
+    if (!src) return null;
+    if (!this.rockCache[name]) {
+      const r = Object.assign({}, src);
+      r.rock = true;
+      r.bpm = clamp(Math.round(src.bpm * 1.3), 96, 184);
+      r.drums = true;
+      /* The guitar root of every chord, worked out once.  The first root
+         comes down into the register a guitar chugs in, and each root after
+         it takes the octave nearest the one before, so the chords step
+         rather than leap. */
+      const base = this.fold(src.chords[0][0], 110, 190);
+      r.roots = src.chords.map(c => this.near(c[0], base));
+      this.rockCache[name] = r;
+    }
+    return this.rockCache[name];
+  },
+  /* Turn the band on or off.  The tune that plays changes over at once. */
+  setRock(on) {
+    const want = !!on;
+    if (this.rock === want) return;
+    this.rock = want;
+    const name = this.trackName;
+    if (name) { this.trackName = null; this.play(name); }
+  },
+  /* fold a note into one octave band, so every realm's chords give the
+     guitar a root in its own low register */
+  fold(f, lo, hi) {
+    let x = f;
+    while (x > hi) x /= 2;
+    while (x < lo) x *= 2;
+    return x;
+  },
+  /* move a note by octaves until it stands as near the guide note as an
+     octave allows: never more than a tritone above it or below it */
+  near(f, ref) {
+    let x = f;
+    while (x / ref > 1.4142) x /= 2;
+    while (ref / x > 1.4142) x *= 2;
+    return x;
+  },
+  /* a power chord, struck once.  The codes box rings this when the band
+     arrives. */
+  rockStab() {
+    if (!this.ready || !this.drive) return;
+    const t = this.t(), f = 98;
+    this.tone({ f: f, d: 0.9, a: 0.004, v: 0.11, type: 'sawtooth',
+                filt: 'lowpass', fc: 2600, t: t, dest: this.drive });
+    this.tone({ f: f * 1.4983, d: 0.9, a: 0.004, v: 0.085, type: 'sawtooth',
+                filt: 'lowpass', fc: 2600, t: t, dest: this.drive });
+    this.tone({ f: f * 2, d: 0.85, a: 0.004, v: 0.07, type: 'sawtooth',
+                filt: 'lowpass', fc: 2600, t: t, dest: this.drive });
+    this.tone({ f: 130, f2: 48, d: 0.18, v: 0.24, type: 'sine', t: t, dest: this.mus });
+    this.noise({ fc: 6000, fc2: 1400, d: 1.1, v: 0.09, q: 0.5,
+                 filt: 'highpass', t: t, dest: this.mus });
+  },
 
   startScheduler() {
     if (this.timer) return;
@@ -519,6 +715,9 @@ const Snd = {
   },
   schedule() {
     if (!this.ready || !this.track || this.muted) return;
+    /* A browser may hold the audio asleep until the player touches the page.
+       The clock stands still there, so the tune waits with it. */
+    if (this.ac.state !== 'running') { this.nextNote = this.t() + 0.1; return; }
     const tr = this.track;
     const spb = 60 / tr.bpm / 2;            /* eighth notes */
     while (this.nextNote < this.t() + 0.35) {
@@ -528,6 +727,7 @@ const Snd = {
     }
   },
   emitStep(s, t, tr, spb) {
+    if (tr.rock) { this.emitRock(s, t, tr, spb); return; }
     const bar = (s >> 3) % tr.chords.length;
     const ch = tr.chords[bar];
     const beat = s % 8;
@@ -555,6 +755,64 @@ const Snd = {
       if (beat === 0 || beat === 4) this.tone({ f: 120, f2: 46, d: 0.14, v: 0.20, type: 'sine', t: t, dest: this.mus });
       if (beat === 2 || beat === 6) this.noise({ fc: 1900, fc2: 900, d: 0.11, v: 0.11, q: 0.8, t: t, dest: this.mus });
       if (beat % 2 === 1) this.noise({ fc: 7000, d: 0.03, v: 0.04, q: 1.5, filt: 'highpass', t: t, dest: this.mus });
+    }
+  },
+
+  /* ONE STEP OF THE ROCK ARRANGEMENT.  A four piece band plays the track
+     it was given: a rhythm guitar chugging the chord, a bass on the root,
+     a lead guitar on the tune, and a drummer keeping a backbeat.  There is
+     no voice: the lead guitar sings the melody instead. */
+  emitRock(s, t, tr, spb) {
+    const bar = (s >> 3) % tr.chords.length;
+    const beat = s % 8;
+    const root = tr.roots[bar];
+
+    /* rhythm guitar: a power chord on every eighth, palm muted between the
+       accents.  Root, fifth and octave, which is what a power chord is. */
+    const hard = (beat === 0 || beat === 3 || beat === 6);
+    const v = (hard ? 0.115 : 0.072);
+    const d = spb * (hard ? 0.95 : 0.42);
+    this.tone({ f: root, d: d, a: 0.003, v: v, type: 'sawtooth',
+                filt: 'lowpass', fc: 2600, t: t, dest: this.drive });
+    this.tone({ f: root * 1.4983, d: d, a: 0.003, v: v * 0.8, type: 'sawtooth',
+                filt: 'lowpass', fc: 2600, t: t, dest: this.drive });
+    /* the octave rings out on the accent only, the way a hand comes off
+       the strings there */
+    if (hard) this.tone({ f: root * 2, d: d, a: 0.003, v: v * 0.55, type: 'sawtooth',
+                          filt: 'lowpass', fc: 2400, t: t, dest: this.drive });
+
+    /* bass: the root on every quarter, with a push into the next bar */
+    if (beat % 2 === 0 || beat === 7) {
+      this.tone({ f: root / 2, d: spb * 1.5, a: 0.004, v: 0.17, type: 'sawtooth',
+                  filt: 'lowpass', fc: 520, t: t, dest: this.mus });
+    }
+
+    /* lead guitar: the track's own tune, doubled an octave down */
+    const n = tr.lead[s % tr.lead.length];
+    if (n) {
+      this.tone({ f: n, d: spb * 1.6, a: 0.006, v: 0.075, type: 'sawtooth',
+                  filt: 'lowpass', fc: 3200, t: t, dest: this.drive });
+      this.tone({ f: n / 2, d: spb * 1.5, a: 0.006, v: 0.05, type: 'sawtooth',
+                  filt: 'lowpass', fc: 2200, t: t, dest: this.drive });
+    }
+
+    /* drums: kick on one and three, snare on two and four, hats all through */
+    if (beat === 0 || beat === 4 || (beat === 6 && bar % 2 === 1)) {
+      this.tone({ f: 155, f2: 44, d: 0.16, v: 0.34, type: 'sine', t: t, dest: this.mus });
+      this.noise({ fc: 2800, d: 0.02, v: 0.07, q: 0.8, filt: 'highpass', t: t, dest: this.mus });
+    }
+    if (beat === 2 || beat === 6) {
+      this.noise({ fc: 1700, fc2: 850, d: 0.14, v: 0.22, q: 0.7, t: t, dest: this.mus });
+      this.tone({ f: 190, f2: 120, d: 0.09, v: 0.10, type: 'triangle', t: t, dest: this.mus });
+    }
+    this.noise({ fc: 8200, d: beat === 7 ? 0.13 : 0.028, v: beat % 2 ? 0.035 : 0.055,
+                 q: 1.2, filt: 'highpass', t: t, dest: this.mus });
+    /* a crash every four bars, and a two hit fill into it */
+    if (s % 32 === 0) {
+      this.noise({ fc: 4800, d: 1.3, v: 0.12, q: 0.4, filt: 'highpass', t: t, dest: this.mus });
+    }
+    if (s % 32 === 30 || s % 32 === 31) {
+      this.noise({ fc: 1500, fc2: 700, d: 0.12, v: 0.20, q: 0.7, t: t, dest: this.mus });
     }
   },
 

@@ -4,6 +4,15 @@
    ============================================================ */
 'use strict';
 
+/* Where this file was fetched from, with the js folder taken off it.  The
+   one picture the game loads is found through this rather than through the
+   page's own address, so a page in a subfolder - the test rig is one -
+   still finds it. */
+const ART_BASE = (function () {
+  const src = (document.currentScript && document.currentScript.src) || '';
+  return src ? src.replace(/[?#].*$/, '').replace(/js\/[^/]*$/, '') : '';
+})();
+
 const Art = { hero: {}, top: {}, snake: {}, bear: {}, bat: {}, spider: {}, dragon: {},
               wisp: {}, sporeling: {}, zeus: {}, mother: {}, bird: {}, map: {},
               item: {}, tile: {}, prop: {}, bg: {}, ui: {} };
@@ -99,7 +108,11 @@ const SUITS = {
   tideward: { name: 'TIDEWARD', realm: 'THE WEEKLY PASS', cost: 0, pass: true, shine: true,
               base: '#2f6fb0', dark: '#193f6e', light: '#8fd0e8', legs: '#1d3a58', trim: '#dff4ff' },
   stormcut: { name: 'STORMCUT', realm: 'THE WEEKLY PASS', cost: 0, pass: true, shine: true,
-              base: '#4a3a6b', dark: '#261c3c', light: '#a86fe0', legs: '#2f2448', trim: '#f6d878' }
+              base: '#4a3a6b', dark: '#261c3c', light: '#a86fe0', legs: '#2f2448', trim: '#f6d878' },
+  /* And one that only the last guardian gives up.  No purse, no casket and
+     no pass carries it: you take it off the eye or you do without it. */
+  eyerobe:  { name: 'EYE ROBES', realm: 'THE LAST GUARDIAN', cost: 0, eye: true, shine: true,
+              base: '#1d2026', dark: '#0b0c0f', light: '#8f949c', legs: '#15161a', trim: '#d8dade' }
 };
 const SUIT_KEYS = Object.keys(SUITS);
 /* what the hero currently looks like; heroFrame reads this as it draws */
@@ -5077,18 +5090,31 @@ function mapNodeSprite(theme) {
         if (Math.hypot(x - cx, y - cy) <= R - 1 && ((x + k * 2) % 6) < 3)
           g.set(x, y + Math.sin(x * 0.35 + k) * 1.1, C('#5fa3dc'));
     }
-    const isles = [[cx - 12, cy + 8, 9], [cx + 11, cy + 10, 7], [cx + 2, cy + 1, 11],
-                   [cx - 16, cy - 4, 5], [cx + 15, cy - 3, 6]];
+    /* The last of each row says whether the peak stands on that island.
+       The middle one carries it, and so it carries no palm: the peak is
+       painted over the islands, and it used to swallow the palm's leaves
+       and leave the bare trunk sticking out under the mountain. */
+    const isles = [[cx - 12, cy + 8, 9, false], [cx + 11, cy + 10, 7, false],
+                   [cx + 2, cy + 1, 11, true],
+                   [cx - 16, cy - 4, 5, false], [cx + 15, cy - 3, 6, false]];
+    /* every island first, and the palms afterwards.  Drawn island by
+       island, an island in front swallowed the leaves of the palm behind
+       it and left a bare trunk standing on nothing. */
     for (const [ix, iy, ir] of isles) {
       g.ell(ix, iy + 1, ir + 1, ir * 0.42, C('#e0d3a8'));
       g.ell(ix, iy, ir, ir * 0.38, C('#4f9a3f'));
       g.ell(ix - ir * 0.2, iy - 1, ir * 0.6, ir * 0.24, C('#7ec44f'));
-      /* a palm on the bigger ones */
-      if (ir >= 7) {
-        g.rect(ix - 1, iy - 6, 2, 6, C('#7a5230'));
-        for (const d of [-1, 1]) g.thick(ix, iy - 6, ix + d * 5, iy - 8, 2, C('#367030'));
-        g.thick(ix, iy - 6, ix, iy - 10, 2, C('#4f9a3f'));
-      }
+    }
+    for (const [ix, iy, ir, peak] of isles) {
+      /* a palm on the bigger ones, but never under the peak */
+      if (ir < 7 || peak) continue;
+      g.rect(ix - 1, iy - 6, 2, 6, C('#7a5230'));
+      /* The leaves are darker than the turf they hang over.  They used to
+         be the same green as an island, so a palm in front of one showed
+         nothing but its trunk. */
+      for (const d of [-1, 1]) g.thick(ix, iy - 6, ix + d * 5, iy - 8, 2, C('#1f4a26'));
+      g.thick(ix, iy - 6, ix, iy - 10, 2, C('#2f6f37'));
+      for (const d of [-1, 1]) g.thick(ix, iy - 7, ix + d * 4, iy - 8, 1, C('#5fae4a'));
     }
     /* the far peak that marks the place */
     g.poly([[cx + 1, cy - 18], [cx - 9, cy - 3], [cx + 11, cy - 3]], C('#47547d'));
@@ -5593,7 +5619,7 @@ function tintMetal(src, m) {
    country the game holds.  They hang in the profile panel.
    ============================================================ */
 const AVATAR_KEYS = ['glade', 'deep', 'cloud', 'spore', 'shore',
-                     'trench', 'cinder', 'frost', 'dune', 'mesa'];
+                     'trench', 'cinder', 'frost', 'dune', 'mesa', 'eye'];
 const AVATAR_SKY = {
   glade:  [['#8fd0ff', '#cfeaff'], ['#54924a', '#2f5636']],
   deep:   [['#3a5a46', '#7fae74'], ['#24402e', '#16281d']],
@@ -5604,7 +5630,8 @@ const AVATAR_SKY = {
   cinder: [['#4a2418', '#c0341a'], ['#3a2c30', '#1a1214']],
   frost:  [['#bcd8ee', '#eef6ff'], ['#e8eef8', '#aebdd2']],
   dune:   [['#f0dca8', '#ffd06a'], ['#d9bd7e', '#a8894f']],
-  mesa:   [['#f0b878', '#ffd8a0'], ['#a4713f', '#6d4423']]
+  mesa:   [['#f0b878', '#ffd8a0'], ['#a4713f', '#6d4423']],
+  eye:    [['#0e1014', '#05060a'], ['#0b0c0f', '#050507']]
 };
 /* one portrait: a sky, a horizon and whatever stands on it */
 function avatarSprite(kind) {
@@ -5676,6 +5703,37 @@ function avatarSprite(kind) {
       const x = 4 + k * 15, h = r.i(7, 13);
       g.poly([[x + 6, hz + 2 - h], [x - 2, hz + 8], [x + 14, hz + 8]], C('#a8894f'));
       g.poly([[x + 6, hz + 2 - h], [x + 6, hz + 8], [x + 14, hz + 8]], C('#c9a86a'));
+    }
+  } else if (kind === 'eye') {
+    /* Nothing stands on this one.  It is only the eye, and the dark it
+       keeps: the portrait of somebody who went out onto the viaduct. */
+    for (let x = 0; x < W; x++) for (let y = 0; y < H; y++) g.set(x, y, C('#07080b'));
+    const cx = W / 2, cy = H / 2, rx = 21, ryU = 13, ryL = 11;
+    for (let x = 0; x < W; x++) {
+      const f = Math.abs(x - cx) / rx;
+      if (f >= 1) continue;
+      const k = Math.pow(1 - f * f, 0.62);
+      for (let y = Math.round(cy - ryU * k); y <= Math.round(cy + ryL * k); y++)
+        g.set(x, y, mixc(C('#d8dade'), C('#8f949c'), f * 0.8));
+    }
+    g.ell(cx, cy, 9, 9, C('#161c2e'));
+    g.ell(cx, cy, 7, 7, C('#2b3450'));
+    for (let k = 0; k < 26; k++) {
+      const a = r.r(0, TAU);
+      g.line(cx + Math.cos(a) * 4, cy + Math.sin(a) * 4,
+             cx + Math.cos(a) * 6.5, cy + Math.sin(a) * 6.5, C('#6d7891'));
+    }
+    g.ell(cx, cy, 3.6, 3.6, C('#05060a'));
+    g.set(Math.round(cx + 2), Math.round(cy - 2), C('#ffffff'));
+    for (let x = 0; x < W; x++) {
+      const f = Math.abs(x - cx) / rx;
+      if (f >= 1.01) continue;
+      const k = Math.pow(1 - f * f, 0.62);
+      const top = cy - ryU * k, th = 5 * Math.pow(1 - f * f, 0.35) + 2;
+      for (let y = Math.round(top - th); y <= Math.round(top); y++)
+        g.set(x, y, mixc(C('#3b4049'), C('#0d0e11'), (y - (top - th)) / th));
+      const bot = cy + ryL * k;
+      for (let y = Math.round(bot); y <= Math.round(bot + 3); y++) g.set(x, y, C('#101216'));
     }
   } else {
     /* the mesa: a flat topped butte, a trestle, and a sky going gold */
@@ -5751,6 +5809,462 @@ function frames(n, fn) {
   return out;
 }
 function prop(pix, ax, ay) { return { c: pix.canvas(), ax: ax, ay: ay, w: pix.w, h: pix.h }; }
+
+/* ============================================================
+   THE EYE — the last guardian, and the road that leads to it.
+   Every piece here is drawn rather than loaded, like the rest of
+   this file.  The eye is built once at a fixed size and painted
+   in three passes: the white, the iris that follows you, and the
+   lids over the top.  That is what lets the eye look at you and
+   still blink.
+   ============================================================ */
+Art.eye = {};
+const EYE_W = 300, EYE_H = 168;        /* the drawn eye, kept as a stand-in */
+/* THE ARTIST'S OWN EYE, cut by tools/extract-eye.py into a body with the
+   iris taken out of it and the iris on its own, so the iris can still move
+   inside the eye.  These numbers come off that script's own output. */
+const EYE_IMG_W = 300, EYE_IMG_H = 206;
+const EYE_IMG_IRIS_R = 53;             /* the iris, in the sprite */
+/* how far the iris sits from the middle of the sprite */
+const EYE_IMG_OX = 157.8 - EYE_IMG_W / 2, EYE_IMG_OY = 115.0 - EYE_IMG_H / 2;
+const EYE_CX = EYE_W / 2, EYE_CY = EYE_H / 2;
+const EYE_RX = 146, EYE_RYU = 64, EYE_RYL = 56;
+const EYE_LIDS = 7;                    /* how many steps there are from wide to shut */
+
+/* the half height of the opening at one x, for a given lid position */
+function eyeAperture(dx, open) {
+  const f = Math.abs(dx) / EYE_RX;
+  if (f >= 1) return [0, 0];
+  const k = Math.pow(1 - f * f, 0.62);
+  return [EYE_RYU * k * open, EYE_RYL * k * open];
+}
+
+/* the white of the eye: old stone rather than flesh, cracked all over */
+function eyeWhite(open) {
+  const g = new Pix(EYE_W, EYE_H);
+  const r = new RNG(90210);
+  const pale = C('#d8dade'), mid = C('#b4b8be'), grey = C('#8f949c');
+  for (let x = 0; x < EYE_W; x++) {
+    const dx = x - EYE_CX;
+    const [up, lo] = eyeAperture(dx, open);
+    if (up <= 0.5 && lo <= 0.5) continue;
+    for (let y = Math.round(EYE_CY - up); y <= Math.round(EYE_CY + lo); y++) {
+      /* the white is darkest where the lids overhang it */
+      const f = (y - (EYE_CY - up)) / Math.max(1, up + lo);
+      const shadeTop = Math.max(0, 1 - f * 5.5);
+      const shadeBot = Math.max(0, (f - 0.78) * 4);
+      let c = mixc(pale, mid, Math.min(1, Math.abs(dx) / EYE_RX * 1.2));
+      c = mixc(c, grey, Math.min(0.85, shadeTop * 0.7 + shadeBot * 0.5));
+      g.set(x, y, c);
+    }
+  }
+  /* blotches, then the cracks that run through them */
+  for (let k = 0; k < 90; k++) {
+    const a = r.r(0, TAU), d = Math.sqrt(r.n());
+    const x = EYE_CX + Math.cos(a) * d * EYE_RX * 0.94;
+    const y = EYE_CY + Math.sin(a) * d * EYE_RYU * 0.9;
+    const c = r.bool(0.5) ? mixc(pale, [255, 255, 255, 255], 0.5) : mixc(mid, grey, 0.5);
+    g.ell(x, y, r.r(4, 13), r.r(3, 9), c);
+  }
+  /* mask the blotches back inside the opening */
+  for (let x = 0; x < EYE_W; x++) {
+    const dx = x - EYE_CX;
+    const [up, lo] = eyeAperture(dx, open);
+    for (let y = 0; y < EYE_H; y++) {
+      if (y < EYE_CY - up || y > EYE_CY + lo) g.set(x, y, [0, 0, 0, 0]);
+    }
+  }
+  const crack = C('#3a3d44');
+  for (let k = 0; k < 26; k++) {
+    let x = EYE_CX + r.r(-EYE_RX, EYE_RX) * 0.92, y = EYE_CY + r.r(-EYE_RYU, EYE_RYL) * 0.85;
+    let a = r.r(0, TAU);
+    for (let s = 0; s < r.i(10, 34); s++) {
+      const nx = x + Math.cos(a) * 3, ny = y + Math.sin(a) * 3;
+      if (g.alphaAt(Math.round(nx), Math.round(ny)) > 8) g.line(x, y, nx, ny, crack);
+      x = nx; y = ny; a += r.r(-0.7, 0.7);
+    }
+  }
+  return g;
+}
+
+/* the iris and the pupil, as one disc that slides behind the opening */
+function eyeIris() {
+  const R = 58, W = R * 2 + 2, g = new Pix(W, W), c = R + 1;
+  const r = new RNG(4242);
+  const rim = C('#161c2e'), ring = C('#2b3450'), band = C('#4a5570'), pale = C('#6d7891');
+  g.disc(c, c, R, rim);
+  g.disc(c, c, R - 3, ring);
+  /* the striations of the iris, drawn out from the pupil */
+  for (let k = 0; k < 190; k++) {
+    const a = r.r(0, TAU);
+    const r0 = r.r(R * 0.42, R * 0.6), r1 = r.r(R * 0.72, R - 4);
+    const col = r.bool(0.42) ? pale : band;
+    g.line(c + Math.cos(a) * r0, c + Math.sin(a) * r0,
+           c + Math.cos(a) * r1, c + Math.sin(a) * r1, col);
+  }
+  g.disc(c, c, R * 0.45, C('#0b0d14'));
+  g.disc(c, c, R * 0.40, C('#05060a'));
+  /* the one catch of light, which is what makes it look alive */
+  g.rect(c + 10, c - 15, 7, 5, C('#ffffff'));
+  g.rect(c + 12, c - 17, 4, 3, C('#ffffff'));
+  return g;
+}
+
+/* The lids: a heavy cracked hood above, a thinner rim below, lashes on
+   both.  They are painted over the white, so they can overhang it. */
+function eyeLid(open) {
+  const g = new Pix(EYE_W, EYE_H);
+  const r = new RNG(77711);
+  const dark = C('#2a2e36'), darker = C('#1a1d23'), lit = C('#5a606b');
+  const upT = 30, loT = 15;
+  for (let x = 0; x < EYE_W; x++) {
+    const dx = x - EYE_CX;
+    const f = Math.abs(dx) / EYE_RX;
+    if (f >= 1.01) continue;
+    const [up, lo] = eyeAperture(dx, open);
+    const [upW] = eyeAperture(dx, 1);
+    const top = EYE_CY - up;
+    const thick = upT * Math.pow(1 - f * f, 0.35) + 3;
+    for (let y = Math.round(top - thick); y <= Math.round(top); y++) {
+      const t = (y - (top - thick)) / Math.max(1, thick);
+      g.set(x, y, mixc(lit, darker, Math.min(1, t * 1.25)));
+    }
+    /* the fold above the hood, which only shows while the eye is open */
+    if (upW > 6) {
+      const fy = Math.round(top - thick - 2 - upW * 0.10);
+      g.set(x, fy, mixc(dark, [0, 0, 0, 255], 0.3));
+    }
+    const bot = EYE_CY + lo;
+    const thick2 = loT * Math.pow(1 - f * f, 0.4) + 2;
+    for (let y = Math.round(bot); y <= Math.round(bot + thick2); y++) {
+      const t = (y - bot) / Math.max(1, thick2);
+      g.set(x, y, mixc(darker, lit, Math.min(1, t * 0.8)));
+    }
+  }
+  /* the lashes, which stand up off the hood */
+  for (let k = 0; k < 34; k++) {
+    const dx = r.r(-EYE_RX * 0.94, EYE_RX * 0.94);
+    const f = Math.abs(dx) / EYE_RX;
+    const [up] = eyeAperture(dx, open);
+    const thick = upT * Math.pow(1 - f * f, 0.35) + 3;
+    const x = EYE_CX + dx, y = EYE_CY - up - thick;
+    const len = r.r(10, 26) * (1 - f * 0.45);
+    const lean = dx / EYE_RX * 0.9 + r.r(-0.25, 0.25);
+    g.line(x, y, x + lean * len, y - len, dark);
+    g.line(x + 1, y, x + 1 + lean * len, y - len, darker);
+  }
+  /* a few cracks across the hood, to match the white */
+  for (let k = 0; k < 10; k++) {
+    let x = EYE_CX + r.r(-EYE_RX, EYE_RX) * 0.8, y = EYE_CY - r.r(EYE_RYU * 0.7, EYE_RYU * 1.3);
+    let a = r.r(0, TAU);
+    for (let s = 0; s < r.i(5, 14); s++) {
+      const nx = x + Math.cos(a) * 3, ny = y + Math.sin(a) * 3;
+      if (g.alphaAt(Math.round(nx), Math.round(ny)) > 8) g.line(x, y, nx, ny, C('#000000'));
+      x = nx; y = ny; a += r.r(-0.8, 0.8);
+    }
+  }
+  return g;
+}
+
+/* WHERE THE EYE IS OPEN, column by column.
+   The lids need to know the shape of the hole they close over, and the
+   only honest place to get it is the picture itself: for every column,
+   the topmost and bottommost pixel of the white.  It is measured once,
+   when the picture arrives. */
+Art.measureEyeAperture = function (img) {
+  const W = img.width, H = img.height;
+  const cv = mkc(W, H), c2 = cv.getContext('2d');
+  c2.drawImage(img, 0, 0);
+  let d;
+  try { d = c2.getImageData(0, 0, W, H).data; }
+  catch (e) { console.error('the eye could not be measured', e); return; }
+  const top = new Int16Array(W), bot = new Int16Array(W);
+  for (let x = 0; x < W; x++) {
+    top[x] = -1; bot[x] = -1;
+    for (let y = 0; y < H; y++) {
+      const i = (y * W + x) * 4;
+      if (d[i + 3] < 200) continue;
+      /* the white of the eye is pale; the lid over it is not */
+      if ((d[i] + d[i + 1] + d[i + 2]) / 3 < 140) continue;
+      if (top[x] < 0) top[x] = y;
+      bot[x] = y;
+    }
+  }
+  /* a column with no white at all takes its neighbour's, so the lids have
+     an unbroken edge to run along */
+  for (let x = 1; x < W; x++) if (top[x] < 0 && top[x - 1] >= 0) { top[x] = top[x - 1]; bot[x] = bot[x - 1]; }
+  for (let x = W - 2; x >= 0; x--) if (top[x] < 0 && top[x + 1] >= 0) { top[x] = top[x + 1]; bot[x] = bot[x + 1]; }
+  Art.eye.apTop = top; Art.eye.apBot = bot;
+  let lo = H, hi = 0;
+  for (let x = 0; x < W; x++) { if (top[x] < 0) continue; lo = Math.min(lo, top[x]); hi = Math.max(hi, bot[x]); }
+  Art.eye.apLo = lo; Art.eye.apHi = hi;
+};
+
+/* ---------- the road to it ---------- */
+/* One bay of the viaduct: the deck is tiles the hero really stands on, so
+   this is everything under the deck — the arch, the two piers beside it,
+   and the fog that swallows them both. */
+const VIA_W = 64, VIA_H = 176;
+function viaductBay() {
+  const g = new Pix(VIA_W, VIA_H);
+  const r = new RNG(31337);
+  const face = C('#9aa0a6'), lit = C('#bfc4c9'), dk = C('#6f757c'), mortar = C('#52575d');
+  const pierW = 18, gap = VIA_W - pierW;
+  /* the two half piers, one at each edge, so bays sit side by side */
+  const piers = [[-pierW / 2, pierW], [VIA_W - pierW / 2, pierW]];
+  for (const [px, pw] of piers) {
+    for (let y = 0; y < VIA_H; y++) for (let x = Math.round(px); x < Math.round(px + pw); x++) {
+      if (x < 0 || x >= VIA_W) continue;
+      const row = Math.floor(y / 7), off = (row & 1) ? 4 : 0;
+      const bx = (x - Math.round(px) + off) % 9;
+      let c = ((y % 7) === 0 || bx === 0) ? mortar : face;
+      if (c === face) {
+        c = mixc(face, lit, Math.max(0, 1 - (x - px) / pw * 2.2) * 0.5);
+        c = mixc(c, dk, Math.max(0, (x - px) / pw - 0.55) * 1.1);
+        if (((row * 31 + bx * 17 + Math.round(px)) % 11) === 0) c = mixc(c, dk, 0.35);
+      }
+      g.set(x, y, c);
+    }
+  }
+  /* the arch springing between them */
+  const aR = gap / 2, acx = VIA_W / 2, acy = 26;
+  for (let y = 0; y < acy + 4; y++) for (let x = 0; x < VIA_W; x++) {
+    const dx = (x - acx) / aR, dy = (y - acy) / 30;
+    if (dy < 0 && dx * dx + dy * dy < 1) continue;
+    if (y >= acy && Math.abs(x - acx) < aR) continue;
+    if (Math.abs(x - acx) > aR + 10) continue;
+    const row = Math.floor(y / 7);
+    const c = ((y % 7) === 0) ? mortar : mixc(face, lit, 0.2);
+    if (g.alphaAt(x, y) === 0) g.set(x, y, c);
+  }
+  /* the string course the deck sits on */
+  g.rect(0, 0, VIA_W, 5, mixc(face, lit, 0.35));
+  g.rect(0, 5, VIA_W, 1, mortar);
+  /* moss in the joints, and cracks down the piers */
+  const moss = C('#6f8a4a');
+  for (let k = 0; k < 40; k++) {
+    const x = r.i(0, VIA_W - 1), y = r.i(6, VIA_H - 1);
+    if (g.alphaAt(x, y) > 8) g.ell(x, y, r.r(1, 3), r.r(1, 2.4), mixc(moss, C('#4a6a34'), r.n()));
+  }
+  for (let k = 0; k < 7; k++) {
+    let x = r.i(0, VIA_W - 1), y = r.i(10, VIA_H - 40);
+    let a = Math.PI / 2 + r.r(-0.5, 0.5);
+    for (let s = 0; s < r.i(8, 26); s++) {
+      const nx = x + Math.cos(a) * 3, ny = y + Math.sin(a) * 3;
+      if (g.alphaAt(Math.round(nx), Math.round(ny)) > 8) g.line(x, y, nx, ny, C('#2f3338'));
+      x = nx; y = ny; a += r.r(-0.5, 0.5);
+    }
+  }
+  /* and the dark that takes the bottom of it */
+  for (let y = 0; y < VIA_H; y++) {
+    const f = Math.max(0, (y - VIA_H * 0.42) / (VIA_H * 0.58));
+    if (f <= 0) continue;
+    for (let x = 0; x < VIA_W; x++) {
+      if (g.alphaAt(x, y) < 8) continue;
+      g.set(x, y, mixc(g.getc(x, y), [8, 8, 10, 255], Math.min(1, f * f * 1.25)));
+    }
+  }
+  return g;
+}
+
+/* The vines that hang in front of everything, off a lip of old brick.
+   One tile of it, repeated across the top of the screen. */
+const VINE_W = 96, VINE_H = 116;
+function vineCurtain(seed) {
+  const g = new Pix(VINE_W, VINE_H);
+  const r = new RNG(seed);
+  const brick = C('#8e949a'), brickL = C('#b6bcc2'), brickD = C('#666b71'), mortar = C('#4e5359');
+  const BH = 40;
+  for (let y = 0; y < BH; y++) for (let x = 0; x < VINE_W; x++) {
+    const row = Math.floor(y / 9), off = (row & 1) ? 8 : 0;
+    const bx = (x + off) % 17;
+    let c = ((y % 9) === 0 || bx === 0) ? mortar : brick;
+    if (c === brick) {
+      c = mixc(brick, brickL, ((y % 9) < 2) ? 0.5 : 0);
+      c = mixc(c, brickD, ((y % 9) > 6) ? 0.4 : 0);
+      if (((row * 13 + bx * 7) % 9) === 0) c = mixc(c, brickD, 0.3);
+    }
+    g.set(x, y, c);
+  }
+  /* the mat of leaves along the underside of the lip */
+  const leaf = ['#3f7a2a', '#55a038', '#2f5c1e', '#6cc247'];
+  for (let x = 0; x < VINE_W; x++) {
+    const h = 10 + Math.sin(x * 0.11) * 5 + Math.sin(x * 0.043 + 2) * 4;
+    for (let y = BH - 6; y < BH + h; y++) {
+      if (r.bool(0.78)) g.set(x, y, C(r.pick(leaf)));
+    }
+  }
+  /* and the strands that fall out of it */
+  for (let k = 0; k < 11; k++) {
+    const x0 = r.i(2, VINE_W - 3);
+    const len = r.r(16, VINE_H - BH - 8);
+    let x = x0, y = BH + r.r(4, 12);
+    const drift = r.r(-0.16, 0.16);
+    for (let s = 0; s < len; s++) {
+      const col = C(r.bool(0.7) ? leaf[0] : leaf[2]);
+      g.set(Math.round(x), Math.round(y), col);
+      if (r.bool(0.16)) {
+        g.set(Math.round(x) + r.i(-2, 2), Math.round(y) + r.i(-1, 1), C(r.pick(leaf)));
+        g.set(Math.round(x) + r.i(-2, 2), Math.round(y) + r.i(-1, 1), C(r.pick(leaf)));
+      }
+      x += drift + Math.sin(s * 0.14 + k) * 0.10;
+      y += 1;
+    }
+    /* a fatter leaf at the tip, the way the reference hangs them */
+    g.ell(Math.round(x), Math.round(y), 1.6, 2.6, C(leaf[1]));
+  }
+  return g;
+}
+
+/* the dark brick of the corridor that leads to the door */
+function tileEyeStone(seed, top) {
+  const g = new Pix(TILE, TILE);
+  const r = new RNG(seed);
+  const base = C('#22242a'), lit = C('#33363d'), dk = C('#15161a'), mortar = C('#0d0e11');
+  for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) {
+    const row = Math.floor(y / 8), off = (row & 1) ? 8 : 0;
+    const bx = (x + off) % 16;
+    let c = ((y % 8) === 0 || bx === 0) ? mortar : base;
+    if (c === base) {
+      c = mixc(base, lit, ((y % 8) < 2) ? 0.55 : 0);
+      c = mixc(c, dk, ((y % 8) > 5) ? 0.45 : 0);
+      if (r.bool(0.13)) c = mixc(c, dk, 0.5);
+    }
+    g.set(x, y, c);
+  }
+  if (top) { g.rect(0, 0, TILE, 1, mixc(lit, C('#4b505a'), 0.6)); g.rect(0, 1, TILE, 1, lit); }
+  return g;
+}
+
+/* the door at the end of it: iron banded oak, shut */
+function eyeDoorSprite(openT) {
+  const W = 34, H = 52;
+  const g = new Pix(W, H);
+  const wood = C('#3a2a1e'), woodL = C('#523c2a'), woodD = C('#241a12'), iron = C('#4a4d54');
+  const jamb = C('#2b2d33');
+  g.rect(0, 0, W, H, jamb);
+  const aw = Math.round(W - 6 - openT * (W - 10));
+  for (let y = 3; y < H - 1; y++) for (let x = 3; x < 3 + aw; x++) {
+    const plank = Math.floor((x - 3) / 5);
+    let c = mixc(wood, woodL, ((x - 3) % 5 === 0) ? 0 : 0.25);
+    if ((x - 3) % 5 === 4) c = woodD;
+    if ((y * 7 + plank * 13) % 17 === 0) c = mixc(c, woodD, 0.5);
+    g.set(x, y, c);
+  }
+  if (aw > 4) {
+    g.rect(3, 8, aw, 3, iron);
+    g.rect(3, H - 14, aw, 3, iron);
+    g.set(3 + aw - 5, Math.round(H / 2), C('#8a8e96'));
+    g.set(3 + aw - 4, Math.round(H / 2), C('#8a8e96'));
+  }
+  /* whatever is past it is only ever dark */
+  for (let y = 3; y < H - 1; y++) for (let x = 3 + aw; x < W - 3; x++) g.set(x, y, C('#05060a'));
+  return g;
+}
+
+/* the pale deck of the viaduct, which the hero really walks on */
+function tileViaduct(seed, top) {
+  const g = new Pix(TILE, TILE);
+  const r = new RNG(seed);
+  const base = C('#9aa0a6'), lit = C('#c2c7cc'), dk = C('#71777e'), mortar = C('#565b61');
+  for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) {
+    const row = Math.floor(y / 8), off = (row & 1) ? 8 : 0;
+    const bx = (x + off) % 16;
+    let c = ((y % 8) === 0 || bx === 0) ? mortar : base;
+    if (c === base) {
+      c = mixc(base, lit, ((y % 8) < 2) ? 0.45 : 0);
+      c = mixc(c, dk, ((y % 8) > 5) ? 0.35 : 0);
+      if (r.bool(0.12)) c = mixc(c, dk, 0.4);
+      if (r.bool(0.05)) c = mixc(c, C('#6f8a4a'), 0.45);
+    }
+    g.set(x, y, c);
+  }
+  if (top) {
+    g.rect(0, 0, TILE, 1, C('#d6dade'));
+    g.rect(0, 1, TILE, 1, lit);
+    for (let x = 0; x < TILE; x++) if (r.bool(0.18)) g.set(x, 2, mixc(lit, dk, 0.5));
+  }
+  return g;
+}
+
+/* ---------- the eye, worn and carried ---------- */
+/* one staring eye, small, for a border brick or a badge */
+function eyeGlyph(w, h, look) {
+  const g = new Pix(w, h);
+  const cx = w / 2, cy = h / 2;
+  const rx = w * 0.46, ry = h * 0.34;
+  for (let x = 0; x < w; x++) {
+    const f = Math.abs(x - cx) / rx;
+    if (f >= 1) continue;
+    const k = Math.pow(1 - f * f, 0.6) * ry;
+    for (let y = Math.round(cy - k); y <= Math.round(cy + k); y++) g.set(x, y, C('#d8dade'));
+  }
+  const px = cx + (look || 0) * rx * 0.3;
+  g.ell(px, cy, ry * 0.68, ry * 0.68, C('#2b3450'));
+  g.ell(px, cy, ry * 0.36, ry * 0.36, C('#05060a'));
+  g.set(Math.round(px + ry * 0.3), Math.round(cy - ry * 0.3), C('#ffffff'));
+  g.outline('#101216', true);
+  return g;
+}
+
+/* the icon on the chart: an eye far bigger than any island */
+function eyeNodeSprite() {
+  const W = 84, H = 84;
+  const g = new Pix(W, H);
+  const r = new RNG(1666);
+  /* the dark it sits in */
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const d = Math.hypot(x - W / 2, y - H / 2) / (W / 2);
+    if (d > 1) continue;
+    g.set(x, y, mixc(C('#0e1014'), C('#05060a'), Math.min(1, d * 1.3)));
+  }
+  /* the eye itself, wide open */
+  const cx = W / 2, cy = H / 2, rx = 36, ryU = 21, ryL = 18;
+  for (let x = 0; x < W; x++) {
+    const f = Math.abs(x - cx) / rx;
+    if (f >= 1) continue;
+    const k = Math.pow(1 - f * f, 0.62);
+    for (let y = Math.round(cy - ryU * k); y <= Math.round(cy + ryL * k); y++)
+      g.set(x, y, mixc(C('#d8dade'), C('#8f949c'), Math.abs(x - cx) / rx * 0.8));
+  }
+  for (let k = 0; k < 14; k++) {
+    let x = cx + r.r(-rx, rx) * 0.8, y = cy + r.r(-ryU, ryL) * 0.8, a = r.r(0, TAU);
+    for (let s = 0; s < r.i(3, 9); s++) {
+      const nx = x + Math.cos(a) * 2, ny = y + Math.sin(a) * 2;
+      if (g.alphaAt(Math.round(nx), Math.round(ny)) > 8 &&
+          g.getc(Math.round(nx), Math.round(ny))[0] > 100) g.line(x, y, nx, ny, C('#3a3d44'));
+      x = nx; y = ny; a += r.r(-0.8, 0.8);
+    }
+  }
+  g.ell(cx, cy, 15, 15, C('#161c2e'));
+  g.ell(cx, cy, 12, 12, C('#2b3450'));
+  for (let k = 0; k < 40; k++) {
+    const a = r.r(0, TAU);
+    g.line(cx + Math.cos(a) * 6, cy + Math.sin(a) * 6,
+           cx + Math.cos(a) * 11, cy + Math.sin(a) * 11, r.bool(0.4) ? C('#6d7891') : C('#4a5570'));
+  }
+  g.ell(cx, cy, 6, 6, C('#05060a'));
+  g.rect(cx + 3, cy - 4, 2, 2, C('#ffffff'));
+  /* the hood and the lashes */
+  for (let x = 0; x < W; x++) {
+    const f = Math.abs(x - cx) / rx;
+    if (f >= 1.01) continue;
+    const k = Math.pow(1 - f * f, 0.62);
+    const top = cy - ryU * k, th = 7 * Math.pow(1 - f * f, 0.35) + 2;
+    for (let y = Math.round(top - th); y <= Math.round(top); y++)
+      g.set(x, y, mixc(C('#3b4049'), C('#101216'), (y - (top - th)) / th));
+    const bot = cy + ryL * k;
+    for (let y = Math.round(bot); y <= Math.round(bot + 4); y++) g.set(x, y, C('#15171c'));
+  }
+  for (let k = 0; k < 16; k++) {
+    const dx = r.r(-rx * 0.92, rx * 0.92), f = Math.abs(dx) / rx;
+    const kk = Math.pow(1 - f * f, 0.62);
+    const x = cx + dx, y = cy - ryU * kk - (7 * Math.pow(1 - f * f, 0.35) + 2);
+    const len = r.r(4, 9) * (1 - f * 0.4);
+    g.line(x, y, x + dx / rx * len * 0.9, y - len, C('#101216'));
+  }
+  return g;
+}
 
 Art.steps = function () {
   const S = [];
@@ -6156,6 +6670,80 @@ Art.steps = function () {
     Art.map.chain = [chainLinkSprite(false).canvas(), chainLinkSprite(true).canvas()];
     Art.map.ring = chainRingSprite().canvas();
     Art.ui.map = mapIconSprite().canvas();
+  });
+  push('THE EYE', () => {
+    /* the eye in three layers: the white, the iris that follows you and
+       the lids.  A buffer the size of the eye puts them together each
+       frame, which is what lets one sprite both stare and blink. */
+    Art.eye.white = []; Art.eye.lid = [];
+    for (let i = 0; i < EYE_LIDS; i++) {
+      const open = i / (EYE_LIDS - 1);
+      Art.eye.white.push(eyeWhite(open).canvas());
+      Art.eye.lid.push(eyeLid(open).canvas());
+    }
+    Art.eye.iris = eyeIris().canvas();
+    Art.eye.w = EYE_W; Art.eye.h = EYE_H;
+    /* The artist's own eye, in two pieces.  Until both arrive the drawn one
+       above stands in, and if they never arrive it goes on standing in. */
+    Art.eye.body = null; Art.eye.irisImg = null;
+    Art.eye.imgW = EYE_IMG_W; Art.eye.imgH = EYE_IMG_H;
+    Art.eye.irisR = EYE_IMG_IRIS_R;
+    Art.eye.irisOX = EYE_IMG_OX; Art.eye.irisOY = EYE_IMG_OY;
+    for (const [file, key] of [['eye-body', 'body'], ['eye-iris', 'irisImg']]) {
+      const im = new Image();
+      im.onload = () => {
+        Art.eye[key] = im;
+        if (key === 'body') Art.measureEyeAperture(im);
+      };
+      im.onerror = () => { console.error('images/' + file + '.png did not load'); };
+      im.src = ART_BASE + 'images/' + file + '.png';
+    }
+    Art.eye.imgBuf = mkc(EYE_IMG_W, EYE_IMG_H);
+    Art.eye.imgBufx = Art.eye.imgBuf.getContext('2d');
+    Art.eye.buf = mkc(EYE_W, EYE_H);
+    Art.eye.bufx = Art.eye.buf.getContext('2d');
+    Art.eye.node = eyeNodeSprite().canvas();
+    Art.eye.glyph = [eyeGlyph(14, 10, -1).canvas(), eyeGlyph(14, 10, 0).canvas(),
+                     eyeGlyph(14, 10, 1).canvas()];
+    Art.eye.glyphBig = [eyeGlyph(26, 18, -1).canvas(), eyeGlyph(26, 18, 0).canvas(),
+                        eyeGlyph(26, 18, 1).canvas()];
+  });
+  push('THE EYE', () => {
+    /* THE ONE PICTURE THE GAME LOADS.  Everything else in this file is
+       drawn; the viaduct is the artist's own, cut to eight arches so that
+       it repeats without a seam and so that eight of it make the 2048
+       pixels the room wraps on.  It arrives when it arrives, and the drawn
+       arches below stand in until it does and take over again if it never
+       comes. */
+    const im = new Image();
+    im.onload = () => { Art.eye.strip = im; };
+    im.onerror = () => { console.error('images/viaduct.png did not load'); };
+    im.src = ART_BASE + 'images/viaduct.png';
+    Art.eye.strip = null;
+    Art.eye.stripW = 256; Art.eye.stripH = 200;
+    Art.eye.bay = viaductBay().canvas();
+    Art.eye.bayW = VIA_W; Art.eye.bayH = VIA_H;
+    Art.eye.vine = [vineCurtain(5551).canvas(), vineCurtain(5552).canvas(), vineCurtain(5553).canvas()];
+    Art.eye.vineW = VINE_W; Art.eye.vineH = VINE_H;
+    /* The artist's own vines, cut to a strip that repeats without a seam
+       the way the viaduct does, and hung at a fixed height in the world so
+       that it travels with the road rather than sliding against it. */
+    Art.eye.vineImg = null;
+    {
+      const im = new Image();
+      im.onload = () => { Art.eye.vineImg = im; };
+      im.onerror = () => { console.error('images/vines.png did not load'); };
+      im.src = ART_BASE + 'images/vines.png';
+    }
+    Art.eye.door = frames(6, (i, n) => eyeDoorSprite(i / (n - 1)));
+    Art.tile.eyeStone = []; Art.tile.eyeStoneTop = [];
+    Art.tile.via = []; Art.tile.viaTop = [];
+    for (let i = 0; i < 4; i++) {
+      Art.tile.eyeStone.push(tileEyeStone(1401 + i, false).canvas());
+      Art.tile.eyeStoneTop.push(tileEyeStone(1411 + i, true).canvas());
+      Art.tile.via.push(tileViaduct(1421 + i, false).canvas());
+      Art.tile.viaTop.push(tileViaduct(1431 + i, true).canvas());
+    }
   });
   push('THE SKY', () => {
     Art.bg.mtnFar = mountainLayer(512, 108, 21, '#5a6a94', true).canvas();

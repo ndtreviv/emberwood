@@ -26,6 +26,9 @@ const G = {
   combo: 0, comboT: 0, comboBest: 0,
   waves: [],
   codes: { found: {}, used: {}, tickets: 0, admin: false },
+  /* the last guardian: whether it has been beaten, and whether the chart
+     will open its gate without every keeper having been taken first */
+  eyeSlain: false, eyeUnlocked: false,
   codesOpen: false, codeBuf: '', codeMsg: '', codeMsgT: 0, codeMsgOk: false,
   questsOpen: false, questSel: -1, questTab: 0, questMsg: '', questMsgT: 0,
   quests: { claimed: {} },
@@ -38,11 +41,11 @@ const G = {
   chapter: 0, mapScroll: 0, mapScrollT: 0, unlockAnim: null,
   deathT: 0, victoryT: 0,
   lockedMsgT: 0,
-  audioHint: true,
+  audioStarted: false,
 
   /* which of the three save files is in play, and what the player chose in settings */
   slot: 0, fileSel: -1, eraseArm: -1,
-  opts: { mobile: null, music: 0.7, sfx: 0.8, padAlpha: 0.5, shake: 1, keys: null },
+  opts: { mobile: null, music: 0.7, sfx: 0.8, padAlpha: 0.5, shake: 1, keys: null, rock: false },
   setTab: 0, setSel: -1, setDrag: null, setStep: -1, bindWait: null,
   profSel: -1, profT: 0, profAfter: 'map', profPreview: null
 };
@@ -58,6 +61,7 @@ const SLOTS = 3;
 function applyOptions() {
   Snd.setMusicVolume(G.opts.music);
   Snd.setSfxVolume(G.opts.sfx);
+  Snd.setRock(G.opts.rock);
   for (const a of ACTIONS) KEYS[a.key] = (G.opts.keys && G.opts.keys[a.key]) || DEFAULT_KEYS[a.key];
   if (typeof G.opts.mobile === 'boolean') G.mobile = G.opts.mobile;
   Screen.wantFull = G.mobile;
@@ -71,6 +75,7 @@ function loadOptions() {
     if (typeof o.sfx === 'number') G.opts.sfx = clamp(o.sfx, 0, 1);
     if (typeof o.padAlpha === 'number') G.opts.padAlpha = clamp(o.padAlpha, 0.12, 1);
     if (typeof o.shake === 'number') G.opts.shake = clamp(o.shake, 0, 1);
+    if (typeof o.rock === 'boolean') G.opts.rock = o.rock;
     if (o.keys) G.opts.keys = o.keys;
   }
   applyOptions();
@@ -120,6 +125,7 @@ function packSave() {
              admin: G.codes.admin },
     profile: Object.assign({}, G.profile),
     unlockedHair: Object.assign({}, G.unlockedHair || {}),
+    eyeSlain: !!G.eyeSlain, eyeUnlocked: !!G.eyeUnlocked,
     gulletVisits: G.gulletVisits || 0,
     quests: { claimed: (G.quests && G.quests.claimed) || {},
               daily: (G.quests && G.quests.daily) || null },
@@ -142,7 +148,7 @@ function readSlot(i) { return Store.read(SAVE_KEY + i, null); }
 function writeSlot(i, data) { Store.write(SAVE_KEY + i, data); }
 G.saveGame = function () {
   if (G.state === 'load' || G.state === 'title' || G.state === 'wardrobe' ||
-      G.state === 'archipelago' || G.state === 'files') return;
+      G.state === 'archipelago' || G.state === 'files' || G.state === 'eyeEnd') return;
   if (!G.player) return;
   saveLevelState();
   writeSlot(G.slot, packSave());
@@ -176,8 +182,10 @@ function applySave(d) {
   G.levelState = {};
   for (const k in (d.levelState || {})) {
     const st = d.levelState[k];
-    /* an older file may hold an island against a chapter level; drop it */
-    if (!st || st.roomId === 'isle') continue;
+    /* A file written before this was caught may hold an island, or the road
+       to the last guardian, against a chapter level.  Either one is thrown
+       away here, and the realm begins at its own start instead. */
+    if (!st || offChapterRoom(st.roomId)) continue;
     G.levelState[k] = { roomId: st.roomId, x: st.x, y: st.y, hp: st.hp,
                         roomFlags: unpackFlags(st.roomFlags), flags: st.flags || {} };
   }
@@ -192,6 +200,8 @@ function applySave(d) {
   G.codes.admin = !!(d.codes && d.codes.admin);
   G.profile = Object.assign({ hair: 0, hairCol: 0, outfit: 0, tee: 0, cape: 'none', suit: 'none' }, d.profile || {});
   G.gulletVisits = d.gulletVisits || 0;
+  G.eyeSlain = !!d.eyeSlain;
+  G.eyeUnlocked = !!d.eyeUnlocked;
   G.unlockedHair = Object.assign({}, d.unlockedHair || {});
   Art.lockExtraHair();
   for (const k in G.unlockedHair) if (G.unlockedHair[k]) Art.unlockHairColour(k);
@@ -354,6 +364,55 @@ G.redeem = function (raw) {
     Art.unlockHairColour('GINGER');
     G.codeMsg = 'GINGER HAIR UNLOCKED'; G.codeMsgOk = true; G.codeMsgT = 4;
     Snd.unlock(); G.flash(0.4);
+    G.saveGame();
+    return;
+  }
+  /* D4N hands every tune to a rock band.  Type it again and the old music
+     comes back.  The choice is a sound setting, so it is kept on the
+     machine rather than in one save file. */
+  if (name === 'D4N') {
+    const on = !Snd.rock;
+    Snd.setRock(on);
+    G.opts.rock = on;
+    saveOptions();
+    G.codeMsg = on ? 'ROCK MUSIC ON' : 'ROCK MUSIC OFF';
+    G.codeMsgOk = true; G.codeMsgT = 4;
+    if (on) { Snd.rockStab(); G.flash(0.35); G.shake(4); } else Snd.ui();
+    return;
+  }
+  /* CHEESE2 fits you out for the last guardian and opens its gate.  It is
+     the one code that hands over a fight rather than a purse: every
+     upgrade at its ceiling, the three hardest artifacts worn at five
+     copies each, and the eye on the chart whether or not you have taken
+     a keeper of every kind. */
+  if (name === 'CHEESE2') {
+    G.archipelago = G.archipelago || newArchipelago();
+    G.archipelago.open = true;
+    G.eyeUnlocked = true;
+    const p = G.player;
+    G.unlocked = World.LEVELS.length;
+    for (const it of SHOP_ITEMS) {
+      if (it.key === 'tonic') continue;
+      p.up[it.key] = shopMax(it);
+    }
+    p.up.heart = shopMax(SHOP_ITEMS[0]);
+    p.maxHp = 6 + p.up.heart * 2 + G.artAdd('hp');
+    p.coins = Math.max(p.coins || 0, 500000);
+    /* the three that bite deepest, each one filled to five */
+    G.artifacts = G.artifacts || { owned: {}, slots: [null, null, null] };
+    const kit = ['myththunderfang', 'tempestedge', 'stormcrown'];
+    G.artifacts.slots = [null, null, null];
+    kit.forEach((k, i) => {
+      if (!artifactBy(k)) return;
+      G.artifacts.owned[k] = ART_MAX;
+      G.artifacts.slots[i] = k;
+    });
+    G.applyArtifacts();
+    p.maxHp = 6 + p.up.heart * 2 + G.artAdd('hp');
+    p.hp = p.maxHp;
+    p.stam = p.stamMax;
+    G.codeMsg = 'GO AND LOOK AT IT'; G.codeMsgOk = true; G.codeMsgT = 4;
+    Snd.eyeOpen(); G.flash(0.7); G.shake(7);
     G.saveGame();
     return;
   }
@@ -672,15 +731,56 @@ function drawSurfacing(camX, camY) {
     blit(ctx, img, px, y, Art.hero.anchor.x, Art.hero.anchor.y, false);
   }
 }
+/* WHAT A GUARDIAN'S HEALTH IS MULTIPLIED BY IN A REALM.
+   Guardians are far hardier than they were; the last one hardest of all.
+   A realm may set its own bossHp, and Emberwood does: it is the first fight
+   anyone has, usually with no whetstone bought yet.  A buffed run multiplies
+   all of it again.
+
+   Both places that raise a guardian read the number from here, and that is
+   the point of the function.  The throne room raises its dragon itself, and
+   it used to work the number out on its own and leave the buff out: the
+   Emberwood dragon stood at 96 on every prestige while every other guardian
+   went to five times itself. */
+function bossScaleFor(level) {
+  const lv = World.LEVELS[level];
+  const last = World.LEVELS.length - 1;
+  const base = (lv && lv.bossHp !== undefined) ? lv.bossHp : (level === last ? 10 : 3);
+  return base * BUFF_BOSS[clamp(G.buffTier | 0, 0, PRESTIGE_MAX)];
+}
+
 G.enterRoom = function (id, spawn) {
+  /* THE ROAD TO THE LAST GUARDIAN HAS ONE WAY ON TO IT.
+     Its two rooms are only ever entered from an open eye run, and an eye
+     run is only ever opened by clicking the eye in the middle of the
+     chart.  Anything else that asks for them - a save written before this
+     was caught, a transition left over, a realm resuming where it should
+     not - is sent to that realm's own start instead.  Nobody arrives on
+     the viaduct by clicking Emberwood. */
+  if ((id === 'eyehall' || id === 'eyeviaduct') && !G.eyeRun) {
+    const lv = World.LEVELS[clamp(G.level | 0, 0, World.LEVELS.length - 1)];
+    console.error('the eye asked for out of nowhere; going to ' + (lv && lv.start));
+    id = (lv && lv.start) || World.LEVELS[0].start;
+  }
+  /* The maze is laid out again every time it is walked into, so nobody
+     ever learns it.  Its coins are forgotten with it: they are not the
+     same coins in the same places any more. */
+  if (id === 'maze' && World.reshuffleMaze) {
+    World.reshuffleMaze();
+    if (G.roomFlags.maze) G.roomFlags.maze.coins = new Set();
+  }
   const room = World.rooms[id];
   G.room = room; G.roomId = id;
   G.enemies.length = 0; G.coins.length = 0; G.projectiles.length = 0; G.waves.length = 0;
   G.particles.length = 0; G.texts.length = 0; G.items.length = 0;
   G.lifts.length = 0; G.hazards.length = 0;
   G.boss = null; G.bossFight = false;
-  /* a new room puts out any fire you carried out of the last one */
-  if (G.player) { G.player.burnT = 0; G.player.burnAcc = 0; G.player.heldBy = null; }
+  /* a new room puts out any fire you carried out of the last one, and the
+     walk through the doorway counts as a breather: nobody arrives winded */
+  if (G.player) {
+    G.player.burnT = 0; G.player.burnAcc = 0; G.player.heldBy = null;
+    G.player.stam = G.player.stamMax; G.player.stamRest = 0; G.player.windT = 0;
+  }
   if (!G.roomFlags[id]) G.roomFlags[id] = { coins: new Set() };
   const flags = G.roomFlags[id];
 
@@ -737,14 +837,7 @@ G.enterRoom = function (id, spawn) {
     return e;
   };
 
-  /* guardians are far hardier than they were; the last one hardest of all.
-     A realm may set its own bossHp, and Emberwood does: it is the first fight
-     anyone has, usually with no whetstone bought yet. */
-  const lastLevel = World.LEVELS.length - 1;
-  const roomLv = World.LEVELS[room.level];
-  const bossScale = ((roomLv && roomLv.bossHp !== undefined)
-    ? roomLv.bossHp
-    : ((room.level === lastLevel) ? 10 : 3)) * BUFF_BOSS[clamp(G.buffTier | 0, 0, PRESTIGE_MAX)];
+  const bossScale = bossScaleFor(room.level);
   const hardenBoss = (b) => {
     b.hp = Math.round(b.hp * bossScale);
     b.maxHp = b.hp;
@@ -791,10 +884,19 @@ G.enterRoom = function (id, spawn) {
            stands through five phases rather than three. */
         const tier = sp.tier | 0;
         const f = tier / Math.max(1, ISLES_PER_TYPE - 1);
+        /* AN ISLAND KEEPER DOES NOT MEND ITSELF.  A guardian of a chapter
+           does, and a chapter is one fight at the end of a walk; a spoke of
+           the archipelago is fifty of them, and a keeper that claws its
+           health back turns a long fight into an unwinnable one for anybody
+           whose blade is not already deep enough. */
+        /* A SPOKE IS TEN KEEPERS, not one wearing three names.  Which of
+           the ten this island carries, and everything that makes it that
+           one rather than another, comes out of the band table. */
+        const kit = isleBossKit(sp.kind, tier);
         const gd = new Guardian(sp.x, sp.y, isleBossKey(sp.kind),
-                                { dmgMul: 1.5 + f * 2.5, phases: tier >= 25 ? 5 : 4,
-                                  attacks: isleBossAttacks(sp.kind, tier),
-                                  title: isleBossTitle(sp.kind, tier) });
+                                Object.assign({ dmgMul: 1.5 + f * 2.5,
+                                                phases: tier >= 25 ? 5 : 4,
+                                                regen: 0 }, kit));
         /* A keeper's health comes from the tier alone, not from its own
            table: the five keepers carry very different numbers, and the
            fight must take the same long time whichever one it is.  That is
@@ -809,6 +911,9 @@ G.enterRoom = function (id, spawn) {
       case 'zeus': { const z = hardenBoss(new Zeus(sp.x, sp.y)); G.enemies.push(z); G.boss = z; break; }
       case 'mother': { const m = hardenBoss(new MotherSpore(sp.x, sp.y)); G.enemies.push(m); G.boss = m; break; }
       case 'dragon': { const d = hardenBoss(new Dragon(sp.x, sp.y)); G.enemies.push(d); G.boss = d; break; }
+      /* The last guardian takes no hardening: its health is set once, for
+         the whole twenty minutes, and nothing scales it. */
+      case 'theEye': { const ey = new TheEye(sp.x, sp.y); G.enemies.push(ey); G.boss = ey; break; }
       case 'coin': if (!flags.coins.has(i)) G.spawnCoin(sp.x, sp.y, 0, 0, true, i); break;
       case 'key': if (!G.flags.keyTaken) G.items.push(new KeyItem(sp.x, sp.y)); break;
       case 'paper': if (!G.codes.found[sp.code] && !G.codes.used[sp.code])
@@ -920,6 +1025,15 @@ function updateTransition(dt) {
     if (tr.toProfile) { openProfile('map', 1); G.trans = null; return; }
     if (tr.toArchi) { openArchipelago(tr.toArchi); G.trans = null; return; }
     if (tr.isleStart) { const st = tr.isleStart; G.trans = null; G.enterIsle(st.key, st.index, 0); return; }
+    if (tr.eyeStart) { G.trans = null; G.enterEyeLevel(); return; }
+    if (tr.eyeDoor) {
+      G.trans = null;
+      G.enterRoom('eyeviaduct', null);
+      G.eyeRun.phase = 'walk'; G.eyeRun.walk = 0; G.eyeRun.doorT = 0;
+      G.banner('THE VIADUCT', 3);
+      G.flash(0.4);
+      return;
+    }
     if (tr.isleNext) {
       const w = G.isleRun;
       G.trans = null;
@@ -1026,18 +1140,32 @@ function boot() {
   G.state = 'load';
   document.getElementById('boot').classList.add('hide');
   requestAnimationFrame(frame);
-  /* audio needs a gesture in most browsers */
-  const kick = () => {
+  /* THE SOUND STARTS BY ITSELF.  The game asks for the audio the moment it
+     boots, and asks again on every early gesture, because a browser may
+     hold the audio asleep until the player touches the page.  Nothing is
+     written on the screen about it: the sound simply arrives. */
+  const startAudio = () => {
     Snd.init(); Snd.resume();
-    if (Snd.ready && G.audioHint) {
-      G.audioHint = false;
-      Snd.startAmbience();
-      if (G.state === 'title') { Snd.play('title'); Snd.ambienceLevel(0.5, 2); }
-      else if (G.room) { Snd.play(G.room.music); Snd.ambienceLevel(G.room.ambient, 2); }
-    }
+    if (!Snd.ready || G.audioStarted) return;
+    G.audioStarted = true;
+    Snd.startAmbience();
+    if (G.state === 'title') { Snd.play('title'); Snd.ambienceLevel(0.5, 2); }
+    else if (G.room) { Snd.play(G.room.music); Snd.ambienceLevel(G.room.ambient, 2); }
   };
-  addEventListener('mousedown', kick);
-  addEventListener('keydown', kick);
+  startAudio();
+  addEventListener('mousedown', startAudio);
+  addEventListener('keydown', startAudio);
+  addEventListener('touchstart', startAudio, { passive: true });
+  addEventListener('pointerdown', startAudio);
+}
+
+/* Ask for a level of static.  It only speaks to the audio when the answer
+   changes, so the ramp is not restarted sixty times a second. */
+let _staticWant = -1;
+function wantStatic(v) {
+  if (v === _staticWant) return;
+  _staticWant = v;
+  Snd.staticLevel(v, v > 0 ? 2.2 : 1.2);
 }
 
 let lastT = 0;
@@ -1055,6 +1183,8 @@ function frame(now) {
      fault in one still lets the other do its work. */
   try {
     updatePad();
+    /* the hiss belongs to the chart, and only to the chart */
+    wantStatic(G.eyeSlain && (G.state === 'map' || G.state === 'archipelago') ? 0.16 : 0);
     /* A casket on the screen holds it: nothing under it takes a tap until
        you have opened it and put what was in it away.  It only stands in
        front of the screen beneath: the frame itself runs on as it always
@@ -1062,6 +1192,7 @@ function frame(now) {
        request for the next frame. */
     if (!updateBoxShow(dt)) {
       if (G.state === 'load') updateLoad(dt);
+      else if (G.state === 'eyeEnd') updateEyeEnd(dt);
       else if (G.state === 'title') updateTitle(dt);
       else if (G.state === 'wardrobe') updateWardrobe(dt);
       else if (G.state === 'archipelago') updateArchipelago(dt);
@@ -1167,6 +1298,7 @@ function startGame(slot) {
   G.trans = null;
   G.tutorialDone = false;
   G.codes = { found: {}, used: {}, tickets: 0, admin: false };
+  G.eyeSlain = false; G.eyeUnlocked = false; G.eyeRun = null;
   G.tut = { move: 0, fight: 0, swim: 0, dash: 0, pierce: 0, climb: 0, parry: 0 };
   G.relicSeen = {}; G.relicShow = null; G.swallowed = null; G.acid = null;
   G.quests = { claimed: {}, daily: null }; G.comboBest = 0; G.questsOpen = false;
@@ -1205,8 +1337,10 @@ function openMap(fresh) {
   /* The chart belongs to the chapters.  An island run left open behind it
      would turn a chapter into an island: a death would throw the hero back
      to the island, and the guardian at the end of a realm would pay in
-     shards and mark the island cleared. */
+     shards and mark the island cleared.  A walk out to the last guardian
+     left open behind it would be worse still. */
   G.isleRun = null;
+  G.eyeRun = null; G.eyeEnd = null;
   G.state = 'map'; G.mapT = 0; G.mapSel = -1;
   G.shopOpen = false;
   G.particles.length = 0;
@@ -1221,13 +1355,18 @@ function openMap(fresh) {
   if (fresh) G.flash(1.0); else G.flash(0.5);
 }
 /* remember where you stood, what you had taken, and how hurt you were */
+/* Rooms that belong to no chapter, and must never be written against one.
+   A realm that resumes into one of these has no way back to itself. */
+function offChapterRoom(id) {
+  return id === 'isle' || id === 'eyehall' || id === 'eyeviaduct';
+}
 function saveLevelState() {
   if (!G.room || !G.player || G.player.dead) return;
   if (G.roomId === 'tutorial') return;      /* the tutorial is never resumed */
   if (G.roomId === 'gullet') return;        /* nor the inside of a Leviathan */
   /* An island is not a room of any chapter.  Writing one here put the hero
      back on the island the next time the chapter level began. */
-  if (G.roomId === 'isle' || G.room.isle) return;
+  if (offChapterRoom(G.roomId) || G.room.isle || G.eyeRun) return;
   G.levelState[G.level] = {
     roomId: G.roomId,
     x: G.player.cx, y: G.player.y + G.player.h,
@@ -1251,14 +1390,17 @@ G.checkRelics = function () {
 G.startLevel = function (i) {
   const lv = World.LEVELS[i];
   if (!lv || i >= G.unlocked) { Snd.uiBad(); return; }
-  /* and no chapter level ever begins with an island run still open */
+  /* and no chapter level ever begins with an island run, or a walk out to
+     the last guardian, still open behind it */
   G.isleRun = null;
+  G.eyeRun = null; G.eyeEnd = null;
   G.level = i;
   G.player.dead = false;
   G.state = 'play';
   G.trans = null;
   const st = G.levelState[i];
-  if (st && World.rooms[st.roomId]) {
+  if (st && offChapterRoom(st.roomId)) delete G.levelState[i];
+  if (st && !offChapterRoom(st.roomId) && World.rooms[st.roomId]) {
     /* pick the realm up where you left it */
     G.roomFlags = st.roomFlags; G.flags = st.flags;
     G.player.hp = Math.max(2, st.hp);
@@ -1405,6 +1547,9 @@ function updatePlay(dt) {
                   Input.my >= mapR.y && Input.my <= mapR.y + mapR.h;
   G.overMapIcon = overMap && !G.shopOpen && G.roomId !== 'tutorial';
   if (G.state === 'play' && G.roomId !== 'tutorial' && !G.shopOpen && !G.trans && ((Input.tap(mapR) && !tapOnExitBtn) || Input.actHit('map'))) {
+    /* The chart is the way out of everywhere else.  Out here it is not a
+       way out of anything, and the screen says so. */
+    if (G.eyeRun) { G.eyeRefuse(); return; }
     G.leaveLevel(); return;
   }
   const pchR = pouchRect();
@@ -1441,9 +1586,11 @@ function updatePlay(dt) {
   if (G.state === 'victory') { updateVictory(dt); return; }
   if (G.state === 'dead') {
     G.deathT += dt;
+    if (G.eyeRun) updateEyeFall(dt);
     for (const p of G.particles) p.update(dt);
     G.particles = G.particles.filter(p => !p.dead);
-    if (G.deathT > 1.6 && (Input.hit('Space') || Input.hit('Enter') || Input.mhit)) respawn();
+    const wait = G.eyeRun ? 3.4 : 1.6;
+    if (G.deathT > wait && (Input.hit('Space') || Input.hit('Enter') || Input.mhit)) respawn();
     return;
   }
 
@@ -1496,9 +1643,10 @@ function updatePlay(dt) {
     }
   }
 
-  /* ambient life */
+  /* ambient life.  The eye's two rooms have none: that is the point of them. */
+  const quiet = G.room.bg === 'eyehall' || G.room.bg === 'eyeviaduct';
   if (G.room.bg === 'forest' && Math.random() < dt * 0.42) Snd.bird();
-  if (G.room.bg !== 'forest' && Math.random() < dt * 0.5) Snd.drip();
+  if (G.room.bg !== 'forest' && !quiet && Math.random() < dt * 0.5) Snd.drip();
   if (G.room.bg === 'forest' && Math.random() < dt * 9) {
     G.particles.push(new Particle({
       x: G.cam.x + rr(-20, VW + 20), y: G.cam.y - 10, vx: rr(-0.5, 0.2), vy: rr(0.25, 0.7),
@@ -1507,6 +1655,7 @@ function updatePlay(dt) {
   }
 
   updateThrone(dt);
+  updateEyeLevel(dt);
   updateAcid(dt);
   updateSurfacing(dt);
   updateGateSlide(dt);
@@ -1550,11 +1699,8 @@ function updateThrone(dt) {
     if (th.t > 1.5 && !G.boss) {
       const d = new Dragon(th.drop.x, th.drop.y);
       d.y = th.drop.y;
-      /* the same hardening the room would have given it on entry */
-      const lv = World.LEVELS[G.level];
-      const sc = (lv && lv.bossHp !== undefined) ? lv.bossHp
-               : ((G.level === World.LEVELS.length - 1) ? 10 : 3);
-      d.hp = Math.round(d.hp * sc); d.maxHp = d.hp;
+      /* the very same hardening the room gives every other guardian */
+      d.hp = Math.round(d.hp * bossScaleFor(G.level)); d.maxHp = d.hp;
       G.boss = d; G.enemies.push(d);
       if (typeof d.wake === 'function') d.wake();
       Snd.dragonRoar(); G.shake(14); G.flash(0.7);
@@ -1778,6 +1924,14 @@ function checkExits() {
       G.isleNext();
       return;
     }
+    /* The door at the end of the corridor.  It has not been opened in a
+       long time, and it says so on the way. */
+    if (ex.to === '@eyeviaduct') {
+      G.nearExit = ex; G.nearExitLocked = false;
+      if (!enterPressed(ex)) continue;
+      G.openEyeDoor();
+      return;
+    }
     if (ex.to === 'tutorialDone') {
       const left = G.tutLeft();
       G.nearExit = ex; G.nearExitLocked = left.length > 0;
@@ -1801,12 +1955,17 @@ function checkExits() {
 
 function respawn() {
   const p = G.player;
+  /* A hero who goes off the viaduct is let go.  The eye keeps nobody it
+     has already finished with, and there has to be a way back to the chart
+     or the file is stuck out here for good. */
+  if (G.eyeRun) { G.leaveEye(false); return; }
   if (G.roomId === 'gullet' && G.swallowed) {
     /* the belly does not keep you: you wash back into the fight */
     const sw = G.swallowed; G.swallowed = null; G.acid = null;
     const lost = Math.floor(p.coins * 0.2);
     p.coins = Math.max(0, p.coins - lost);
     p.dead = false; p.hp = p.maxHp; p.invuln = 1.6; p.burnT = 0; p.burnAcc = 0;
+    p.stam = p.stamMax; p.stamRest = 0;
     G.state = 'play';
     Snd.musicLevel(0.34, 0.6);
     G.enterRoom(sw.roomId, { spawnAt: { x: sw.x, y: sw.y } });
@@ -1817,6 +1976,7 @@ function respawn() {
   const lost = Math.floor(p.coins * 0.2);
   p.coins = Math.max(0, p.coins - lost);
   p.dead = false; p.hp = p.maxHp; p.invuln = 1.4; p.burnT = 0; p.burnAcc = 0;
+  p.stam = p.stamMax; p.stamRest = 0;
   G.state = 'play';
   Snd.musicLevel(0.34, 0.6);
   /* an island begins again at its first level, not where you fell */
@@ -1896,6 +2056,8 @@ function updateVictory(dt) {
    ============================================================ */
 G.enterIsle = function (typeKey, index, level) {
   const t = ISLE_TYPES.find(q => q.key === typeKey) || ISLE_TYPES[0];
+  /* an island never begins with the walk to the last guardian still open */
+  G.eyeRun = null; G.eyeEnd = null;
   G.isleRun = { type: ISLE_TYPES.indexOf(t), key: typeKey, shard: t.shard,
                 index: index, level: level | 0 };
   World.rooms.isle = World.buildIsle(typeKey, index, G.isleRun.level);
@@ -1936,6 +2098,832 @@ G.onIsleBossDead = function () {
   if (first) G.banner('THE ISLAND IS YOURS', 3);
   G.saveGame();
 };
+
+
+/* ============================================================
+   THE LAST GUARDIAN — the level, and everything the level does
+   that no other level does: a corridor that tells you to go
+   home, a door that will not let you, a viaduct with no end,
+   and one eye over the whole of it.
+   ============================================================ */
+/* how long the hero walks the viaduct before the eye finds them */
+const EYE_WALK = 20;
+/* how far the beams and the deck let the hero stray before the room wraps */
+G.eyeRun = null;
+
+G.enterEyeLevel = function () {
+  World.buildEyeRooms();
+  G.eyeRun = {
+    said: 0,                  /* how many of the corridor's words have shown */
+    word: '', wordT: 0,
+    walk: 0,                  /* seconds spent on the viaduct before the fight */
+    phase: 'hall',            /* hall, walk, wait, fight, won */
+    waitT: 0,
+    wallGone: false,
+    tonic: 0,                 /* how many of the five drinks have been taken */
+    noEscape: 0,              /* how long the refusal has been on the screen */
+    escT: 0,
+    fell: 0                   /* the fall, once the hero goes over the edge */
+  };
+  G.isleRun = null;
+  G.player.dead = false;
+  G.player.hp = G.player.maxHp;
+  G.player.stam = G.player.stamMax;
+  G.state = 'play';
+  G.trans = null;
+  G.roomFlags = {}; G.flags = {};
+  G.enterRoom('eyehall', null);
+  G.banner('THE CORRIDOR', 2.6);
+  G.flash(0.5);
+};
+
+/* Is the hero on the road, with nothing yet to fight?  The player's own
+   code asks this before it lets them jump, cut or dash. */
+G.eyeWalkOnly = function () {
+  const w = G.eyeRun;
+  return !!(w && G.roomId === 'eyeviaduct' && (w.phase === 'walk' || w.phase === 'wait'));
+};
+
+/* Nothing in this level lets you out of it.  The chart, the shop and the
+   map key all come here instead, and the screen answers them. */
+G.eyeRefuse = function () {
+  const w = G.eyeRun;
+  if (!w) return false;
+  if (w.noEscape > 0) return true;
+  w.noEscape = 3.4; w.escT = 0;
+  Snd.eyeGlitch(); Snd.eyeShut();
+  G.shake(6);
+  return true;
+};
+
+function updateEyeLevel(dt) {
+  const w = G.eyeRun;
+  if (!w) return;
+  w.wordT = Math.max(0, w.wordT - dt);
+  if (w.noEscape > 0) { w.noEscape -= dt; w.escT += dt; }
+
+  if (G.roomId === 'eyehall') {
+    /* the words on the wall, each one read once and in its own place */
+    const tx = G.player.cx / TILE;
+    while (w.said < World.EYE_WORDS.length && tx >= World.EYE_WORDS[w.said].at) {
+      w.word = World.EYE_WORDS[w.said].text;
+      w.wordT = 3.2;
+      w.said++;
+      Snd.eyeGlitch();
+      G.shake(2);
+    }
+    return;
+  }
+  if (G.roomId !== 'eyeviaduct') return;
+  const room = G.room, p = G.player;
+  const V = room.viaduct;
+
+  /* ---- the wall you came through ---- */
+  /* It stands until the door is well out of sight, and then it is gone,
+     and the viaduct runs both ways with no end either way. */
+  if (!w.wallGone && p.cx > (V.entry + 26) * TILE) {
+    const wl = room.viaWall;
+    for (let x = wl.x0; x <= wl.x1; x++)
+      for (let y = wl.y0; y <= wl.y1; y++) room.set(x, y, 0);
+    room.eyeDoor = null;
+    w.wallGone = true;
+  }
+
+  /* ---- the viaduct has no end ---- */
+  /* It repeats where the arches line up, so the hero, the view and
+     everything thrown at them all shift together and the join never
+     shows. */
+  if (w.wallGone) {
+    let shift = 0;
+    if (p.x > V.mid + V.period) shift = -V.period;
+    else if (p.x < V.mid - V.period) shift = V.period;
+    if (shift) {
+      p.x += shift;
+      G.cam.x += shift;
+      for (const pr of G.projectiles) pr.x += shift;
+      for (const pa of G.particles) pa.x += shift;
+      for (const tx2 of G.texts) tx2.x += shift;
+      for (const en of G.enemies) {
+        en.x += shift;
+        if (en.ecx !== undefined) en.ecx += shift;
+        if (en.px !== undefined) en.px += shift;
+      }
+    }
+  }
+
+  /* ---- the walk, and the end of it ---- */
+  if (w.phase === 'won') {
+    w.wonT = (w.wonT || 0) + dt;
+    /* The screen does not go black over the hero's head while the coin is
+       still coming down.  It waits for them to take it, and if they will
+       not, the coin takes itself and the end comes anyway. */
+    if (!w.coinTaken && w.coin && !w.coin.dead && w.wonT > 16) w.coin.take();
+    if (w.coinTaken && w.wonT > 1.6) {
+      G.openEyeEnd({ time: w.fightT || 0, coins: EYE_COINS, rubies: EYE_RUBIES });
+    }
+    return;
+  }
+  if (w.phase === 'walk') {
+    /* only the walking east counts.  Stand still and nothing finds you. */
+    if (p.vx > 0.4) w.walk += dt;
+    if (w.walk > EYE_WALK && p.cx > (V.entry + 40) * TILE) {
+      w.phase = 'wait'; w.waitT = 0;
+      w.word = 'WAIT'; w.wordT = 2.6;
+      Snd.eyeGlitch();
+    }
+  } else if (w.phase === 'fight') {
+    w.fightT = (w.fightT || 0) + dt;
+  } else if (w.phase === 'wait') {
+    w.waitT += dt;
+    if (w.waitT > 2.2 && G.boss) {
+      w.phase = 'fight';
+      G.boss.wake();
+      Snd.play('eye'); Snd.musicLevel(0.34, 1.6);
+      G.banner('THE LAST GUARDIAN', 3);
+    }
+  }
+
+  /* ---- over the edge ---- */
+  /* There is nothing under the viaduct.  A hero who leaves it keeps
+     falling, and the fall is the death. */
+  if (!p.dead && p.y > (V.deck + 14) * TILE) {
+    p.hp = 0;
+    G.eyeFall();
+  }
+}
+
+/* The door.  It creaks the whole way open, and then the corridor is
+   behind you and the viaduct is not. */
+G.openEyeDoor = function () {
+  const w = G.eyeRun;
+  if (!w || w.doorT) return;
+  w.doorT = 0.001;
+  Snd.creak();
+  G.trans = { t: 0, phase: 'out', dur: 2.2, id: 'eyeviaduct', exit: null, eyeDoor: true };
+  G.player.vx = 0;
+};
+
+/* THE FALL.  Out here a death is not a heap on the ground: the blow takes
+   the hero off their feet, over the parapet and past the road, and there
+   is nothing under the road to stop them.  The body keeps moving after it
+   is dead, which is the whole of the animation. */
+G.eyeFall = function () {
+  const p = G.player;
+  if (p.dead) return;
+  p.hp = 0;
+  p.die();
+};
+/* THE ONLY THING THE EYE LEAVES BEHIND.  It pays no coins worth counting
+   and no shards at all.  What it gives is three things nothing else in the
+   game gives: its robes, its stare for a portrait, and a ring of eyes to
+   put round that portrait.  And it never quite goes away afterwards. */
+/* What the eye pays.  A million coins and five thousand rubies, put
+   straight into the purse rather than thrown on the floor: a million coins
+   as pickups is a million things to walk over, and the screen is about to
+   go black anyway.  The shower over the body is only the look of it. */
+const EYE_COINS = 1000000, EYE_RUBIES = 5000;
+G.onEyeDead = function () {
+  const w = G.eyeRun;
+  if (!w || w.phase === 'won') return;
+  w.phase = 'won'; w.wonT = 0;
+  G.eyeSlain = true;
+  if (!G.wardrobe) G.wardrobe = { owned: {} };
+  G.wardrobe.owned.eyerobe = 1;
+  const p = G.player;
+  /* The rubies go straight in; there is nothing to pick up about a ruby.
+     The million does not: it comes down as ONE COIN out of the dark over
+     the road, and the hero walks into it. */
+  G.rubies = (G.rubies | 0) + EYE_RUBIES;
+  G.texts.push(new FloatText(p.cx, p.cy - 40, '+' + EYE_RUBIES + ' RUBIES', '#ff8ba8'));
+  const deckY = (G.room.viaduct ? G.room.viaduct.deck : 17) * TILE;
+  const gc = new GreatCoin(p.cx, deckY - 260, EYE_COINS);
+  gc.landY = deckY - 22;
+  G.items.push(gc);
+  w.coin = gc;
+  for (let i = 0; i < 60; i++) G.particles.push(new Particle({
+    x: p.cx + rr(-40, 40), y: p.cy + rr(-30, 20), vx: rr(-4, 4), vy: rr(-5, 1),
+    life: rr(0.6, 1.6), col: rpick(['#ffe98a', '#f0c93a', '#ff8ba8', '#ffffff']),
+    col2: '#8a6a3a', size: rr(1, 3), grav: 0.1, drag: 0.95
+  }));
+  Snd.unlock();
+  G.saveNoRoom();
+};
+/* the end screen waits for the coin, and the coin ends the waiting */
+G.onGreatCoin = function () {
+  const w = G.eyeRun;
+  if (w) w.coinTaken = 1;
+  G.saveNoRoom();
+};
+
+/* Out of the level, either way it ended.  Nothing here is saved against a
+   realm, so the chart is where it goes back to. */
+G.leaveEye = function (won) {
+  const p = G.player;
+  G.eyeRun = null;
+  G.eyeEnd = null;
+  p.dead = false; p.hp = p.maxHp; p.invuln = 1.4;
+  p.vx = 0; p.vy = 0;
+  p.stam = p.stamMax; p.stamRest = 0;
+  G.boss = null; G.bossFight = false;
+  G.projectiles.length = 0; G.particles.length = 0; G.texts.length = 0;
+  G.state = 'archipelago';
+  Snd.musicLevel(0.34, 0.8);
+  openArchipelago('pentagon');
+  if (!won) { G.archMsg = 'THE EYE LETS YOU GO'; G.archMsgT = 3; }
+};
+
+/* what the body does once the eye has finished with it */
+function updateEyeFall(dt) {
+  const w = G.eyeRun, p = G.player;
+  if (!w || G.roomId !== 'eyeviaduct') return;
+  if (!w.fell) {
+    /* the lurch that carries them clear of the deck */
+    w.fell = 0.001;
+    p.vy = -4.6;
+    p.vx = (p.face || 1) * -1.6 + rr(-0.6, 0.6);
+    Snd.eyeRumble();
+  }
+  w.fell += dt;
+  const s = dt * 60;
+  p.vy = Math.min(9.5, p.vy + 0.34 * s);
+  p.x += p.vx * s;
+  p.y += p.vy * s;
+  p.vx *= Math.pow(0.55, dt);
+  /* the view goes down with them, and the dark comes up to meet it */
+  G.cam.y = p.y - VH * 0.42;
+  G.cam.x = p.cx - VW / 2;
+  if (Math.random() < dt * 40) G.particles.push(new Particle({
+    x: p.cx + rr(-6, 6), y: p.cy + rr(-8, 8), vx: rr(-0.4, 0.4), vy: rr(-2.6, -1),
+    life: rr(0.4, 1), col: '#3a3d44', col2: '#0d0e11', size: rr(1, 2.4), grav: -0.02
+  }));
+}
+
+/* ---------- what the level looks like ---------- */
+/* the eye, put together out of its three layers and set in the world */
+/* THE EYE, put together and set in the world.
+   The artist's own eye comes in two pieces - a body with the iris taken
+   out of it, and the iris - and both are squashed toward the iris's own
+   line as the eye shuts, which is what a closing eye does.  Until those
+   two pieces arrive the drawn eye below stands in, and if they never
+   arrive it goes on standing in. */
+function drawEyeBoss(camX, camY) {
+  const e = G.boss;
+  if (!e || !e.isEye) return;
+  const A = Art.eye;
+  if (A.body && A.irisImg) { drawEyeImage(e, camX, camY, A); return; }
+  if (!A.buf) return;
+  const n = A.white.length;
+  const idx = clamp(Math.round(e.open * (n - 1)), 0, n - 1);
+  const bx = A.bufx;
+  bx.clearRect(0, 0, A.w, A.h);
+  bx.globalCompositeOperation = 'source-over';
+  bx.drawImage(A.white[idx], 0, 0);
+  /* the iris rides inside the opening, and nowhere outside it */
+  bx.globalCompositeOperation = 'source-atop';
+  const ir = A.iris;
+  bx.drawImage(ir, Math.round(A.w / 2 + e.lookX - ir.width / 2),
+               Math.round(A.h / 2 + e.lookY - ir.height / 2));
+  if (e.charge > 0) {
+    bx.globalAlpha = Math.min(0.8, e.charge * 0.8);
+    bx.fillStyle = '#ff2a2a';
+    bx.beginPath();
+    bx.arc(A.w / 2 + e.lookX, A.h / 2 + e.lookY, 26 + e.charge * 12, 0, TAU);
+    bx.fill();
+    bx.globalAlpha = 1;
+  }
+  bx.globalCompositeOperation = 'source-over';
+  bx.drawImage(A.lid[idx], 0, 0);
+
+  const ox = Math.round(e.ecx - camX - A.w / 2);
+  const oy = Math.round(e.ecy - camY - A.h / 2);
+  ctx.save();
+  /* while it dies the picture itself comes apart */
+  if (e.glitch > 0) {
+    const g = e.glitch;
+    for (let k = 0; k < 5; k++) {
+      const sy = Math.floor(rr(0, A.h - 8)), sh2 = Math.floor(rr(4, 22));
+      ctx.globalAlpha = 0.9;
+      ctx.drawImage(A.buf, 0, sy, A.w, sh2,
+                    ox + Math.round(rr(-24, 24) * g), oy + sy, A.w, sh2);
+    }
+    ctx.globalAlpha = 1 - g * 0.35;
+  }
+  ctx.drawImage(A.buf, ox, oy);
+  ctx.restore();
+}
+
+function drawEyeImage(e, camX, camY, A) {
+  const W = A.imgW, H = A.imgH, bx = A.imgBufx;
+  const open = clamp(e.open, 0, 1);
+  const mid = H / 2 + A.irisOY;            /* the line the lids meet on */
+  bx.clearRect(0, 0, W, H);
+  bx.globalCompositeOperation = 'source-over';
+  bx.globalAlpha = 1;
+  /* THE EYE AT ITS FULL SIZE, always.  Nothing is stretched: the picture
+     is drawn as it is, and lids are closed over it. */
+  bx.drawImage(A.body, 0, 0);
+  bx.globalCompositeOperation = 'source-atop';
+  bx.drawImage(A.irisImg, Math.round(e.lookX), Math.round(e.lookY));
+  if (e.charge > 0) {
+    /* the pupil gathering the light */
+    bx.globalAlpha = Math.min(0.8, e.charge * 0.8);
+    bx.fillStyle = '#ff2a2a';
+    bx.beginPath();
+    const gr = A.irisR * (0.6 + e.charge * 0.45);
+    bx.ellipse(W / 2 + A.irisOX + e.lookX, mid + e.lookY, gr, gr, 0, 0, TAU);
+    bx.fill();
+    bx.globalAlpha = 1;
+  }
+  /* THE LIDS.  Two shapes cut to the eye's own opening, coming down from
+     above and up from below until they meet on the middle line.  They are
+     dark grey, barely off the dark the eye hangs in, so a shut eye is a
+     thing you can only just find. */
+  if (open < 0.999 && A.apTop) {
+    const top = A.apTop, bot = A.apBot;
+    bx.fillStyle = '#2b2e35';
+    bx.beginPath();
+    bx.moveTo(0, -2);
+    for (let x = 0; x < W; x++) {
+      const t = top[x] < 0 ? mid : top[x];
+      bx.lineTo(x, t + (mid - t) * (1 - open));
+    }
+    bx.lineTo(W, -2);
+    bx.closePath(); bx.fill();
+    bx.beginPath();
+    bx.moveTo(0, H + 2);
+    for (let x = 0; x < W; x++) {
+      const b = bot[x] < 0 ? mid : bot[x];
+      bx.lineTo(x, b - (b - mid) * (1 - open));
+    }
+    bx.lineTo(W, H + 2);
+    bx.closePath(); bx.fill();
+    /* a darker line along each lid's edge, so the two read as edges and
+       not as a wash */
+    bx.strokeStyle = '#15171c'; bx.lineWidth = 1;
+    bx.beginPath();
+    for (let x = 0; x < W; x++) {
+      const t = top[x] < 0 ? mid : top[x];
+      const y = t + (mid - t) * (1 - open);
+      if (x === 0) bx.moveTo(x, y); else bx.lineTo(x, y);
+    }
+    bx.stroke();
+    bx.beginPath();
+    for (let x = 0; x < W; x++) {
+      const b = bot[x] < 0 ? mid : bot[x];
+      const y = b - (b - mid) * (1 - open);
+      if (x === 0) bx.moveTo(x, y); else bx.lineTo(x, y);
+    }
+    bx.stroke();
+  }
+  /* THE EERIE PART.  The eye is dimmed to a fraction of itself and shaded
+     off toward its edges, so it does not read as a picture pasted on the
+     dark but as something barely lit inside it. */
+  bx.globalCompositeOperation = 'source-atop';
+  const flick = 0.46 + Math.sin(G.t * 0.7) * 0.035 + Math.sin(G.t * 4.3) * 0.018;
+  bx.fillStyle = 'rgba(4,5,9,' + flick.toFixed(3) + ')';
+  bx.fillRect(0, 0, W, H);
+  const vg = bx.createRadialGradient(W / 2 + A.irisOX, mid, A.irisR * 0.8,
+                                     W / 2 + A.irisOX, mid, W * 0.58);
+  vg.addColorStop(0, 'rgba(3,4,7,0)');
+  vg.addColorStop(0.62, 'rgba(3,4,7,0.28)');
+  vg.addColorStop(1, 'rgba(3,4,7,0.78)');
+  bx.fillStyle = vg;
+  bx.fillRect(0, 0, W, H);
+  bx.globalCompositeOperation = 'source-over';
+
+  /* The sprite is hung so that its iris lands on the eye's own centre, so
+     ecx,ecy is the pupil - which is the thing the hero has to hit and the
+     thing the beams come out of. */
+  const ox = Math.round(e.ecx - camX - W / 2 - A.irisOX);
+  const oy = Math.round(e.ecy - camY - H / 2 - A.irisOY);
+  ctx.save();
+  if (e.glitch > 0) {
+    const g = e.glitch;
+    for (let k = 0; k < 5; k++) {
+      const sy = Math.floor(rr(0, H - 8)), sh2 = Math.floor(rr(4, 26));
+      ctx.globalAlpha = 0.85;
+      ctx.drawImage(A.imgBuf, 0, sy, W, sh2,
+                    ox + Math.round(rr(-26, 26) * g), oy + sy, W, sh2);
+    }
+    ctx.globalAlpha = 1 - g * 0.3;
+  }
+  ctx.drawImage(A.imgBuf, ox, oy);
+  ctx.restore();
+}
+
+/* THE VIADUCT, repeated until it has no end.
+   It is drawn in world coordinates after the tiles, because the picture's
+   own coping is the road the hero walks on and it has to cover the tile
+   that carries them.  The strip is eight arches wide and repeats on its
+   own width, and the room wraps on eight of those, so a hero who runs all
+   day never finds a join. */
+function drawViaduct(camX, camY) {
+  const A = Art.eye;
+  const V = G.room.viaduct;
+  if (!V) return;
+  const top = V.deck * TILE;
+  const img = A.strip;
+  if (img) {
+    const w = A.stripW, h = A.stripH;
+    const x0 = Math.floor(camX / w) * w - w;
+    for (let x = x0; x < camX + VW + w; x += w) ctx.drawImage(img, x, top);
+    /* the piers go down into the dark rather than stopping */
+    const g = ctx.createLinearGradient(0, top + h - 64, 0, top + h);
+    g.addColorStop(0, 'rgba(5,6,10,0)');
+    g.addColorStop(1, 'rgba(5,6,10,1)');
+    ctx.fillStyle = g;
+    ctx.fillRect(camX - 8, top + h - 64, VW + 16, 64);
+    ctx.fillStyle = '#05060a';
+    ctx.fillRect(camX - 8, top + h, VW + 16, 400);
+    return;
+  }
+  /* the drawn arches, for as long as the picture has not arrived */
+  if (!A.bay) return;
+  for (let x = Math.floor(camX / A.bayW) * A.bayW - A.bayW;
+       x < camX + VW + A.bayW; x += A.bayW) ctx.drawImage(A.bay, x, top + TILE);
+}
+
+/* THE VINES, hung over the whole picture and nearest of all.
+   They are drawn in the world the same way the viaduct is: at a fixed
+   height, tiled on their own width, travelling with the road one pixel
+   for one.  One strip runs into the next with no join, because the strip
+   was cut to run into itself. */
+/* How far above the deck the brick lip sits.  It is set so the lip is just
+   off the top of the view and the last of the strands stops short of the
+   road, whichever way the camera is sitting. */
+const VINE_HANG = 186;
+function drawEyeVines(camX, camY) {
+  const A = Art.eye;
+  const V = G.room.viaduct;
+  if (!V) return;
+  const img = A.vineImg;
+  if (img) {
+    const w = img.width, top = V.deck * TILE - VINE_HANG;
+    for (let x = Math.floor(camX / w) * w - w; x < camX + VW + w; x += w)
+      ctx.drawImage(img, x, top);
+    return;
+  }
+  /* the drawn curtain, for as long as the picture has not arrived */
+  if (!A.vine) return;
+  const top = V.deck * TILE - VINE_HANG;
+  let i = Math.floor(camX / A.vineW);
+  for (let x = Math.floor(camX / A.vineW) * A.vineW - A.vineW;
+       x < camX + VW + A.vineW; x += A.vineW) {
+    ctx.drawImage(A.vine[((i % A.vine.length) + A.vine.length) % A.vine.length], x, top);
+    i++;
+  }
+  void camY;
+}
+
+/* THE REFUSAL, PLAYED ON A BAD TELEVISION.
+   Press the chart out here and the picture goes, and an eye takes its
+   place and says so - but it arrives the way a picture arrives on a set
+   that is not holding the signal.  It is painted once into a buffer and
+   then put on the screen badly: the vertical hold slips, whole bands of it
+   tear sideways, the colour separates into red and cyan, a hum bar rolls
+   down it, scanlines sit over all of it, and now and then the signal goes
+   altogether and there is nothing but snow.
+   ============================================================ */
+let tvBuf = null, tvCtx = null, tvTint = null, tvTintCtx = null;
+function drawNoEscape() {
+  const w = G.eyeRun;
+  if (!w || w.noEscape <= 0) return;
+  const t = w.escT;
+  if (!tvBuf) {
+    tvBuf = mkc(VW, VH); tvCtx = tvBuf.getContext('2d');
+    tvTint = mkc(VW, VH); tvTintCtx = tvTint.getContext('2d');
+  }
+  const b = tvCtx;
+
+  /* ---- what the picture would be, if the set were working ---- */
+  b.globalCompositeOperation = 'source-over';
+  b.globalAlpha = 1;
+  b.fillStyle = '#000000';
+  b.fillRect(0, 0, VW, VH);
+  const A = Art.eye;
+  if (A.node) {
+    const s2 = 1.6 + Math.sin(t * 9) * 0.05;
+    const iw = Math.round(A.node.width * s2), ih = Math.round(A.node.height * s2);
+    b.drawImage(A.node, Math.round(VW / 2 - iw / 2), Math.round(VH / 2 - ih / 2 - 12), iw, ih);
+  }
+  drawText(b, 'THERES NO ESCAPE', VW / 2, VH - 44, '#ff2a2a', 2, 'center', '#1a0000');
+
+  /* ---- and how it actually comes out ---- */
+  const lost = Math.sin(t * 5.3) > 0.955 || Math.sin(t * 11.7) > 0.985;
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, t * 6);
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, VW, VH);
+  ctx.globalAlpha = 1;
+
+  if (!lost) {
+    /* the vertical hold, slipping and catching */
+    const roll = Math.floor((Math.sin(t * 0.9) * 0.5 + 0.5) *
+                            (Math.sin(t * 2.7) > 0.72 ? 26 : 0));
+    /* the picture, put down a band at a time, some bands torn sideways */
+    for (let y = -roll; y < VH; ) {
+      const bh = 3 + Math.floor(Math.random() * 12);
+      const torn = Math.random() < 0.16;
+      const off = torn ? Math.round(rr(-16, 16)) : 0;
+      const sy = ((y + roll) % VH + VH) % VH;
+      const hh = Math.min(bh, VH - sy);
+      if (hh > 0) {
+        ctx.drawImage(tvBuf, 0, sy, VW, hh, off, y, VW, hh);
+        /* a torn band often loses its colour as well as its place */
+        if (torn && Math.random() < 0.5) {
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.globalAlpha = 0.35;
+          ctx.drawImage(tvBuf, 0, sy, VW, hh, off + Math.round(rr(-6, 6)), y, VW, hh);
+          ctx.restore();
+        }
+      }
+      y += bh;
+    }
+    /* the colour coming apart: one red pass and one cyan, pulled aside */
+    const sep = 1.5 + Math.abs(Math.sin(t * 3.1)) * 3.5;
+    for (const [col, dir] of [['#ff0000', -1], ['#00ffff', 1]]) {
+      const tc = tvTintCtx;
+      tc.globalCompositeOperation = 'source-over';
+      tc.clearRect(0, 0, VW, VH);
+      tc.drawImage(tvBuf, 0, 0);
+      tc.globalCompositeOperation = 'multiply';
+      tc.fillStyle = col;
+      tc.fillRect(0, 0, VW, VH);
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.5;
+      ctx.drawImage(tvTint, Math.round(dir * sep), 0);
+      ctx.restore();
+    }
+    /* the hum bar, rolling slowly down the tube */
+    const hum = ((t * 46) % (VH + 60)) - 30;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const hg = ctx.createLinearGradient(0, hum - 16, 0, hum + 16);
+    hg.addColorStop(0, 'rgba(90,110,130,0)');
+    hg.addColorStop(0.5, 'rgba(90,110,130,0.20)');
+    hg.addColorStop(1, 'rgba(90,110,130,0)');
+    ctx.fillStyle = hg;
+    ctx.fillRect(0, hum - 16, VW, 32);
+    ctx.restore();
+  } else {
+    /* the signal gone: nothing but snow */
+    for (let y = 0; y < VH; y += 1) {
+      for (let x = 0; x < VW; x += 2) {
+        if (Math.random() < 0.45) continue;
+        const v = 40 + Math.floor(Math.random() * 190);
+        ctx.fillStyle = 'rgb(' + v + ',' + v + ',' + v + ')';
+        ctx.fillRect(x, y, 2, 1);
+      }
+    }
+  }
+
+  /* the snow that is always there, signal or no signal */
+  ctx.save();
+  ctx.globalAlpha = 0.16;
+  for (let k = 0; k < 260; k++) {
+    const v = 90 + Math.floor(Math.random() * 165);
+    ctx.fillStyle = 'rgb(' + v + ',' + v + ',' + v + ')';
+    ctx.fillRect(Math.floor(Math.random() * VW), Math.floor(Math.random() * VH), 2, 1);
+  }
+  ctx.restore();
+  /* and the lines of the tube itself */
+  ctx.save();
+  ctx.globalAlpha = 0.28;
+  ctx.fillStyle = '#000000';
+  for (let y = 0; y < VH; y += 2) ctx.fillRect(0, y, VW, 1);
+  ctx.restore();
+  /* the corners of the glass */
+  const vg2 = ctx.createRadialGradient(VW / 2, VH / 2, VH * 0.34, VW / 2, VH / 2, VW * 0.62);
+  vg2.addColorStop(0, 'rgba(0,0,0,0)');
+  vg2.addColorStop(1, 'rgba(0,0,0,0.85)');
+  ctx.fillStyle = vg2;
+  ctx.fillRect(0, 0, VW, VH);
+  ctx.restore();
+}
+
+/* the words the corridor says, in red, one at a time */
+function drawEyeWord() {
+  const w = G.eyeRun;
+  if (!w || w.wordT <= 0 || !w.word) return;
+  const a = Math.min(1, w.wordT * 1.4, (3.2 - w.wordT) * 4);
+  ctx.save();
+  ctx.globalAlpha = clamp(a, 0, 1);
+  const jitter = Math.sin(G.t * 41) > 0.82 ? Math.round(rr(-2, 2)) : 0;
+  drawText(ctx, w.word, VW / 2 + jitter, 52, '#c9403a', 3, 'center', '#180000');
+  ctx.globalAlpha = clamp(a, 0, 1) * 0.5;
+  drawText(ctx, w.word, VW / 2 + jitter + 2, 53, '#5a0000', 3, 'center');
+  ctx.restore();
+}
+
+
+/* ============================================================
+   THE END SCREEN.
+   Killing the last guardian is the end of the game, so it is not
+   answered with a banner.  The screen goes to black and comes
+   back in five beats: the eye shutting for the last time, the
+   words, the road the hero is still standing on, what the eye
+   left behind, and the one line that says none of it is over.
+   Anything on the keyboard carries it forward a beat.
+   ============================================================ */
+const END_BEATS = [2.0, 2.8, 3.0, 3.4, 1e9];
+function endBeat() {
+  const E = G.eyeEnd;
+  let t = E.t, i = 0;
+  while (i < END_BEATS.length - 1 && t >= END_BEATS[i]) { t -= END_BEATS[i]; i++; }
+  return { i: i, t: t };
+}
+G.openEyeEnd = function (stats) {
+  G.eyeEnd = {
+    t: 0, skip: 0, hold: 0,
+    time: stats.time | 0, coins: stats.coins | 0, rubies: stats.rubies | 0,
+    /* the embers that come up off the dead thing for the whole of it */
+    motes: []
+  };
+  for (let i = 0; i < 70; i++) G.eyeEnd.motes.push({
+    x: rr(0, VW), y: rr(0, VH + 60), v: rr(3, 13), s: rr(0, TAU), r: rr(0.6, 1.9)
+  });
+  G.state = 'eyeEnd';
+  G.particles.length = 0;
+  Snd.play('silence');
+  Snd.staticLevel(0.22, 3);
+};
+function updateEyeEnd(dt) {
+  const E = G.eyeEnd;
+  if (!E) { G.leaveEye(true); return; }
+  E.t += dt;
+  E.hold = Math.max(0, E.hold - dt);
+  for (const m of E.motes) {
+    m.y -= m.v * dt;
+    m.s += dt * 1.6;
+    if (m.y < -8) { m.y = VH + rr(4, 50); m.x = rr(0, VW); }
+  }
+  const b = endBeat();
+  /* a press carries it on rather than throwing it away */
+  const pressed = Input.hit('Space') || Input.hit('Enter') || Input.mhit;
+  if (pressed && E.hold <= 0) {
+    E.hold = 0.3;
+    if (b.i >= END_BEATS.length - 1) { G.leaveEye(true); return; }
+    let want = 0;
+    for (let k = 0; k <= b.i; k++) want += END_BEATS[k];
+    E.t = want;
+    Snd.ui();
+  }
+  /* the sounds of the beats, each one rung once */
+  if (b.i !== E.said) {
+    E.said = b.i;
+    if (b.i === 1) Snd.eyeShut();
+    else if (b.i === 2) { Snd.unlock(); G.flash(0.3); }
+    else if (b.i === 3) Snd.buy();
+    else if (b.i === 4) { Snd.eyeGlitch(); Snd.staticLevel(0.3, 2); }
+  }
+}
+
+/* the road at the foot of the picture, with one figure left standing on it */
+function drawEndRoad(alpha) {
+  const A = Art.eye;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  const top = VH - 34;
+  if (A.strip) {
+    for (let x = -((Math.round(G.t * 6) % A.stripW)); x < VW; x += A.stripW)
+      ctx.drawImage(A.strip, Math.round(x), top);
+    ctx.fillStyle = 'rgba(5,6,10,0.72)';
+    ctx.fillRect(0, top, VW, VH - top);
+  } else {
+    ctx.fillStyle = '#23262b';
+    ctx.fillRect(0, top, VW, VH - top);
+  }
+  const h = Art.hero && Art.hero.idle;
+  if (h) {
+    const img = h[Math.floor(G.t * 6) % h.length];
+    const a2 = Art.hero.anchor;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(img, Math.round(VW / 2 - a2.x), Math.round(top - a2.y + 1));
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+function drawEyeEnd() {
+  const E = G.eyeEnd;
+  if (!E) return;
+  const b = endBeat();
+  ctx.fillStyle = '#04050a';
+  ctx.fillRect(0, 0, VW, VH);
+  /* the embers, under everything and through the whole of it */
+  ctx.save();
+  for (const m of E.motes) {
+    ctx.globalAlpha = 0.10 + Math.sin(m.s) * 0.06 + 0.06;
+    ctx.fillStyle = m.y < VH * 0.5 ? '#8f949c' : '#d8dade';
+    ctx.fillRect(Math.round(m.x + Math.sin(m.s) * 3), Math.round(m.y), 1, Math.round(m.r));
+  }
+  ctx.restore();
+
+  /* ---- beat 0: the last of the light going out of it ---- */
+  if (b.i === 0) {
+    const f = clamp(b.t / END_BEATS[0], 0, 1);
+    const r = (1 - f) * (1 - f) * 90 + 2;
+    ctx.save();
+    ctx.globalAlpha = 1 - f * 0.75;
+    ctx.fillStyle = '#d8dade';
+    ctx.beginPath();
+    ctx.ellipse(VW / 2, VH / 2 - 6, r * 1.6, r * (1 - f * 0.94), 0, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = '#05060a';
+    ctx.beginPath();
+    ctx.ellipse(VW / 2, VH / 2 - 6, r * 0.5, r * 0.5 * (1 - f * 0.94), 0, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+
+  /* ---- beat 1: it is dead ---- */
+  const fadeIn = (start, len) => clamp((E.t - start) / len, 0, 1);
+  let at = END_BEATS[0];
+  if (b.i >= 1) {
+    const a = fadeIn(at, 0.9);
+    ctx.save();
+    ctx.globalAlpha = a;
+    drawText(ctx, 'IT IS DEAD', VW / 2, b.i === 1 ? VH / 2 - 8 : 22, '#d8dade', 3, 'center', '#000000');
+    ctx.restore();
+  }
+  at += END_BEATS[1];
+
+  /* ---- beat 2: what it was ---- */
+  if (b.i >= 2) {
+    const a = fadeIn(at, 1.0);
+    ctx.save();
+    ctx.globalAlpha = a;
+    drawText(ctx, 'THE LAST GUARDIAN', VW / 2, 52, '#c9403a', 2, 'center', '#1a0000');
+    drawText(ctx, 'OF THE ARCHIPELAGO', VW / 2, 68, '#6d7994', 1, 'center', '#000000');
+    ctx.restore();
+    drawEndRoad(a * 0.9);
+  }
+  at += END_BEATS[2];
+
+  /* ---- beat 3: what it cost and what it paid ---- */
+  if (b.i >= 3) {
+    const a = fadeIn(at, 1.0);
+    ctx.save();
+    ctx.globalAlpha = a;
+    const mm = Math.floor(E.time / 60), ss = Math.floor(E.time % 60);
+    const lines = [
+      ['TEN STAGES', 'ALL OF THEM'],
+      ['IT TOOK YOU', mm + 'M ' + (ss < 10 ? '0' : '') + ss + 'S'],
+      ['IT LEFT YOU', shortCoin(E.coins) + ' COINS'],
+      ['AND', E.rubies + ' RUBIES']
+    ];
+    lines.forEach((ln, i) => {
+      const y = 88 + i * 12;
+      drawText(ctx, ln[0], VW / 2 - 6, y, '#6d7994', 1, 'right', '#000000');
+      drawText(ctx, ln[1], VW / 2 + 6, y, '#ffeec0', 1, 'left', '#000000');
+    });
+    ctx.restore();
+  }
+  at += END_BEATS[3];
+
+  /* ---- beat 4: and it is not over ---- */
+  if (b.i >= 4) {
+    const a = fadeIn(at, 1.2);
+    ctx.save();
+    ctx.globalAlpha = a;
+    drawText(ctx, 'IT LEAVES YOU ITS ROBES, ITS STARE AND ITS RING OF EYES',
+             VW / 2, 140, '#9be89a', 1, 'center', '#000000');
+    ctx.restore();
+    /* the line that tears, the same one the chart keeps saying */
+    const tear = Math.sin(G.t * 23) > 0.5;
+    const jx = tear ? Math.round(rr(-4, 4)) : 0;
+    ctx.save();
+    ctx.globalAlpha = a * (0.7 + Math.sin(G.t * 3) * 0.3);
+    if (tear) {
+      drawText(ctx, 'I WILL RETURN', VW / 2 + jx + 3, 152, '#2a6a6a', 2, 'center');
+      drawText(ctx, 'I WILL RETURN', VW / 2 + jx - 3, 152, '#7a0000', 2, 'center');
+    }
+    drawText(ctx, 'I WILL RETURN', VW / 2 + jx, 152, '#c9403a', 2, 'center', '#1a0000');
+    ctx.restore();
+    if (E.t > at + 2 && Math.floor(G.t * 2) % 2)
+      drawText(ctx, 'PRESS SPACE', VW / 2, VH - 10, '#a9b3c9', 1, 'center', '#000000');
+  }
+
+  /* the tube it is all shown on */
+  ctx.save();
+  ctx.globalAlpha = 0.18;
+  ctx.fillStyle = '#000000';
+  for (let y = 0; y < VH; y += 2) ctx.fillRect(0, y, VW, 1);
+  ctx.restore();
+  const vg = ctx.createRadialGradient(VW / 2, VH / 2, VH * 0.3, VW / 2, VH / 2, VW * 0.64);
+  vg.addColorStop(0, 'rgba(0,0,0,0)');
+  vg.addColorStop(1, 'rgba(0,0,0,0.8)');
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, VW, VH);
+  if (G.flashAmt > 0) {
+    ctx.save(); ctx.globalAlpha = Math.min(1, G.flashAmt);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, VW, VH); ctx.restore();
+  }
+}
 
 /* ============================================================
    THE ARCHIPELAGO.  Five kinds of island, twenty of each, laid
@@ -2196,11 +3184,33 @@ G.buyPassRow = function (i) {
 /* ---------- the three screens ---------- */
 const ARCH_BACK = { x: 6, y: VH - 22, w: 54, h: 16 };
 const ARCH_FORGE = { x: VW - 92, y: VH - 22, w: 86, h: 16 };
-const ARCH_PASS = { x: VW - 184, y: VH - 22, w: 86, h: 16 };
+/* the pass sits directly over the smithing table, not beside it */
+const ARCH_PASS = { x: VW - 92, y: VH - 42, w: 86, h: 16 };
+/* THE EYE ON THE CHART.  It sits in the middle of the pentagon, and it is
+   drawn at eighty four pixels against the islands' forty eight, so nobody
+   mistakes it for one of them. */
+const EYE_NODE = 84;
+function eyeNodeRect() {
+  return { x: VW / 2 - EYE_NODE / 2, y: VH / 2 + 6 - EYE_NODE / 2,
+           w: EYE_NODE, h: EYE_NODE, cx: VW / 2, cy: VH / 2 + 6 };
+}
+/* The eye opens to anyone who has taken the keeper of every spoke at least
+   once.  CHEESE2 opens it outright, for anyone who would rather not. */
+G.eyeOpened = function () {
+  if (G.eyeUnlocked) return true;
+  const a = archi();
+  for (const t of ISLE_TYPES) {
+    let any = false;
+    for (let i = 0; i < ISLES_PER_TYPE && !any; i++) if (a.cleared[t.key + ':' + i]) any = true;
+    if (!any) return false;
+  }
+  return true;
+};
+
 /* the five kinds, set out as a pentagon about the middle of the chart */
 function archNodeRect(k) {
   const a = -Math.PI / 2 + k / 5 * TAU;
-  const cx = VW / 2 + Math.cos(a) * 100, cy = VH / 2 + 6 + Math.sin(a) * 48;
+  const cx = VW / 2 + Math.cos(a) * 108, cy = VH / 2 + 6 + Math.sin(a) * 62;
   return { x: cx - 24, y: cy - 24, w: 48, h: 48, cx: cx, cy: cy };
 }
 /* The fifty islands of a spoke lie in one long row.  You scroll along it:
@@ -2265,6 +3275,20 @@ function updateArchipelago(dt) {
 
   if (G.archView === 'pentagon') {
     G.archSel = -1;
+    /* the eye first, since it sits over the middle of the pentagon */
+    const er = eyeNodeRect();
+    G.eyeHot = Math.hypot(Input.mx - er.cx, Input.my - er.cy) < EYE_NODE / 2 - 4;
+    if (Input.tap(er) && G.eyeHot) {
+      if (!G.eyeOpened()) {
+        Snd.uiBad();
+        G.archMsg = 'TAKE ONE KEEPER OF EVERY KIND FIRST'; G.archMsgT = 2.6;
+      } else {
+        Snd.eyeOpen(); G.flash(0.6); G.shake(6);
+        G.trans = { t: 0, phase: 'out', dur: 0.6, eyeStart: true };
+        G.state = 'play';
+      }
+      return;
+    }
     let pick = -1;
     for (let k = 0; k < ISLE_TYPES.length; k++) {
       const r = archNodeRect(k);
@@ -2565,6 +3589,31 @@ function drawArchipelago() {
       const p1 = archNodeRect(k), p2 = archNodeRect((k + 1) % 5);
       drawChainLine(p1.cx, p1.cy, p2.cx, p2.cy);
     }
+    /* and the eye in the middle of them, which is bigger than all five */
+    {
+      const er = eyeNodeRect(), open = G.eyeOpened(), hot = G.eyeHot && open;
+      const bob = Math.sin(G.archT * 0.9) * 2;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = (open ? 0.16 : 0.07) + Math.sin(G.archT * 2.4) * 0.05;
+      ctx.fillStyle = open ? '#c9403a' : '#3a3d44';
+      ctx.beginPath(); ctx.arc(er.cx, er.cy + bob, 46 + (hot ? 6 : 0), 0, TAU); ctx.fill();
+      ctx.restore();
+      ctx.save();
+      if (!open) ctx.globalAlpha = 0.34;
+      ctx.drawImage(Art.eye.node, Math.round(er.x), Math.round(er.y + bob));
+      ctx.restore();
+      if (!open) ctx.drawImage(Art.map.lock, Math.round(er.cx - 8), Math.round(er.cy + bob - 8));
+      const label = open ? 'THE LAST GUARDIAN' : 'SEALED';
+      const lw = textWidth(label) + 10;
+      const ly = er.cy + 27 + bob;
+      ctx.fillStyle = 'rgba(8,4,8,0.94)';
+      ctx.fillRect(Math.round(er.cx - lw / 2), Math.round(ly - 2), Math.round(lw), 11);
+      ctx.fillStyle = open ? '#5a1a18' : '#2b2d33';
+      ctx.fillRect(Math.round(er.cx - lw / 2), Math.round(ly - 2), Math.round(lw), 1);
+      drawText(ctx, label, er.cx, ly,
+               open ? (hot ? '#ff8b7a' : '#c9403a') : '#6d7994', 1, 'center');
+    }
     for (let k = 0; k < 5; k++) {
       const t = ISLE_TYPES[k], r = archNodeRect(k), hot = G.archSel === k;
       const bob = Math.sin(G.archT * 1.5 + k) * 1.6;
@@ -2778,17 +3827,28 @@ function storeArtifactRows() {
                 /* the shop sells up to the five a pouch holds */
                 owned: () => G.artFull(a.key),
                 ownedMsg: 'YOUR POUCH HOLDS FIVE ALREADY',
+                held: () => G.artCount(a.key) > 0,
+                worn: () => artWorn(a.key),
+                equip: () => equipArtifact(a),
                 buy: () => G.giveArtifact(a.key) });
   }
   return rows;
 }
 function storeClothRows() {
   /* the two suits of the weekly pass are not for sale here */
-  return SUIT_KEYS.filter(k => !SUITS[k].pass).map(k => {
+  return SUIT_KEYS.filter(k => !SUITS[k].pass && !SUITS[k].eye).map(k => {
     const su = SUITS[k];
     return { name: su.name, desc: 'CUT TO THE PATTERN OF ' + su.realm, coins: su.cost,
              suit: k, need: su.need,
              owned: () => !!(G.wardrobe && G.wardrobe.owned[k]),
+             held: () => !!(G.wardrobe && G.wardrobe.owned[k]),
+             worn: () => G.profile.suit === k,
+             equip: () => {
+               if (!suitUnlocked(k)) return false;
+               G.profile.suit = (G.profile.suit === k) ? 'none' : k;
+               applyProfile();
+               return G.profile.suit === k ? su.name + ' IS ON' : su.name + ' IS OFF';
+             },
              buy: () => { G.wardrobe.owned[k] = 1; G.profile.suit = k; applyProfile(); } };
   });
 }
@@ -2823,6 +3883,9 @@ function storeLimitedRows() {
                limited: true,
                owned: () => G.artFull(a.key),
                ownedMsg: 'YOUR POUCH HOLDS FIVE ALREADY',
+               held: () => G.artCount(a.key) > 0,
+               worn: () => artWorn(a.key),
+               equip: () => equipArtifact(a),
                buy: () => G.giveArtifact(a.key) });
   }
   return out;
@@ -2892,7 +3955,7 @@ function rollBoxArtifact(box, taken, cap) {
 /* a suit the wardrobe has not got yet, or nothing.  A casket never gives up
    a suit that waits on a prestige: those are earned. */
 function rollBoxSuit() {
-  const pool = SUIT_KEYS.filter(k => !SUITS[k].need && !SUITS[k].pass &&
+  const pool = SUIT_KEYS.filter(k => !SUITS[k].need && !SUITS[k].pass && !SUITS[k].eye &&
                                      !(G.wardrobe && G.wardrobe.owned[k]));
   return pool.length ? pool[ri(0, pool.length - 1)] : null;
 }
@@ -3111,6 +4174,48 @@ function storeAfford(row) {
   if (row.rubies !== undefined) return (G.rubies | 0) >= row.rubies;
   return G.player.coins >= (row.coins || 0);
 }
+/* ============================================================
+   WEARING WHAT YOU ALREADY HOLD.
+   The shop used to answer a click on something you owned with YOU HOLD IT
+   ALREADY and nothing else.  Now the body of the row puts the thing on:
+   a suit is worn, an artifact goes into the pouch, and clicking it again
+   takes it off.  The price button still buys, so a second copy of an
+   artifact is still one click away.
+   ============================================================ */
+function artWorn(key) {
+  return !!(G.artifacts && G.artifacts.slots && G.artifacts.slots.indexOf(key) >= 0);
+}
+function equipArtifact(a) {
+  if (!G.artifacts || !G.artifacts.slots) return false;
+  const sl = G.artifacts.slots;
+  const at = sl.indexOf(a.key);
+  if (at >= 0) {
+    sl[at] = null;
+    G.applyArtifacts();
+    return a.name + ' IS OUT OF THE POUCH';
+  }
+  const free = sl.indexOf(null);
+  if (free < 0) {
+    G.storeMsg = 'THE POUCH HOLDS THREE - TAKE ONE OUT FIRST'; G.storeMsgT = 2.6;
+    return false;
+  }
+  sl[free] = a.key;
+  G.applyArtifacts();
+  return a.name + ' IS IN THE POUCH';
+}
+/* the body of a row: wear it if you hold it, buy it if you do not */
+function storeClick(row) {
+  if (!row) return;
+  if (row.equip && row.held && row.held()) {
+    const msg = row.equip();
+    if (msg === false) { Snd.uiBad(); return; }
+    G.storeMsg = msg; G.storeMsgT = 2.2;
+    Snd.buy(); G.flash(0.18);
+    G.saveGame();
+    return;
+  }
+  storeBuy(row);
+}
 function storeBuy(row) {
   if (!row) return;
   if (row.owned && row.owned()) {
@@ -3165,7 +4270,9 @@ function updateStore(dt) {
   const show = rows.slice(G.storePage * STORE_ROWS, (G.storePage + 1) * STORE_ROWS);
   show.forEach((row, i) => {
     if (Input.over(storeRowRect(i))) G.storeSel = i;
-    if (Input.tap(storeRowRect(i)) || Input.tap(storeBuyRect(i))) storeBuy(row);
+    /* the price button buys; the rest of the row wears */
+    if (Input.tap(storeBuyRect(i))) storeBuy(row);
+    else if (Input.tap(storeRowRect(i))) storeClick(row);
   });
   for (const pa of G.particles) pa.update(dt);
   G.particles = G.particles.filter(x => !x.dead);
@@ -3219,11 +4326,23 @@ function drawStore() {
       ctx.drawImage(pic, r.x + 4, r.y + 4);
     }
     /* the line is cut to the room before the price, so the two never meet */
-    const room = r.w - 90;
+    const room = r.w - 90 - ((row.held && row.held()) ? 48 : 0);
     drawText(ctx, fitText(row.name, room), r.x + 24, r.y + 4,
              owned ? '#9be89a' : '#ffeec0', 1, 'left');
     drawText(ctx, fitText(row.rank ? (RANK_NAME[row.rank] + ' - ' + row.desc) : row.desc, room),
              r.x + 24, r.y + 14, '#8a94a6', 1, 'left');
+    /* WORN, or HOLD to say it can be, so the click is never a guess */
+    const held = row.held && row.held(), worn = row.worn && row.worn();
+    if (held) {
+      const tag = worn ? 'WORN' : 'WEAR IT';
+      const tw = textWidth(tag) + 8;
+      const tx = storeBuyRect(i).x - tw - 4;
+      ctx.fillStyle = worn ? 'rgba(24,52,24,0.94)' : 'rgba(40,34,18,0.9)';
+      ctx.fillRect(tx, r.y + 4, tw, 16);
+      ctx.fillStyle = worn ? '#6fc46a' : '#c68e3f';
+      ctx.fillRect(tx, r.y + 4, tw, 1);
+      drawText(ctx, tag, tx + tw / 2, r.y + 9, worn ? '#9be89a' : '#ffd04a', 1, 'center');
+    }
     /* the price, or what stands in its way */
     const br = storeBuyRect(i), bhot = Input.over(br);
     let label, col;
@@ -3317,6 +4436,7 @@ function openWardrobe(from) {
       if (!G.player) G.player = new Player();
       G.roomFlags = {}; G.flags = {}; G.levelState = {};
       G.codes = { found: {}, used: {}, tickets: 0, admin: false };
+      G.eyeSlain = false; G.eyeUnlocked = false; G.eyeRun = null;
       G.quests = { claimed: {}, daily: null };
       G.artifacts = { owned: {}, slots: [null, null, null] };
       G.wardrobe = { owned: {} };
@@ -3355,8 +4475,9 @@ function updateWardrobe(dt) {
     /* Five of the suits are earned, not bought: three wait on a prestige
        and two on the weekly pass.  No purse buys one early. */
     if (!suitUnlocked(key)) {
-      G.wardMsg = suit.pass ? 'THE WEEKLY PASS HOLDS IT'
-                            : 'PRESTIGE ' + PRESTIGE_MARK[suit.need] + ' OPENS IT';
+      G.wardMsg = suit.eye ? 'THE LAST GUARDIAN HOLDS IT'
+                : (suit.pass ? 'THE WEEKLY PASS HOLDS IT'
+                             : 'PRESTIGE ' + PRESTIGE_MARK[suit.need] + ' OPENS IT');
       G.wardMsgT = 2.2;
       Snd.uiBad();
     } else if (G.wardrobe.owned[key]) {
@@ -4827,6 +5948,7 @@ function drawMap() {
     ctx.restore();
   }
   drawMapCorners();
+  drawWatchers();
   if (G.flashAmt > 0) {
     ctx.save(); ctx.globalAlpha = Math.min(1, G.flashAmt); ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, VW, VH); ctx.restore();
@@ -4834,6 +5956,65 @@ function drawMap() {
   if (G.codesOpen) drawCodes();
   if (G.questsOpen) drawQuests();
   if (G.settingsOpen) drawSettings();
+}
+
+/* ============================================================
+   WHAT IS LEFT OF IT.  Kill the last guardian and the chart is
+   never the same chart again: eyes open in the corners of it and
+   follow the pointer, two lines of red come and go across it, and
+   the sound under it never quite settles.
+   ============================================================ */
+/* where the eyes sit on the chart, as fractions of the screen */
+const WATCH_SPOTS = [
+  [0.09, 0.20], [0.31, 0.11], [0.54, 0.22], [0.78, 0.13], [0.93, 0.31],
+  [0.16, 0.52], [0.42, 0.44], [0.68, 0.54], [0.88, 0.62],
+  [0.07, 0.80], [0.29, 0.86], [0.52, 0.76], [0.74, 0.88], [0.95, 0.79]
+];
+const WATCH_WORDS = ['IM ALWAYS WATCHING', 'I WILL RETURN'];
+function drawWatchers() {
+  if (!G.eyeSlain) return;
+  const t = G.mapT || G.t;
+  const A = Art.eye;
+  if (!A || !A.glyphBig) return;
+  ctx.save();
+  for (let k = 0; k < WATCH_SPOTS.length; k++) {
+    const [fx, fy] = WATCH_SPOTS[k];
+    const x = fx * VW, y = fy * VH;
+    /* each one keeps its own time, so they never all blink together */
+    const blink = Math.sin(t * 1.1 + k * 2.3);
+    if (blink > 0.94) continue;
+    const big = (k % 3) === 0;
+    const img0 = big ? A.glyphBig : A.glyph;
+    /* they follow the pointer, which is the whole of the trick */
+    const look = clamp(Math.round((Input.mx - x) / 60), -1, 1);
+    const img = img0[look + 1];
+    const a = 0.55 + Math.sin(t * 0.8 + k) * 0.18 + (big ? 0.12 : 0);
+    /* a hole in the chart first, so a pale eye is not lost in pale paper */
+    ctx.globalAlpha = clamp(a, 0, 1);
+    ctx.fillStyle = '#07080b';
+    ctx.beginPath();
+    ctx.ellipse(x, y, img.width * 0.62, img.height * 0.85, 0, 0, TAU);
+    ctx.fill();
+    ctx.drawImage(img, Math.round(x - img.width / 2), Math.round(y - img.height / 2));
+  }
+  ctx.globalAlpha = 1;
+  /* and the two things it said it would say */
+  const slot = Math.floor(t / 5.5) % WATCH_WORDS.length;
+  const within = (t / 5.5) % 1;
+  if (within < 0.62) {
+    const word = WATCH_WORDS[slot];
+    const fade = Math.min(1, within * 8, (0.62 - within) * 8);
+    const tear = Math.sin(t * 27) > 0.55;
+    const jx = tear ? Math.round(rr(-4, 4)) : 0;
+    const y = slot ? VH * 0.30 : VH * 0.68;
+    ctx.globalAlpha = clamp(fade, 0, 1) * 0.85;
+    if (tear) {
+      drawText(ctx, word, VW / 2 + jx + 3, y, '#2a6a6a', 2, 'center');
+      drawText(ctx, word, VW / 2 + jx - 3, y, '#7a0000', 2, 'center');
+    }
+    drawText(ctx, word, VW / 2 + jx, y, '#c9403a', 2, 'center', '#1a0000');
+  }
+  ctx.restore();
 }
 
 /* ============================================================
@@ -4868,6 +6049,24 @@ function tileX(c2, img, x, y, w) {
 
 function drawBackground(camX, camY) {
   const room = G.room;
+  if (room.bg === 'eyehall') {
+    /* the corridor has no view: only the dark past the torchlight */
+    ctx.fillStyle = '#05060a'; ctx.fillRect(0, 0, VW, VH);
+    return;
+  }
+  if (room.bg === 'eyeviaduct') {
+    /* THE VIADUCT.  Nothing behind it, the eye in the middle of that
+       nothing, and the arches of the road itself over the top of the eye,
+       exactly as the picture has it. */
+    ctx.fillStyle = '#05060a'; ctx.fillRect(0, 0, VW, VH);
+    const g = ctx.createLinearGradient(0, 0, 0, VH);
+    g.addColorStop(0, 'rgba(24,26,34,1)');
+    g.addColorStop(0.55, 'rgba(10,11,15,1)');
+    g.addColorStop(1, 'rgba(3,3,5,1)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+    drawEyeBoss(camX, camY);
+    return;
+  }
   if (room.bg === 'forest') {
     ctx.drawImage(makeSky('day', [[0, '#6fb6e8'], [0.42, '#9fd4ee'], [0.72, '#cfe9e2'], [1, '#e8e0bf']]), 0, 0);
     /* sun */
@@ -5288,6 +6487,10 @@ function drawTiles(camX, camY) {
       case T_POWDER: img = Art.tile.powder[Math.floor(G.t / 0.22) % 6]; break;
       case T_QUICK: img = Art.tile.quick[Math.floor(G.t / 0.13) % 8]; break;
       case T_CAVEBG: img = Art.tile.caveBg[v]; break;
+      /* the road to the last guardian */
+      case T_EYEWALL: img = Art.tile.eyeStone[v]; break;
+      case T_VIA: img = Art.tile.via[v]; break;
+      case T_VIATOP: img = Art.tile.viaTop[v]; break;
     }
     if (!img) continue;
     if (t === T_WATER && !room.wet(tx, ty - 1) && !room.solid(tx, ty - 1)) {
@@ -5612,7 +6815,72 @@ function signLines(d) {
   }
   return [words.slice(0, best).join(' '), words.slice(best).join(' ')];
 }
+/* SEEN FROM ABOVE, A WALL IS A BLOCK STANDING ON A FLOOR.
+   The rock and the floor of the maze are close in weight, and from above,
+   with nothing to cast a shadow, they ran together.  This gives every wall
+   the two things that say it is standing up: a lit lip along the top of
+   it, and a shadow thrown down onto the floor at its foot.  It touches no
+   tile art, so the same rock in the cave and the deep wood is unchanged. */
+function drawTopRelief(camX, camY) {
+  const room = G.room;
+  const x0 = Math.max(0, Math.floor(camX / TILE) - 1);
+  const x1 = Math.min(room.w - 1, Math.floor((camX + VW) / TILE) + 1);
+  const y0 = Math.max(0, Math.floor(camY / TILE) - 1);
+  const y1 = Math.min(room.h - 1, Math.floor((camY + VH) / TILE) + 1);
+  ctx.save();
+  for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
+    const here = room.solid(tx, ty);
+    const px = tx * TILE, py = ty * TILE;
+    if (here) {
+      /* the lip: the top face of the block, catching what light there is */
+      if (!room.solid(tx, ty - 1)) {
+        ctx.globalAlpha = 0.5;
+        ctx.fillStyle = '#b9c6d8'; ctx.fillRect(px, py, TILE, 1);
+        ctx.globalAlpha = 0.22;
+        ctx.fillStyle = '#8fa0b8'; ctx.fillRect(px, py + 1, TILE, 1);
+      }
+      /* and a dark edge down whichever side the floor is on */
+      ctx.globalAlpha = 0.34;
+      ctx.fillStyle = '#0a0a12';
+      if (!room.solid(tx - 1, ty)) ctx.fillRect(px, py, 1, TILE);
+      if (!room.solid(tx + 1, ty)) ctx.fillRect(px + TILE - 1, py, 1, TILE);
+      if (!room.solid(tx, ty + 1)) ctx.fillRect(px, py + TILE - 1, TILE, 1);
+    } else if (room.solid(tx, ty - 1)) {
+      /* the shadow the block throws onto the floor under it */
+      const g = ctx.createLinearGradient(0, py, 0, py + 6);
+      g.addColorStop(0, 'rgba(6,6,14,0.62)');
+      g.addColorStop(1, 'rgba(6,6,14,0)');
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = g;
+      ctx.fillRect(px, py, TILE, 6);
+      /* a little of it to either side, so corners are not square */
+      if (!room.solid(tx - 1, ty - 1)) { ctx.globalAlpha = 0.5; ctx.fillStyle = 'rgba(6,6,14,0.5)'; ctx.fillRect(px, py, 2, 3); }
+      if (!room.solid(tx + 1, ty - 1)) { ctx.globalAlpha = 0.5; ctx.fillStyle = 'rgba(6,6,14,0.5)'; ctx.fillRect(px + TILE - 2, py, 2, 3); }
+    }
+  }
+  ctx.restore();
+}
+
 function drawDoors(camX) {
+  /* The eye's own door is drawn on its own, because it is the only door in
+     the game that opens where you can watch it open, and because it has to
+     go on standing there after the exit that made it is gone. */
+  if (G.room.eyeDoor && Art.eye.door) {
+    const d = G.room.eyeDoor;
+    const w = G.eyeRun;
+    const n = Art.eye.door.length;
+    /* it swings the whole way open over the two seconds of the creak */
+    const f = (w && w.doorT && G.trans && G.trans.eyeDoor)
+      ? clamp(G.trans.t / G.trans.dur, 0, 1) : 0;
+    const img = Art.eye.door[clamp(Math.round(f * (n - 1)), 0, n - 1)];
+    ctx.drawImage(img, Math.round(d.x), Math.round(d.y));
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.06 + Math.sin(G.t * 1.2) * 0.02 + f * 0.1;
+    ctx.fillStyle = '#c9403a';
+    ctx.beginPath(); ctx.arc(d.x + 17, d.y + 26, 30, 0, TAU); ctx.fill();
+    ctx.restore();
+  }
   for (const ex of G.room.exits) {
     if (!ex.door) continue;
     if (ex.door.x < camX - 80 || ex.door.x > camX + VW + 80) continue;
@@ -5809,6 +7077,8 @@ function drawWorld() {
   ctx.translate(-camX, -camY);
   drawDecor(0, camX, camY);
   drawTiles(camX, camY);
+  if (G.room.mode === 'top') drawTopRelief(camX, camY);
+  if (G.room.viaduct) drawViaduct(camX, camY);
   drawDoors(camX);
   drawWindows(camX, camY);
   drawSnow(camX, camY);
@@ -5830,6 +7100,7 @@ function drawWorld() {
   for (const pa of G.particles) pa.draw(ctx);
   for (const tx of G.texts) tx.draw(ctx);
   drawDecor(2, camX, camY);
+  if (G.room.bg === 'eyeviaduct') drawEyeVines(camX, camY);
   ctx.restore();
   drawAcid(camX, camY);
   drawCanopyShade(camX, camY);
@@ -5841,6 +7112,7 @@ function drawWorld() {
     ctx.save(); ctx.globalAlpha = Math.min(1, G.flashAmt); ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, VW, VH); ctx.restore();
   }
+  if (G.eyeRun) { drawEyeWord(); drawNoEscape(); }
   if (G.state === 'dead') drawDeath();
   if (G.state === 'victory') drawVictoryOverlay();
   drawAimCross();
@@ -6138,6 +7410,25 @@ function drawHUD() {
 
   /* everything below the dash bar stacks in order, never overlapping */
   let stack = dy + 9;
+  /* THE STAMINA BAR.  It sits under the dash meter and is always there,
+     because every cut, dash and dive is paid out of it.  Green while there
+     is plenty, amber when a move or two is left, red when the hero is
+     winded.  It flashes when a move is refused, so the reason is on the
+     screen at the moment it happens. */
+  {
+    const sf = p.stamFrac;
+    const low = p.stam < STAM_COST.swing;
+    const thin = p.stam < STAM_COST.flurry;
+    const hit = p.stamFlash > 0 && Math.floor(G.t * 14) % 2 === 0;
+    ctx.fillStyle = '#12101c'; ctx.fillRect(dx - 1, stack - 1, dw + 2, 5);
+    ctx.fillStyle = '#2b2740'; ctx.fillRect(dx, stack, dw, 3);
+    ctx.fillStyle = hit ? '#ffffff' : (low ? '#c9403a' : (thin ? '#ffd04a' : '#6fc46a'));
+    ctx.fillRect(dx, stack, Math.round(dw * sf), 3);
+    drawText(ctx, low ? 'WINDED' : 'STAM', dx + dw + 4, stack - 2,
+             hit ? '#ffffff' : (low ? '#ff8b7a' : (thin ? '#ffd04a' : '#9be89a')),
+             1, 'left', '#000000');
+    stack += 9;
+  }
   if (p.chargeT > 0.16) {
     const cf = clamp(p.chargeT / CHARGE_FULL, 0, 1);
     const full = cf >= 1;
@@ -6198,6 +7489,17 @@ function drawHUD() {
     ctx.fillStyle = hf > 0.5 ? '#d94f3a' : (hf > 0.22 ? '#e08a2a' : '#ffd04a');
     ctx.fillRect(bx, by, Math.round(bw * hf), 5);
     ctx.fillStyle = '#ff9a8a'; ctx.fillRect(bx, by, Math.round(bw * hf), 1);
+    /* The last guardian's bar is cut into its ten stages, so the next time
+       the eye will shut is always on the screen. */
+    if (G.boss.isEye) {
+      ctx.fillStyle = '#12101c';
+      for (let k = 1; k < EYE_STAGES; k++)
+        ctx.fillRect(bx + Math.round(bw * k / EYE_STAGES), by, 1, 5);
+      drawText(ctx, 'STAGE ' + clamp(G.boss.stage, 1, EYE_STAGES) + '/' + EYE_STAGES,
+               bx + bw + 6, by - 1, G.boss.mode === 'shut' ? '#6d7994' : '#ff8b7a', 1, 'left', '#000000');
+      if (G.boss.mode === 'shut')
+        drawText(ctx, 'SHUT', bx - 6, by - 1, '#6d7994', 1, 'right', '#000000');
+    }
   }
 
   /* area banner */
@@ -6261,7 +7563,6 @@ function drawHUD() {
       drawText(ctx, s.label, bx + 11, y + 1, done ? '#6fc46a' : '#a9b3c9', 1, 'left');
     });
   }
-  if (G.audioHint) drawText(ctx, 'CLICK FOR SOUND', VW - 4, VH - 10, '#5b6480', 1, 'right');
 }
 function drawCursor() {
   if (G.mobile) return;                 /* a finger needs no crosshair */
@@ -7162,7 +8463,8 @@ const AVATARS = [
   { key: 'cloud', name: 'AETHER' }, { key: 'spore', name: 'SPOREWOOD' },
   { key: 'shore', name: 'SHORE' }, { key: 'trench', name: 'TRENCH' },
   { key: 'cinder', name: 'CINDER' }, { key: 'frost', name: 'FROSTFELL' },
-  { key: 'dune', name: 'DUNE SEA' }, { key: 'mesa', name: 'MESA' }
+  { key: 'dune', name: 'DUNE SEA' }, { key: 'mesa', name: 'MESA' },
+  { key: 'eye', name: 'THE EYE', eye: true }
 ];
 /* Four darknesses of stone brick, and three more the prestiges open. */
 const BORDERS = [
@@ -7172,7 +8474,10 @@ const BORDERS = [
   { name: 'BLACK STONE', base: '#2e2d2c', dark: '#1a1a19', light: '#484644', need: 0 },
   { name: 'BRONZE', base: '#a66a28', dark: '#5e3a10', light: '#d4a05c', need: 1, shine: true },
   { name: 'SILVER', base: '#cfd8e6', dark: '#8a95a8', light: '#ffffff', need: 2, shine: true },
-  { name: 'GOLD', base: '#f0c93a', dark: '#a8862a', light: '#fff4c0', need: 3, shine: true }
+  { name: 'GOLD', base: '#f0c93a', dark: '#a8862a', light: '#fff4c0', need: 3, shine: true },
+  /* No prestige opens this one.  It is a ring of eyes, and only the last
+     guardian gives it up. */
+  { name: 'EYES', base: '#d8dade', dark: '#1d2026', light: '#ffffff', need: 0, eye: true }
 ];
 /* a portrait may be struck in a metal, once a prestige has opened it */
 const TINTS = [{ name: 'PLAIN', label: 'NO TINT', need: 0 },
@@ -7181,7 +8486,18 @@ const TINTS = [{ name: 'PLAIN', label: 'NO TINT', need: 0 },
                { name: 'GOLD', label: 'GOLDEN TINT', need: 3 }];
 function tintOwned(i) { return (TINTS[i] ? TINTS[i].need : 99) <= (G.prestige | 0); }
 function newAccount() { return { name: 'WANDERER', avatar: 0, border: 1, tint: 0 }; }
-function borderOwned(i) { return (BORDERS[i] ? BORDERS[i].need : 99) <= (G.prestige | 0); }
+function borderOwned(i) {
+  const b = BORDERS[i];
+  if (!b) return false;
+  if (b.eye) return !!G.eyeSlain;
+  return b.need <= (G.prestige | 0);
+}
+/* a portrait nobody wears until they have stood on the viaduct */
+function avatarOwned(i) {
+  const a = AVATARS[i];
+  if (!a) return false;
+  return a.eye ? !!G.eyeSlain : true;
+}
 function accountName() {
   const n = (G.account && G.account.name) || '';
   return n ? n : 'WANDERER';
@@ -7304,6 +8620,8 @@ function hairUnlocked(i) {
 }
 function suitUnlocked(key) {
   const su = SUITS[key];
+  /* the eye's own robes, which are taken off the eye and no other way */
+  if (su && su.eye) return !!(G.wardrobe && G.wardrobe.owned[key]);
   /* and a suit of the weekly pass, the same way */
   if (su && su.pass) return !!(G.wardrobe && G.wardrobe.owned[key]);
   return !su || !su.need || (G.prestige | 0) >= su.need;
@@ -7418,6 +8736,34 @@ function portraitCircle(r) {
 function drawPortraitFrame(c2, r, idx, t) {
   const b = BORDERS[clamp(idx | 0, 0, BORDERS.length - 1)];
   const cc = portraitCircle(r);
+  /* THE RING OF EYES.  It is not brick at all: it is a ring of small eyes
+     laid round the picture, and every one of them looks at whoever is
+     looking at the picture. */
+  if (b.eye) {
+    const g = Art.eye && Art.eye.glyph;
+    if (g) {
+      const mid = (cc.inner + cc.outer) / 2;
+      const n = 14;
+      c2.save();
+      c2.fillStyle = '#0b0c0f';
+      c2.beginPath();
+      c2.arc(cc.cx, cc.cy, cc.outer, 0, TAU);
+      c2.arc(cc.cx, cc.cy, cc.inner, TAU, 0, true);
+      c2.fill();
+      for (let k = 0; k < n; k++) {
+        const a = k / n * TAU + (t || 0) * 0.05;
+        const x = cc.cx + Math.cos(a) * mid, y = cc.cy + Math.sin(a) * mid;
+        /* they do not all blink at once, and they do not all look one way */
+        const shut = Math.sin((t || 0) * 1.7 + k * 1.9) > 0.93;
+        if (shut) { c2.fillStyle = '#1d2026'; c2.fillRect(Math.round(x - 6), Math.round(y - 1), 12, 2); continue; }
+        const look = Math.round(Math.sin((t || 0) * 0.9 + k) * 1.2);
+        const img = g[clamp(look + 1, 0, g.length - 1)];
+        c2.drawImage(img, Math.round(x - img.width / 2), Math.round(y - img.height / 2));
+      }
+      c2.restore();
+      return;
+    }
+  }
   const courses = 2;                        /* two rings of brick */
   const band = (cc.outer - cc.inner) / courses;
   for (let ring = 0; ring < courses; ring++) {
@@ -7585,8 +8931,13 @@ function updateProfileFace() {
   let changed = false;
   for (const dir of [-1, 1]) {
     if (Input.tap(profPicArrow(dir))) {
-      a.avatar = ((a.avatar + dir) % AVATARS.length + AVATARS.length) % AVATARS.length;
-      changed = true; Snd.ui();
+      let v = a.avatar;
+      for (let guard = 0; guard < AVATARS.length; guard++) {
+        v = ((v + dir) % AVATARS.length + AVATARS.length) % AVATARS.length;
+        if (avatarOwned(v)) break;
+      }
+      if (avatarOwned(v)) { a.avatar = v; changed = true; Snd.ui(); }
+      else Snd.uiBad();
     }
     if (Input.tap(profEdgeArrow(dir))) {
       let v = a.border;
@@ -7595,7 +8946,12 @@ function updateProfileFace() {
         if (borderOwned(v)) break;
       }
       if (borderOwned(v)) { a.border = v; changed = true; Snd.ui(); }
-      else { Snd.uiBad(); G.profMsg = 'A PRESTIGE OPENS IT'; G.profMsgT = 2; }
+      else {
+        Snd.uiBad();
+        G.profMsg = BORDERS[v] && BORDERS[v].eye ? 'THE LAST GUARDIAN OPENS IT'
+                                                 : 'A PRESTIGE OPENS IT';
+        G.profMsgT = 2;
+      }
     }
   }
   /* the four tint plates, each one picked outright */
@@ -8198,8 +9554,18 @@ function shopStepped(it) { return it.key !== 'tonic' && !it.relic && !it.fixed; 
 function shopMax(it) { return shopStepped(it) ? it.max + 4 : it.max; }
 function shopFullMax(it) { return shopMax(it); }
 /* relics only appear once you have reached the realm that forges them */
-function shopVisible(it) { return it.unlockAt === undefined || G.unlocked > it.unlockAt; }
+function shopVisible(it) {
+  /* OUT ON THE VIADUCT the pedlar carries one thing: a tonic.  Nothing is
+     upgraded in the middle of the last fight, and nothing is stocked up
+     either - the one drink is the whole of what the eye allows. */
+  if (G.eyeRun) return it.key === 'tonic';
+  return it.unlockAt === undefined || G.unlocked > it.unlockAt;
+}
 function shopRows() { return SHOP_ITEMS.filter(shopVisible); }
+/* How many tonics the eye allows in one fight, and how many are left. */
+const EYE_TONICS = 5;
+function eyeTonicsLeft() { return G.eyeRun ? Math.max(0, EYE_TONICS - (G.eyeRun.tonic | 0)) : 0; }
+function eyeTonicGone() { return !!(G.eyeRun && eyeTonicsLeft() <= 0); }
 function shopPrice(it) { return Math.round(it.base * Math.pow(it.mul, shopLevel(it))); }
 const SHOP_BOX = { x: 34, y: 6, w: 316, h: 206 };
 /* twelve rows and a line at the foot, all inside the panel */
@@ -8231,6 +9597,12 @@ function updateShop(dt) {
   const lvl = shopLevel(it), cost = shopPrice(it);
   if (lvl >= shopMax(it)) { Snd.uiBad(); return; }
   if (it.key === 'tonic' && p.hp >= p.maxHp) { Snd.uiBad(); return; }
+  /* and only five of them, however deep the purse is */
+  if (eyeTonicGone()) {
+    Snd.uiBad(); G.shopWarn = 0.6;
+    G.banner('FIVE TONICS IS ALL IT ALLOWS', 2.2);
+    return;
+  }
   /* a free-upgrade ticket covers anything but a relic */
   const useTicket = !it.relic && it.key !== 'tonic' && G.codes.tickets > 0 && !G.codes.admin;
   if (!useTicket && p.coins < cost) { Snd.uiBad(); G.shopWarn = 0.6; return; }
@@ -8238,7 +9610,7 @@ function updateShop(dt) {
   else G.spendCoins(cost);
   Snd.buy();
   if (it.key === 'heart') { p.up.heart = (p.up.heart || 0) + 1; p.maxHp += 2; p.hp = p.maxHp; }
-  else if (it.key === 'tonic') p.heal(p.maxHp);
+  else if (it.key === 'tonic') { p.heal(p.maxHp); if (G.eyeRun) G.eyeRun.tonic = (G.eyeRun.tonic | 0) + 1; }
   else p.up[it.key] = (p.up[it.key] || 0) + 1;
   if (it.key !== 'tonic') G.stats.bought = (G.stats.bought || 0) + 1;
   G.saveGame();
@@ -8269,7 +9641,7 @@ function drawShop() {
     const it = rows[i], r = shopRowRect(i);
     const lvl = shopLevel(it), cost = shopPrice(it);
     const mx = shopMax(it);
-    const maxed = lvl >= mx;
+    const maxed = lvl >= mx || eyeTonicGone();
     const ticketable = !it.relic && it.key !== 'tonic' && G.codes.tickets > 0 && !G.codes.admin;
     const afford = (ticketable || G.player.coins >= cost) && !maxed;
     const sel = G.shopSel === i;
@@ -8289,7 +9661,9 @@ function drawShop() {
         ctx.fillRect(r.x + 24 + k * 3, r.y + 10, 2, 3);
       }
     }
-    if (maxed) drawText(ctx, 'MAX', r.x + r.w - 8, r.y + 4, '#6fc46a', 1, 'right');
+    if (G.eyeRun) drawText(ctx, eyeTonicsLeft() + ' LEFT', r.x + r.w - 8, r.y + 4,
+                           eyeTonicsLeft() ? '#6fc46a' : '#7f8aa3', 1, 'right');
+    else if (maxed) drawText(ctx, 'MAX', r.x + r.w - 8, r.y + 4, '#6fc46a', 1, 'right');
     else if (ticketable) drawText(ctx, 'FREE', r.x + r.w - 8, r.y + 4, '#6fc46a', 1, 'right');
     else {
       drawText(ctx, String(cost), r.x + r.w - 20, r.y + 4, afford ? '#ffe98a' : '#c9403a', 1, 'right');
@@ -8297,9 +9671,12 @@ function drawShop() {
     }
     if (it.relic) { ctx.fillStyle = '#c68e3f'; ctx.fillRect(r.x, r.y, 1, r.h); ctx.fillRect(r.x + 1, r.y, 1, 1); ctx.fillRect(r.x + 1, r.y + r.h - 1, 1, 1); }
   }
-  const d = G.shopSel >= 0 ? rows[G.shopSel].desc
-    : (G.codes.tickets > 0 ? G.codes.tickets + ' FREE UPGRADE TICKETS - SPEND ONE ON ANY ROW'
-                           : 'CLICK AN ITEM TO BUY IT  -  ESC TO LEAVE');
+  const d = G.eyeRun
+    ? (eyeTonicGone() ? 'THE EYE ALLOWS NO MORE'
+                      : eyeTonicsLeft() + ' TONICS LEFT.  THAT IS ALL IT ALLOWS')
+    : (G.shopSel >= 0 ? rows[G.shopSel].desc
+      : (G.codes.tickets > 0 ? G.codes.tickets + ' FREE UPGRADE TICKETS - SPEND ONE ON ANY ROW'
+                             : 'CLICK AN ITEM TO BUY IT  -  ESC TO LEAVE'));
   ctx.fillStyle = 'rgba(20,14,10,0.92)';
   ctx.fillRect(SHOP_BOX.x + 1, SHOP_BOX.y + SHOP_BOX.h - 14, SHOP_BOX.w - 2, 13);
   drawText(ctx, d, SHOP_BOX.x + SHOP_BOX.w / 2, SHOP_BOX.y + SHOP_BOX.h - 11, '#a9b3c9', 1, 'center', '#000000');
@@ -8316,11 +9693,20 @@ function drawDeath() {
   ctx.restore();
   if (G.deathT > 0.5) {
     ctx.save(); ctx.globalAlpha = Math.min(1, (G.deathT - 0.5) * 2);
-    drawText(ctx, 'YOU FELL', VW / 2, VH / 2 - 22, '#e8433f', 3, 'center', '#2a0c10');
-    const taker = (World.LEVELS[G.level] && World.LEVELS[G.level].taker) || 'THE WOOD TAKES';
-    drawText(ctx, taker + ' A FIFTH OF YOUR COINS', VW / 2, VH / 2 + 6, '#a9b3c9', 1, 'center', '#000000');
-    if (G.deathT > 1.6 && Math.floor(G.t * 2) % 2)
-      drawText(ctx, 'PRESS SPACE TO RISE', VW / 2, VH / 2 + 22, '#f2e2b8', 1, 'center', '#000000');
+    if (G.eyeRun) {
+      /* the dark under the viaduct takes nothing, because there is nothing
+         down there to take it */
+      drawText(ctx, 'YOU FELL', VW / 2, VH / 2 - 22, '#e8433f', 3, 'center', '#2a0c10');
+      drawText(ctx, 'THERE IS NO BOTTOM TO IT', VW / 2, VH / 2 + 6, '#6d7994', 1, 'center', '#000000');
+      if (G.deathT > 3.4 && Math.floor(G.t * 2) % 2)
+        drawText(ctx, 'PRESS SPACE TO GO BACK OUT', VW / 2, VH / 2 + 22, '#a9b3c9', 1, 'center', '#000000');
+    } else {
+      drawText(ctx, 'YOU FELL', VW / 2, VH / 2 - 22, '#e8433f', 3, 'center', '#2a0c10');
+      const taker = (World.LEVELS[G.level] && World.LEVELS[G.level].taker) || 'THE WOOD TAKES';
+      drawText(ctx, taker + ' A FIFTH OF YOUR COINS', VW / 2, VH / 2 + 6, '#a9b3c9', 1, 'center', '#000000');
+      if (G.deathT > 1.6 && Math.floor(G.t * 2) % 2)
+        drawText(ctx, 'PRESS SPACE TO RISE', VW / 2, VH / 2 + 22, '#f2e2b8', 1, 'center', '#000000');
+    }
     ctx.restore();
   }
 }
@@ -8651,7 +10037,6 @@ function drawTitle() {
              VW / 2, VH - 9, '#c9d4e8', 1, 'center');
   }
   ctx.restore();
-  if (G.audioHint) drawText(ctx, 'CLICK FOR SOUND', VW - 4, 34, '#ffeec0', 1, 'right', '#2a1a10');
 
   /* settings cog */
   {
@@ -8683,6 +10068,7 @@ function drawTitle() {
 function render() {
   ctx.imageSmoothingEnabled = false;
   if (G.state === 'load') { drawLoad(); drawCursor(); return; }
+  else if (G.state === 'eyeEnd') { drawEyeEnd(); return; }
   else if (G.state === 'title') { drawTitle(); drawCursor(); }
   else if (G.state === 'wardrobe') { drawWardrobe(); drawCursor(); }
   else if (G.state === 'archipelago') { drawArchipelago(); drawCursor(); }
