@@ -1119,7 +1119,12 @@ The deck the hero walks on is **one course**, cut to the picture rather than the
 about: the picture's coping band is seventeen pixels against an arch pitch of thirty two.
 The picture is drawn **after** the tiles, so its own coping covers the tile that carries you.
 Over the top there is a lip of old brick with **vines hanging in front of everything**, and
-they are the artist's own too, out of `images/vines.png`. `tools/extract-vines.py` cuts them
+above that lip the wall it belongs to **carries on up out of sight** — the same brick, out of
+`images/bricks.png`, cut from the same picture at the same scale with the same horizontal
+mapping, so its courses stand over the lip's own. It is two courses tall and tiles both ways,
+and it goes darker the further up it stands so that it recedes rather than ending.
+
+The vines are the artist's own too, out of `images/vines.png`. `tools/extract-vines.py` cuts them
 from the background picture and keys the cream wall out, because behind the vines there is no
 wall — there is the eye.
 
@@ -1136,12 +1141,23 @@ If the picture ever fails to load the game says so in the console and falls back
 arcade, so the level is never unplayable.
 
 Until the eye finds you there is nothing to do but walk. **The sword, the dash, the dive and
-the jump are all refused** — the road is the whole of it. Walk east for **twenty seconds**
-and a red word comes up and tears away:
+the jump are all refused** — the road is the whole of it. Walk east for **eight seconds**, and
+fourteen tiles at the least, and a red word comes up and tears away:
 
 > **WAIT**
 
 Then the eye opens in the dark behind the viaduct, and the health bar comes with it.
+
+**The view stands back out here**, and only out here: the world is drawn at seven tenths, so
+half as much again of the road and of the eye is on the glass at once. The bar, the purse and
+everything else painted on the glass are not scaled with it. The light the hero carries is
+laid on the glass rather than in the world, so it is put through the same zoom before it is
+punched out of the dark.
+
+And the road is barely lit. It was the brightest thing out here and read as daylight stone
+against a black sky; the deck, the lip and the wall above it all take a wash of the dark now,
+the wall most of all. Dust turns in the air between them, drawn off the camera rather than
+kept as particles, so it never thins out however long the fight runs.
 
 ### The eye
 
@@ -1704,9 +1720,10 @@ All eight together come to 539 coins.
 | `images/eye-body.png` | The eye, with the iris taken out of it and the hole filled in |
 | `images/eye-iris.png` | That iris, so it can still move inside the eye |
 | `images/vines.png` | The hanging vines, faded into themselves so they tile |
+| `images/bricks.png` | The wall above them, two courses tall, tiling both ways |
 | `tools/extract-viaduct.py` | What cut the viaduct, to run again if the original changes |
 | `tools/extract-eye.py` | What cut the eye, the same way |
-| `tools/extract-vines.py` | And the vines |
+| `tools/extract-vines.py` | And the vines, and the brick above them |
 | `js/world.js` | Tile types, the `Room` type, the level generators, the realm table and the two rooms of the Last Guardian |
 | `js/entities.js` | Hero, stamina, all enemies, four bosses, the Last Guardian and its beams, projectiles, coins, particles |
 | `js/game.js` | State machine, camera, transitions, render pipeline, HUD, shop, title, save files, settings, map |

@@ -1712,7 +1712,7 @@ const VIA_ENTRY = 30;                  /* the tile the door stands at */
 function buildEyeViaduct() {
   const W = VIA_TILES_W, H = VIA_TILES_H;
   const room = new Room({ id: 'eyeviaduct', name: 'THE VIADUCT', mode: 'side', w: W, h: H,
-                          music: 'silence', bg: 'eyeviaduct', ambient: 0, dark: 0.34 });
+                          music: 'silence', bg: 'eyeviaduct', ambient: 0, dark: 0.46 });
   /* The deck: one course, and open air under the whole of it.  One course
      is what the picture has - its coping band is seventeen pixels against
      an arch pitch of thirty two - and the deck the hero walks on is cut to
@@ -1730,6 +1730,8 @@ function buildEyeViaduct() {
      it found the open air under the viaduct and put the hero there. */
   room.start = { x: (VIA_ENTRY + 2) * TILE, y: VIA_DECK * TILE };
   room.viaduct = { mid: VIA_MID, period: VIA_PERIOD, deck: VIA_DECK, entry: VIA_ENTRY };
+  /* the one room the view stands back from */
+  room.zoom = 0.7;
   room.spawns.push({ type: 'theEye', x: (VIA_ENTRY + 60) * TILE, y: VIA_DECK * TILE });
   return room;
 }

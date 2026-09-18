@@ -1,8 +1,12 @@
-"""Cut the hanging vines out of the artist's background picture into a strip
-that repeats without a seam.
+"""Cut the hanging vines, and the brick they hang from, out of the artist's
+background picture into strips that repeat without a seam.
 
     sips -s format bmp <the background>.jpg --out /tmp/bg.bmp
     python3 tools/extract-vines.py /tmp/bg.bmp images/vines.png
+
+It writes bricks.png beside vines.png.  Both are cut with the same
+horizontal mapping, so the courses of one line up with the courses of the
+other and the wall above the lip is the same wall.
 
 The picture is a lip of old brick, a mat of leaves under it and strands
 hanging off that, all over a cream wall.  In the game there is no wall
@@ -98,7 +102,58 @@ for oy in range(OUT_H):
 
 def ch(t, dd):
     return struct.pack('>I', len(dd)) + t + dd + struct.pack('>I', zlib.crc32(t + dd) & 0xffffffff)
-open(out, 'wb').write(b'\x89PNG\r\n\x1a\n'
-    + ch(b'IHDR', struct.pack('>IIBBBBB', TILE_W, OUT_H, 8, 6, 0, 0, 0))
-    + ch(b'IDAT', zlib.compress(bytes(buf), 9)) + ch(b'IEND', b''))
+def png(path, w, hh, body):
+    open(path, 'wb').write(b'\x89PNG\r\n\x1a\n'
+        + ch(b'IHDR', struct.pack('>IIBBBBB', w, hh, 8, 6, 0, 0, 0))
+        + ch(b'IDAT', zlib.compress(bytes(body), 9)) + ch(b'IEND', b''))
+png(out, TILE_W, OUT_H, buf)
 print('wrote', out, TILE_W, 'x', OUT_H)
+
+# ------------------------------------------------------------------
+# THE WALL ABOVE THE LIP.
+# The brick the vines hang from carries on upward out of sight, and it is
+# the same brick: cut from the same picture, at the same scale, with the
+# same horizontal mapping, so its courses line up with the lip's.
+#
+# Two whole courses are taken, because two tile upward without a join.  The
+# courses in the picture stand 49 pixels apart, and the window is set so
+# that two of them land on a whole number of pixels at this scale.
+# ------------------------------------------------------------------
+BRICK_H = 25                      # two courses, in the game's own pixels
+BRICK_Y0 = 82.0                   # the top of a course, measured off the picture
+BRICK_SRC_H = BRICK_H / SC
+
+bstrip = []
+for oy in range(BRICK_H):
+    row = []
+    sy0 = BRICK_Y0 + oy * inv if False else BRICK_Y0 + oy * (BRICK_SRC_H / BRICK_H)
+    for ox in range(STRIP_W):
+        sx0 = ox * inv
+        r = g = b = 0.0; n = 0
+        iy = int(sy0)
+        while iy < sy0 + BRICK_SRC_H / BRICK_H:
+            ix = int(sx0)
+            while ix < sx0 + inv:
+                pr, pg, pb = px(ix, iy)
+                r += pr; g += pg; b += pb; n += 1
+                ix += 1
+            iy += 1
+        if n: r, g, b = r / n, g / n, b / n
+        row.append((r, g, b, 255.0))
+    bstrip.append(row)
+
+bbuf = bytearray()
+for oy in range(BRICK_H):
+    bbuf += b'\x00'
+    for ox in range(TILE_W):
+        c = bstrip[oy][ox]
+        if ox < MARGIN:
+            o = bstrip[oy][TILE_W + ox]
+            t = ox / MARGIN
+            c = (c[0] * t + o[0] * (1 - t), c[1] * t + o[1] * (1 - t),
+                 c[2] * t + o[2] * (1 - t), 255.0)
+        bbuf += bytes((int(c[0]), int(c[1]), int(c[2]), 255))
+
+bout = out.replace('vines.png', 'bricks.png')
+png(bout, TILE_W, BRICK_H, bbuf)
+print('wrote', bout, TILE_W, 'x', BRICK_H)

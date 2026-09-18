@@ -6728,12 +6728,12 @@ Art.steps = function () {
     /* The artist's own vines, cut to a strip that repeats without a seam
        the way the viaduct does, and hung at a fixed height in the world so
        that it travels with the road rather than sliding against it. */
-    Art.eye.vineImg = null;
-    {
+    Art.eye.vineImg = null; Art.eye.brickImg = null;
+    for (const [file, key] of [['vines', 'vineImg'], ['bricks', 'brickImg']]) {
       const im = new Image();
-      im.onload = () => { Art.eye.vineImg = im; };
-      im.onerror = () => { console.error('images/vines.png did not load'); };
-      im.src = ART_BASE + 'images/vines.png';
+      im.onload = () => { Art.eye[key] = im; };
+      im.onerror = () => { console.error('images/' + file + '.png did not load'); };
+      im.src = ART_BASE + 'images/' + file + '.png';
     }
     Art.eye.door = frames(6, (i, n) => eyeDoorSprite(i / (n - 1)));
     Art.tile.eyeStone = []; Art.tile.eyeStoneTop = [];

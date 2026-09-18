@@ -771,6 +771,10 @@ G.enterRoom = function (id, spawn) {
   }
   const room = World.rooms[id];
   G.room = room; G.roomId = id;
+  /* The view stands back on the viaduct so more of the road and more of
+     the eye are on the glass at once.  Every other room is seen from where
+     it always was. */
+  G.zoom = room.zoom || 1;
   G.enemies.length = 0; G.coins.length = 0; G.projectiles.length = 0; G.waves.length = 0;
   G.particles.length = 0; G.texts.length = 0; G.items.length = 0;
   G.lifts.length = 0; G.hazards.length = 0;
@@ -2106,8 +2110,9 @@ G.onIsleBossDead = function () {
    home, a door that will not let you, a viaduct with no end,
    and one eye over the whole of it.
    ============================================================ */
-/* how long the hero walks the viaduct before the eye finds them */
-const EYE_WALK = 20;
+/* How long the hero walks the viaduct before the eye finds them.  Long
+   enough for the road to have no end in it, and no longer. */
+const EYE_WALK = 8;
 /* how far the beams and the deck let the hero stray before the room wraps */
 G.eyeRun = null;
 
@@ -2226,7 +2231,7 @@ function updateEyeLevel(dt) {
   if (w.phase === 'walk') {
     /* only the walking east counts.  Stand still and nothing finds you. */
     if (p.vx > 0.4) w.walk += dt;
-    if (w.walk > EYE_WALK && p.cx > (V.entry + 40) * TILE) {
+    if (w.walk > EYE_WALK && p.cx > (V.entry + 14) * TILE) {
       w.phase = 'wait'; w.waitT = 0;
       w.word = 'WAIT'; w.wordT = 2.6;
       Snd.eyeGlitch();
@@ -2511,6 +2516,30 @@ function drawEyeImage(e, camX, camY, A) {
   ctx.restore();
 }
 
+/* DUST TURNING IN THE DARK.
+   The viaduct has no weather, no wind and nothing growing on it, so the
+   only thing that says the air out here is moving at all is what drifts
+   through it.  It is drawn from the camera rather than kept as particles:
+   there is no counting it, and it never thins out however long the fight
+   goes on. */
+function drawEyeDust(camX, camY, bx, by, bw, bh) {
+  const t = G.t;
+  ctx.save();
+  for (let k = 0; k < 44; k++) {
+    /* each mote keeps its own lane and its own pace, and the lane drifts
+       against the camera so the dark has depth in it */
+    const par = 0.14 + (k % 5) * 0.06;
+    const sp = 5 + (k % 7) * 2.6;
+    const x = bx + (((k * 97.3 + t * sp * 0.35 - camX * par) % bw) + bw) % bw;
+    const y = by + (((k * 53.7 - t * sp - camY * par) % bh) + bh) % bh;
+    const tw = Math.sin(t * (0.7 + (k % 4) * 0.2) + k);
+    ctx.globalAlpha = 0.05 + Math.max(0, tw) * 0.10;
+    ctx.fillStyle = k % 3 ? '#8f949c' : '#d8dade';
+    ctx.fillRect(Math.round(x), Math.round(y), 1, 1 + (k % 3 === 0 ? 1 : 0));
+  }
+  ctx.restore();
+}
+
 /* THE VIADUCT, repeated until it has no end.
    It is drawn in world coordinates after the tiles, because the picture's
    own coping is the road the hero walks on and it has to cover the tile
@@ -2524,17 +2553,21 @@ function drawViaduct(camX, camY) {
   const top = V.deck * TILE;
   const img = A.strip;
   if (img) {
-    const w = A.stripW, h = A.stripH;
-    const x0 = Math.floor(camX / w) * w - w;
-    for (let x = x0; x < camX + VW + w; x += w) ctx.drawImage(img, x, top);
+    const w = A.stripW, h = A.stripH, mx = viewMarginX();
+    const x0 = Math.floor((camX - mx) / w) * w - w;
+    for (let x = x0; x < camX + VW + mx + w; x += w) ctx.drawImage(img, x, top);
     /* the piers go down into the dark rather than stopping */
     const g = ctx.createLinearGradient(0, top + h - 64, 0, top + h);
     g.addColorStop(0, 'rgba(5,6,10,0)');
     g.addColorStop(1, 'rgba(5,6,10,1)');
     ctx.fillStyle = g;
-    ctx.fillRect(camX - 8, top + h - 64, VW + 16, 64);
+    ctx.fillRect(camX - mx - 8, top + h - 64, VW + mx * 2 + 16, 64);
     ctx.fillStyle = '#05060a';
-    ctx.fillRect(camX - 8, top + h, VW + 16, 400);
+    ctx.fillRect(camX - mx - 8, top + h, VW + mx * 2 + 16, 600);
+    /* THE ROAD IS BARELY LIT.  It is the brightest thing out here and it
+       was reading as daylight stone against a black sky. */
+    ctx.fillStyle = 'rgba(6,8,14,0.42)';
+    ctx.fillRect(camX - mx - 8, top, VW + mx * 2 + 16, h);
     return;
   }
   /* the drawn arches, for as long as the picture has not arrived */
@@ -2557,18 +2590,40 @@ function drawEyeVines(camX, camY) {
   const V = G.room.viaduct;
   if (!V) return;
   const img = A.vineImg;
+  const top = V.deck * TILE - VINE_HANG;
+  const mx = viewMarginX(), my = viewMarginY();
   if (img) {
-    const w = img.width, top = V.deck * TILE - VINE_HANG;
-    for (let x = Math.floor(camX / w) * w - w; x < camX + VW + w; x += w)
-      ctx.drawImage(img, x, top);
+    const w = img.width;
+    const x0 = Math.floor((camX - mx) / w) * w - w;
+    /* THE WALL THE LIP BELONGS TO, carried up out of sight.  It is the same
+       brick, cut from the same picture at the same scale, so its courses
+       stand over the lip's own. */
+    const bk = A.brickImg;
+    if (bk) {
+      const bw = bk.width, bh = bk.height;
+      const ceil = camY - my - bh;
+      for (let y = top - bh; y > ceil; y -= bh)
+        for (let x = x0; x < camX + VW + mx + bw; x += bw) ctx.drawImage(bk, x, y);
+      /* it goes darker the further up it stands, so it recedes rather than
+         ending */
+      const g = ctx.createLinearGradient(0, ceil, 0, top);
+      g.addColorStop(0, 'rgba(5,6,10,0.97)');
+      g.addColorStop(1, 'rgba(5,6,10,0.52)');
+      ctx.fillStyle = g;
+      ctx.fillRect(camX - mx - 8, ceil, VW + mx * 2 + 16, top - ceil);
+    }
+    for (let x = x0; x < camX + VW + mx + w; x += w) ctx.drawImage(img, x, top);
+    /* the lip and its vines take the same dark as the road below them, so
+       nothing up here reads as daylight */
+    ctx.fillStyle = 'rgba(6,8,14,0.34)';
+    ctx.fillRect(camX - mx - 8, top, VW + mx * 2 + 16, img.height);
     return;
   }
   /* the drawn curtain, for as long as the picture has not arrived */
   if (!A.vine) return;
-  const top = V.deck * TILE - VINE_HANG;
-  let i = Math.floor(camX / A.vineW);
-  for (let x = Math.floor(camX / A.vineW) * A.vineW - A.vineW;
-       x < camX + VW + A.vineW; x += A.vineW) {
+  let i = Math.floor((camX - mx) / A.vineW);
+  for (let x = Math.floor((camX - mx) / A.vineW) * A.vineW - A.vineW;
+       x < camX + VW + mx + A.vineW; x += A.vineW) {
     ctx.drawImage(A.vine[((i % A.vine.length) + A.vine.length) % A.vine.length], x, top);
     i++;
   }
@@ -6057,13 +6112,19 @@ function drawBackground(camX, camY) {
   if (room.bg === 'eyeviaduct') {
     /* THE VIADUCT.  Nothing behind it, the eye in the middle of that
        nothing, and the arches of the road itself over the top of the eye,
-       exactly as the picture has it. */
-    ctx.fillStyle = '#05060a'; ctx.fillRect(0, 0, VW, VH);
-    const g = ctx.createLinearGradient(0, 0, 0, VH);
-    g.addColorStop(0, 'rgba(24,26,34,1)');
-    g.addColorStop(0.55, 'rgba(10,11,15,1)');
-    g.addColorStop(1, 'rgba(3,3,5,1)');
-    ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+       exactly as the picture has it.  The fills reach past the glass,
+       because out here the view stands back from it. */
+    const mx = viewMarginX(), my = viewMarginY();
+    const bx = -mx - 8, by = -my - 8, bw = VW + mx * 2 + 16, bh = VH + my * 2 + 16;
+    ctx.fillStyle = '#04050a'; ctx.fillRect(bx, by, bw, bh);
+    const g = ctx.createLinearGradient(0, by, 0, by + bh);
+    g.addColorStop(0, 'rgba(16,18,26,1)');
+    g.addColorStop(0.5, 'rgba(7,8,12,1)');
+    g.addColorStop(1, 'rgba(2,2,4,1)');
+    ctx.fillStyle = g; ctx.fillRect(bx, by, bw, bh);
+    /* dust turning in the dark, which is all there is out here to say the
+       air is moving at all */
+    drawEyeDust(camX, camY, bx, by, bw, bh);
     drawEyeBoss(camX, camY);
     return;
   }
@@ -6445,8 +6506,12 @@ function drawCaveWall(camX, camY, par) {
 
 function drawTiles(camX, camY) {
   const room = G.room;
-  const x0 = Math.max(0, Math.floor(camX / TILE)), x1 = Math.min(room.w - 1, Math.floor((camX + VW) / TILE));
-  const y0 = Math.max(0, Math.floor(camY / TILE)), y1 = Math.min(room.h - 1, Math.floor((camY + VH) / TILE));
+  /* the view may stand back, so what is drawn reaches past the glass */
+  const mx = viewMarginX(), my = viewMarginY();
+  const x0 = Math.max(0, Math.floor((camX - mx) / TILE));
+  const x1 = Math.min(room.w - 1, Math.floor((camX + VW + mx) / TILE));
+  const y0 = Math.max(0, Math.floor((camY - my) / TILE));
+  const y1 = Math.min(room.h - 1, Math.floor((camY + VH + my) / TILE));
   const wf = Math.floor(G.t / 0.15) % 4;
   for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
     const t = room.grid[ty * room.w + tx];
@@ -7040,8 +7105,13 @@ function drawLighting(camX, camY) {
   lc.fillStyle = 'rgba(6,4,14,' + dark + ')';
   lc.fillRect(0, 0, LW, LH);
   lc.globalCompositeOperation = 'destination-out';
+  /* The dark is laid on the glass, not in the world, so a world point has
+     to be put through the zoom before the light is punched out of it. */
+  const z = G.zoom || 1;
   const hole = (wx, wy, r, str) => {
-    const x = (wx - camX) / 2, y = (wy - camY) / 2, rr2 = r / 2;
+    const px2 = VW / 2 + ((wx - camX) - VW / 2) * z;
+    const py2 = VH / 2 + ((wy - camY) - VH / 2) * z;
+    const x = px2 / 2, y = py2 / 2, rr2 = r * z / 2;
     /* one stray coordinate must never take the whole frame down */
     if (!isFinite(x) || !isFinite(y) || !isFinite(rr2) || rr2 <= 0) return;
     if (x < -rr2 || x > LW + rr2 || y < -rr2 || y > LH + rr2) return;
@@ -7068,10 +7138,28 @@ function drawLighting(camX, camY) {
   ctx.drawImage(lightCv, 0, 0, VW, VH);
 }
 
+/* HOW FAR BACK THE VIEW STANDS.
+   One everywhere but on the viaduct, where it stands back so that more of
+   the road, and more of the eye over it, is on the screen at once.  The
+   whole world is drawn through this; the bar, the purse and everything
+   else painted on the glass are not. */
+G.zoom = 1;
+function viewW() { return VW / (G.zoom || 1); }
+function viewH() { return VH / (G.zoom || 1); }
+/* the screen, in the coordinates the world is drawn in before the zoom */
+function viewMarginX() { return (viewW() - VW) / 2; }
+function viewMarginY() { return (viewH() - VH) / 2; }
+
 function drawWorld() {
   const sk = G.shakeAmt;
   const sx = sk > 0.2 ? rr(-sk, sk) : 0, sy = sk > 0.2 ? rr(-sk, sk) : 0;
   const camX = Math.round(G.cam.x + sx), camY = Math.round(G.cam.y + sy);
+  const z = G.zoom || 1;
+  ctx.save();
+  if (z !== 1) {
+    /* about the middle of the glass, so the hero stays where they were */
+    ctx.translate(VW / 2, VH / 2); ctx.scale(z, z); ctx.translate(-VW / 2, -VH / 2);
+  }
   drawBackground(camX, camY);
   ctx.save();
   ctx.translate(-camX, -camY);
@@ -7102,6 +7190,7 @@ function drawWorld() {
   drawDecor(2, camX, camY);
   if (G.room.bg === 'eyeviaduct') drawEyeVines(camX, camY);
   ctx.restore();
+  ctx.restore();                       /* and out of the zoom */
   drawAcid(camX, camY);
   drawCanopyShade(camX, camY);
   drawLighting(camX, camY);
