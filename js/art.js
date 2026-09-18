@@ -94,6 +94,14 @@ const SUITS = {
               base: '#2f5fb0', dark: '#1c3a70', light: '#5f9fe0', legs: '#c9a06a', trim: '#e0b040' },
   suntomb:  { name: 'SUNREGALIA', realm: 'THE SUN TOMB', cost: 30000,
               base: '#e0b040', dark: '#9c7418', light: '#f6d878', legs: '#241c14', trim: '#2f5fb0' },
+  /* The wood's own three.  They are cut the way the wood is: almost no
+     colour in them, and what colour there is comes off the leaf litter. */
+  black:    { name: 'BARKWEAVE', realm: 'THE BLACKWOOD', cost: 36000,
+              base: '#2a2f2a', dark: '#141a14', light: '#4a5348', legs: '#1c211c', trim: '#6f7a58' },
+  smother:  { name: 'ROOTSHROUD', realm: 'THE SMOTHERED PATH', cost: 42000,
+              base: '#20261f', dark: '#0e120e', light: '#3c4638', legs: '#151a14', trim: '#4f6b3a' },
+  watched:  { name: 'WATCHWEAVE', realm: 'THE WATCHED WOOD', cost: 50000,
+              base: '#171b1e', dark: '#080a0c', light: '#333b42', legs: '#101317', trim: '#b4342c' },
   /* Three suits no realm holds.  Each one waits on a prestige, and no purse
      buys it before then.  All three shine. */
   pBronze:  { name: 'BRONZE REGALIA', realm: 'PRESTIGE I', cost: 20000, need: 1, shine: true,
@@ -5081,6 +5089,52 @@ function mapNodeSprite(theme) {
       g.rect(cx + 9, cy - 4, 14, 2, C('#7a5230'));
     }
     for (let k = 0; k < 8; k++) g.disc(cx + r.r(-R * 0.8, R * 0.8), cy + r.r(-R * 0.8, R * 0.8), r.r(0.6, 1.2), C('#cfeaff'));
+  } else if (theme === 'gloom' || theme === 'gloom2' || theme === 'gloom3') {
+    /* THE WATCHED WOOD.  Black trees against a sky with nothing in it, and
+       the deeper you go the less of the sky there is.  The third carries
+       one small light in it, which is the thing that is watching. */
+    /* The chart is read at a glance, so the picture has to carry a shape.
+       A cold haze stands behind the wood and the trees are cut out of it
+       in black.  The haze closes as you go deeper, so the third realm is
+       almost solid, and the one light in it is the thing that watches. */
+    const deep = theme === 'gloom' ? 0 : (theme === 'gloom2' ? 1 : 2);
+    const haze = [C('#8b9aa8'), C('#63717f'), C('#414c59')][deep];
+    const low = [C('#1d242d'), C('#141a22'), C('#0b0f15')][deep];
+    g.disc(cx, cy, R, haze);
+    /* the haze is brightest at the top and gone by the floor */
+    for (let y = cy - R; y < cy + R; y++)
+      for (let x = cx - R; x < cx + R; x++)
+        if (Math.hypot(x - cx, y - cy) <= R)
+          g.set(x, y, mixc(haze, low, clamp((y - cy + R) / (R * 2.4), 0, 1)));
+    /* the trees, cut black out of the haze, nearer each time */
+    const black = [C('#0b1010'), C('#070b0b'), C('#040606')][deep];
+    const n = 6 + deep * 2;
+    for (let k = 0; k < n; k++) {
+      const x = cx - 21 + k * (42 / (n - 1)) + r.r(-1.5, 1.5);
+      const h = r.r(11, 16) + deep * 3;
+      const w = r.r(2.2, 3.4) + deep * 0.5;
+      /* a spire of four steps, each one narrower than the one below it */
+      for (let t2 = 0; t2 < 4; t2++) {
+        const yy = cy + 9 - t2 * (h / 4.2);
+        const ww = w * (1 - t2 * 0.2);
+        for (let px2 = Math.round(x - ww); px2 <= Math.round(x + ww); px2++)
+          for (let py2 = Math.round(yy - h / 4.2); py2 <= Math.round(yy); py2++)
+            if (Math.hypot(px2 - cx, py2 - cy) <= R - 1) g.set(px2, py2, black);
+      }
+      for (let py2 = cy + 8; py2 < cy + 14; py2++)
+        if (Math.hypot(x - cx, py2 - cy) <= R - 1) g.rect(Math.round(x), py2, 1, 1, black);
+    }
+    /* the floor of it, black leaf litter */
+    for (let x = cx - R; x < cx + R; x++)
+      for (let y = cy + 11; y < cy + R; y++)
+        if (Math.hypot(x - cx, y - cy) <= R) g.set(x, y, r.bool(0.25) ? C('#0a0e0a') : C('#121710'));
+    if (deep === 2) {
+      /* the one light, and it is not a friendly one */
+      g.ell(cx + 1, cy - 5, 9, 5.4, C('#e6e8ec'));
+      g.ell(cx + 1, cy - 5, 4.2, 4.2, C('#b4342c'));
+      g.ell(cx + 1, cy - 5, 2.0, 2.0, C('#05060a'));
+      g.set(cx + 3, cy - 7, C('#ffffff'));
+    }
   } else if (theme === 'archipelago') {
     /* a ring of green islands in a bright sea, seen from far off */
     g.disc(cx, cy, R, C('#2f6fb0'));
@@ -6162,6 +6216,40 @@ function eyeDoorSprite(openT) {
   return g;
 }
 
+/* THE GROUND OF THE WATCHED WOOD.
+   Black earth with a mat of dead leaves over it, in the same cold greys as
+   the artist's foliage: nothing in that picture is warm and nothing in
+   this is either. */
+function tileGloom(seed, top) {
+  const g = new Pix(TILE, TILE);
+  const r = new RNG(seed);
+  const earth = C('#1a1b1d'), dk = C('#0e0f11'), lit = C('#26282b');
+  for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) {
+    let c = r.bool(0.22) ? dk : (r.bool(0.16) ? lit : earth);
+    g.set(x, y, c);
+  }
+  /* roots working through it */
+  for (let k = 0; k < 3; k++) {
+    let x = r.i(0, TILE - 1), y = r.i(2, TILE - 2), a = r.r(0, TAU);
+    for (let sp = 0; sp < r.i(5, 12); sp++) {
+      g.set(Math.round(x), Math.round(y), C('#0a0b0c'));
+      x += Math.cos(a) * 1.6; y += Math.sin(a) * 1.6; a += r.r(-0.6, 0.6);
+    }
+  }
+  if (top) {
+    /* the leaf litter, which is the only thing up here with any colour */
+    const leaf = ['#222a22', '#2c3428', '#1a201a', '#323a2c'];
+    for (let x = 0; x < TILE; x++) {
+      const d = 2 + r.i(0, 3);
+      for (let y = 0; y < d; y++) g.set(x, y, C(r.pick(leaf)));
+      if (r.bool(0.30)) g.set(x, d, C('#1a201a'));
+      if (r.bool(0.12)) g.set(x, 0, C('#3e4834'));
+    }
+    for (let k = 0; k < 4; k++) g.ell(r.i(1, TILE - 2), r.i(1, 4), r.r(1.2, 2.6), r.r(0.8, 1.6), C('#2c3428'));
+  }
+  return g;
+}
+
 /* the pale deck of the viaduct, which the hero really walks on */
 function tileViaduct(seed, top) {
   const g = new Pix(TILE, TILE);
@@ -6264,6 +6352,22 @@ function eyeNodeSprite() {
     g.line(x, y, x + dx / rx * len * 0.9, y - len, C('#101216'));
   }
   return g;
+}
+
+/* THE SAME PROP, ALL BUT PUT OUT.
+   A wood you cannot see in is drawn with the trees it always had, washed
+   down to silhouettes in the cold the foliage is painted in.  It is done
+   once, when the art is built, so the watched wood costs nothing at all to
+   draw and no other wood is touched. */
+function darkProp(p, amt, col) {
+  const c = mkc(p.c.width, p.c.height);
+  const x = c.getContext('2d');
+  x.drawImage(p.c, 0, 0);
+  x.globalCompositeOperation = 'source-atop';
+  x.fillStyle = col || '#0b0e10';
+  x.globalAlpha = amt;
+  x.fillRect(0, 0, c.width, c.height);
+  return { c: c, ax: p.ax, ay: p.ay, w: p.w, h: p.h };
 }
 
 Art.steps = function () {
@@ -6654,11 +6758,13 @@ Art.steps = function () {
     Art.prop.sign = prop(signSprite(), 10, 26);
     Art.idol = { anchor: { x: 14, y: 27 }, idle: frames(6, (i, n) => idolSprite(i, n)) };
     Art.map.node = ['forest', 'cloud', 'mush', 'shore', 'drowned', 'abyss', 'cinder', 'obsidian', 'molten',
-                    'frost', 'glacier', 'aurora', 'dune', 'sphinx', 'suntomb']
+                    'frost', 'glacier', 'aurora', 'dune', 'sphinx', 'suntomb',
+                    'gloom', 'gloom2', 'gloom3']
       .map(t => mapNodeSprite(t).canvas());
     /* the same realms again in beaten metal, one set for each prestige */
     const nodePix = ['forest', 'cloud', 'mush', 'shore', 'drowned', 'abyss', 'cinder', 'obsidian', 'molten',
-                     'frost', 'glacier', 'aurora', 'dune', 'sphinx', 'suntomb'].map(t => mapNodeSprite(t));
+                     'frost', 'glacier', 'aurora', 'dune', 'sphinx', 'suntomb',
+                     'gloom', 'gloom2', 'gloom3'].map(t => mapNodeSprite(t));
     Art.map.nodeTint = [null,
                         nodePix.map(g => tintMetal(g, METAL[1]).canvas()),
                         nodePix.map(g => tintMetal(g, METAL[2]).canvas()),
@@ -6744,6 +6850,27 @@ Art.steps = function () {
       Art.tile.via.push(tileViaduct(1421 + i, false).canvas());
       Art.tile.viaTop.push(tileViaduct(1431 + i, true).canvas());
     }
+    Art.tile.gloom = []; Art.tile.gloomTop = [];
+    for (let i = 0; i < 4; i++) {
+      Art.tile.gloom.push(tileGloom(1441 + i, false).canvas());
+      Art.tile.gloomTop.push(tileGloom(1451 + i, true).canvas());
+    }
+    /* the artist's own dark leaves, for the wood they grow in */
+    Art.bg.foliage = null;
+    {
+      const im = new Image();
+      im.onload = () => { Art.bg.foliage = im; };
+      im.onerror = () => { console.error('images/foliage.png did not load'); };
+      im.src = ART_BASE + 'images/foliage.png';
+    }
+  });
+  push('THE WATCHED WOOD', () => {
+    /* the wood's own trees: the same ones, all but put out */
+    Art.prop.treesDark = (Art.prop.trees || []).map(p => darkProp(p, 0.80));
+    Art.prop.giantDark = (Art.prop.giant || []).map(p => darkProp(p, 0.84));
+    Art.prop.fernDark = (Art.prop.fern || []).map(p => darkProp(p, 0.74));
+    Art.prop.pineDark = (Art.prop.pine || []).map(p => darkProp(p, 0.82));
+    Art.prop.rockDark = (Art.prop.rock || []).map(p => darkProp(p, 0.70));
   });
   push('THE SKY', () => {
     Art.bg.mtnFar = mountainLayer(512, 108, 21, '#5a6a94', true).canvas();

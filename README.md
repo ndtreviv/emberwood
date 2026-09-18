@@ -18,7 +18,7 @@ START opens a rack of three files. Each one keeps its own realms, papers, coins,
 and codes, and each shows how far it has gone:
 
 **100% is every realm cleared, every paper found and every upgrade at its full cap**, taken
-over the whole game — all fifteen realms of all five chapters, the two papers hidden in each
+over the whole game — all eighteen realms of all six chapters, the two papers hidden in each
 of them, and every upgrade at its cap, the three relics included. The three count for a
 third each.
 
@@ -432,6 +432,7 @@ One clean pass through the game lands here:
 | Chapter Three | level 68 |
 | Chapter Four | level 88 |
 | Chapter Five | level 100 |
+| Chapter Six | level 100, and it climbs no higher |
 
 Kill more than you must, or walk a realm twice, and you climb faster.
 
@@ -540,7 +541,7 @@ the realm map takes over for good — the tutorial never appears again.
 
 ## The map
 
-Picking a file opens **The Realm** — an inked parchment chart. It holds five chapters of
+Picking a file opens **The Realm** — an inked parchment chart. It holds six chapters of
 three realms each. **Scroll right** (mouse wheel or trackpad), press the arrow keys, or click
 the arrows at the screen edges to page between chapters. Click a realm to enter it.
 
@@ -754,6 +755,38 @@ Bring one down and it leaves a **mythical** thing, which no shop sells and no ch
 A **healing oasis** lies at the near end of each of the three arenas, two palms over a pool of
 clear water. Stand in it and it puts your hearts back and puts out any fire on you, before
 you go on.
+
+### Chapter Six — The Watched Wood
+
+| Realm | Guardian |
+| --- | --- |
+| The Blackwood | none |
+| The Smothered Path | none |
+| The Watched Wood | The Last Guardian |
+
+The wood is the last chapter, and it breaks the shape of every chapter before it. **Nothing
+guards the first two realms.** There is no arena at the end of them and no bar over anybody's
+head: the way out **is** the end of them, and walking through it takes the realm. The chart
+says so before you go in — the first two read `NOTHING GUARDS IT` and `NOR THIS`, and the
+third reads `THE LAST GUARDIAN`.
+
+The trees are the artist's own. `images/foliage.png` lies behind the wood in **three layers**,
+each one darker, slower and larger than the one in front of it, so the wood closes as you walk
+rather than opening. The props are **the same trees, ferns, pines and rocks the green realm
+has**, put out at build time: each one is struck once with `#0b0e10` at up to four fifths, so
+the whole wood stands in silhouette and no other realm is touched by it. The ground is black
+earth with roots in it under a floor of dead leaves.
+
+**The dark deepens across the three.** The Blackwood keeps a tenth of its own light, the
+Smothered Path less, and the Watched Wood least of all. The three chart medallions do the same
+thing: black trees cut out of a cold haze that closes realm by realm, with one small eye
+open in the third.
+
+Spiders, bats and wolves, and more of them in each realm than in the one before it. There is
+no boss music in the first two, because there is no boss.
+
+At the end of the third is **a door in a hill**. It opens on the corridor, and the corridor
+is the last guardian's. See **The Last Guardian**, below.
 
 ## Ground that is not ground
 
@@ -1049,32 +1082,38 @@ On an unbuffed run:
 | The Dune Sea | The Dune Maw | 16,000 |
 | Sphinx Hollow | The Sphinx | 17,600 |
 | The Sun Tomb | The Pharaoh | 20,400 |
+| The Blackwood | none | — |
+| The Smothered Path | none | — |
+| The Watched Wood | The Last Guardian | 31,000 |
 
-All fifteen together come to **90,922**. The last guardian alone stands at **31,000** — about a
-third of every chapter put together — and **nothing scales it**: not the realm, not a
-prestige, and it does not mend itself either. See its own section for why.
+The fifteen guardians of the first five chapters come to **90,922** together. The last
+guardian alone stands at **31,000** — about a third of every chapter put together — and
+**nothing scales it**: not the realm, not a prestige, and it does not mend itself either. See
+its own section for why.
 
 ## The Last Guardian
 
-In the middle of the pentagon, inside the ring of five spokes, there is an eye. It is drawn
-at **eighty four pixels against the islands' forty eight**, so nobody mistakes it for an
-island, and it has no name plate of its own kind: it says **THE LAST GUARDIAN** across its
-own lower lid.
+The last guardian is the guardian of **The Watched Wood**, the third realm of Chapter Six. It
+is reached the way every other guardian is reached: walk the realm and go through the door at
+the end of it. That door is **a door in a hill**, and behind it is a stone corridor rather
+than an arena.
 
-It is **SEALED** until you have taken the keeper of every one of the five kinds at least
-once. The code `CHEESE2` opens it outright, and fits you out for it at the same time.
+It is **SEALED** until you have taken the two realms of the wood before it, exactly as any
+other realm is sealed behind the one before it. The code `CHEESE2` opens every realm outright,
+and fits you out for the fight at the same time.
 
-**Clicking the eye is the only way on to the road.** Its two rooms are entered from an open
-eye run and from nothing else, and an eye run is only ever opened by that one click. Anything
-else that asks for them — a save written before this was caught, a transition left over, a
-realm resuming where it should not — is sent to that realm's own start instead and says so in
-the console. Nobody arrives on the viaduct by clicking Emberwood.
+**The door in the hill is the only way on to the road.** The corridor and the viaduct are
+entered from an open eye run and from nothing else, and an eye run is only ever opened by
+walking out of the Watched Wood. Anything else that asks for them — a save written before this
+was caught, a transition left over, a realm resuming where it should not — is sent to that
+realm's own start instead and says so in the console. Nobody arrives on the viaduct by
+clicking Emberwood.
 
 ### The corridor
 
-Click the eye and there is no map, no shop sign and no way back. There is a **stone
-corridor**, dark brick, five tiles of headroom, a hundred and twenty long, and a pool of
-light that goes with you.
+Go through the door in the hill and there is no map, no shop sign and no way back. There is a
+**stone corridor**, dark brick, five tiles of headroom, a hundred and twenty long, and a pool
+of light that goes with you.
 
 **There is no music down here, and no wind either.** The room asks for `silence` by name, so
 the scheduler plays nothing at all. All there is to hear is **your own feet**, and the
@@ -1298,7 +1337,7 @@ screen goes to black and comes back in **five beats**:
 | --- | --- |
 | **1** | The last of the light going out of the eye — it narrows to a line and is gone |
 | **2** | **IT IS DEAD**, alone in the dark |
-| **3** | **THE LAST GUARDIAN OF THE ARCHIPELAGO**, and the road under it, with one figure still standing on it |
+| **3** | **THE LAST GUARDIAN OF THE WATCHED WOOD**, and the road under it, with one figure still standing on it |
 | **4** | The tally: ten stages, how long it took you, and what it left |
 | **5** | What it left you, and then **I WILL RETURN**, tearing in red |
 
@@ -1510,8 +1549,8 @@ running along the ground.
 ## The wardrobe
 
 **THE WARDROBE** on the profile page opens a shop of clothes, one suit cut to the pattern of
-each of the fifteen realms, three more that only a prestige opens, and two that only the
-weekly pass of the Archipelago sells. That page is the only way in. They cost coins, and the
+each of the eighteen realms, three more that only a prestige opens, two that only the
+weekly pass of the Archipelago sells, and one the last guardian gives up. That page is the only way in. They cost coins, and the
 coins come out of the file you are playing.
 
 A suit dresses the whole body — shirt, legs and trim — and replaces the plain shirt colour.
@@ -1534,6 +1573,9 @@ Click a suit you own to wear it, and click it again to take it off.
 | The Dune Sea | Sandstride | 19,000 |
 | Sphinx Hollow | Riddleweave | 24,000 |
 | The Sun Tomb | Sunregalia | 30,000 |
+| The Blackwood | Barkweave | 36,000 |
+| The Smothered Path | Rootshroud | 42,000 |
+| The Watched Wood | Watchweave | 50,000 |
 | Prestige I | Bronze Regalia | 20,000 |
 | Prestige II | Silver Regalia | 40,000 |
 | Prestige III | Gold Regalia | 60,000 |
@@ -1607,7 +1649,7 @@ A few codes need no paper at all:
 | `DYLAN` | Unlocks **ginger hair** for the look page. The save file keeps it |
 | `CHEESE` | Opens **the Archipelago**, the last page of the chart |
 | `D4N` | Hands every tune to **a rock band**. Type it again to put the old music back |
-| `CHEESE2` | Opens **the Last Guardian** on the chart, and fits you out to fight it |
+| `CHEESE2` | Opens **every realm**, the Watched Wood included, and fits you out to fight the last guardian |
 | `XP10` | Hands you **ten levels** |
 | `XP50` | Hands you **fifty levels** |
 | `XP100` | Hands you **a hundred levels**, so you stand at the top |
@@ -1635,21 +1677,22 @@ guitar sings the melody instead. Type `D4N` again and the old music comes straig
 choice is a sound setting rather than progress, so **the machine keeps it**, not the save file,
 and it holds across all three files.
 
-`CHEESE2` is the one code that hands over a fight rather than a purse. It opens the
-Archipelago, unseals the eye in the middle of it, sets **every upgrade to its ceiling**, pays
-500K, and puts the three hardest artifacts in the pouch at five copies each and wears all
-three: the **Mythic Thunder Fang**, the **Tempest Edge** and the **Storm Crown**. That is the
-kit the twenty minutes is measured against.
+`CHEESE2` is the one code that hands over a fight rather than a purse. It opens **every
+realm of every chapter**, the three of the Watched Wood included, opens the Archipelago as
+well, sets **every upgrade to its ceiling**, pays 500K, and puts the three hardest artifacts
+in the pouch at five copies each and wears all three: the **Mythic Thunder Fang**, the
+**Tempest Edge** and the **Storm Crown**. That is the kit the twenty minutes is measured
+against.
 
 Every other code only works while you are carrying its paper — knowing the word is not
 enough.
 
 Each code works once. Rewards climb sharply with the realm:
 
-| | Emberwood | Sporewood | The Trench | Molten Crown |
-| --- | --- | --- | --- | --- |
-| Coins | `BEAR50` — 50 | `SPORE300` — 300 | `ANGLER1600` — 1600 | `IFRIT5000` — 5000 |
-| Tickets | `ITEMUPGRADE` — 1 | `SPOREUPGRADE` — 1 | `ABYSSUPGRADE` — 2 | `MOLTENUPGRADE` — 4 |
+| | Emberwood | Sporewood | The Trench | Molten Crown | The Watched Wood |
+| --- | --- | --- | --- | --- | --- |
+| Coins | `BEAR50` — 50 | `SPORE300` — 300 | `ANGLER1600` — 1600 | `IFRIT5000` — 5000 | `WATCHED42000` — 42000 |
+| Tickets | `ITEMUPGRADE` — 1 | `SPOREUPGRADE` — 1 | `ABYSSUPGRADE` — 2 | `MOLTENUPGRADE` — 4 | `WATCHEDUPGRADE` — 7 |
 
 Typing `admin` opens every realm, maxes every upgrade at the full nine-realm caps, hands
 you all three relics, sets your purse to the infinity mark, and turns the hero gold. It does
@@ -1735,15 +1778,17 @@ All eight together come to 539 coins.
 | `index.html` | Canvas, page shell, script order |
 | `js/core.js` | Maths, seeded RNG, the `Pix` pixel buffer, the 5x7 bitmap font, input, keybinds, local storage, display scaling and fullscreen |
 | `js/audio.js` | Web Audio synthesizer: sound effects, fourteen music tracks, a rock band for `D4N`, wind, birdsong, stone footsteps and the static the chart keeps |
-| `js/art.js` | Every sprite, tile, prop, backdrop and the map, drawn pixel by pixel. The exceptions are the viaduct and the eye, which it loads |
+| `js/art.js` | Every sprite, tile, prop, backdrop and the map, drawn pixel by pixel. The exceptions are the viaduct, the eye and the wood's leaves, which it loads |
 | `images/viaduct.png` | The viaduct, eight arches wide and tileable, cut from the artist's original |
 | `images/eye-body.png` | The eye, with the iris taken out of it and the hole filled in |
 | `images/eye-iris.png` | That iris, so it can still move inside the eye |
 | `images/vines.png` | The hanging vines, faded into themselves so they tile |
 | `images/bricks.png` | The wall above them, two courses tall, tiling both ways |
+| `images/foliage.png` | The dark leaves behind the Watched Wood, tiling both ways |
 | `tools/extract-viaduct.py` | What cut the viaduct, to run again if the original changes |
 | `tools/extract-eye.py` | What cut the eye, the same way |
 | `tools/extract-vines.py` | And the vines, and the brick above them |
+| `tools/extract-foliage.py` | And the leaves of the wood |
 | `js/world.js` | Tile types, the `Room` type, the level generators, the realm table and the two rooms of the Last Guardian |
 | `js/entities.js` | Hero, stamina, all enemies, four bosses, the Last Guardian and its beams, projectiles, coins, particles |
 | `js/game.js` | State machine, camera, transitions, render pipeline, HUD, shop, title, save files, settings, map |

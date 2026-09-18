@@ -12,10 +12,13 @@ const T_EMPTY = 0, T_GRASS = 1, T_DIRT = 2, T_ROCK = 3, T_ROCKTOP = 4,
       T_SNOW = 22, T_SNOWTOP = 23, T_ICE = 24, T_POWDER = 25,
       T_SANDTOP = 26, T_QUICK = 27, T_TOMB = 28, T_TOMBTOP = 29,
       /* the road to the last guardian: dark brick, and the pale viaduct deck */
-      T_EYEWALL = 30, T_VIA = 31, T_VIATOP = 32;
+      T_EYEWALL = 30, T_VIA = 31, T_VIATOP = 32,
+      /* the watched wood: black earth under a mat of dark leaves */
+      T_GLOOM = 33, T_GLOOMTOP = 34;
 
 const SOLID_TILE = { 1: 1, 2: 1, 3: 1, 4: 1, 10: 1, 11: 1, 12: 1, 14: 1, 15: 1, 16: 1, 17: 1, 18: 1, 19: 1, 20: 1,
-                     22: 1, 23: 1, 24: 1, 26: 1, 28: 1, 29: 1, 30: 1, 31: 1, 32: 1 };
+                     22: 1, 23: 1, 24: 1, 26: 1, 28: 1, 29: 1, 30: 1, 31: 1, 32: 1,
+                     33: 1, 34: 1 };
 const ONEWAY_TILE = { 5: 1, 13: 1 };
 const WET_TILE = { 6: 1, 7: 1 };
 const BOUNCE_TILE = { 10: 1 };
@@ -1144,16 +1147,21 @@ function buildRealmChain(d, theme) {
   const ids = names.map((_, k) => k === 0 ? d.id : d.id + (k + 1));
   for (let k = 0; k < ids.length; k++) {
     const last = k === ids.length - 1;
+    /* A realm may end at no arena at all.  `endAt` is where its last door
+       goes instead: the watched wood has two realms with nothing at the end
+       of them but the way out, and one whose way out is the corridor. */
+    const endTo = d.endAt || (d.id + 'End');
     World.rooms[ids[k]] = buildChapterRoom(Object.assign({}, d, theme, {
       id: ids[k], name: names[k], seed: d.seed + k * 137,
       w: d.w + k * 14,
       hazards: d.hazards + k * 2,
       ambient: d.ambient, dark: d.dark,
       riddle: d.riddleAt === k,
-      to: last ? d.id + 'End' : ids[k + 1],
+      to: last ? endTo : ids[k + 1],
       toLabel: last ? d.toLabel : names[k + 1]
     }));
   }
+  if (d.endAt) return;                 /* no guardian, so no arena for one */
   World.rooms[d.id + 'End'] = buildChapterArena({
     id: d.id + 'End', name: d.toLabel, seed: d.seed + 500, bg: theme.bg,
     music: theme.bossMusic, oasis: theme.oasis,
@@ -1995,6 +2003,39 @@ World.build = function () {
     });
   }
 
+  /* ---- chapter six: the Watched Wood ---- */
+  /* Nothing guards the first two.  There is only the wood, and it gets
+     darker, and there is more of it than there is of you.  The third ends
+     at the corridor, and the corridor is the eye's. */
+  const gloomDecor = [{ kind: 'tree', n: 3, p: 0.30 }, { kind: 'fern', n: 3, p: 0.24 },
+                      { kind: 'rock', n: 3, p: 0.08 }, { kind: 'pine', n: 3, p: 0.14 }];
+  const gloomRooms = [
+    { id: 'black', parts: ['THE BLACKWOOD', 'THE CLOSING TREES', 'THE STILL HOLLOW'],
+      hazards: 9, name: 'THE BLACKWOOD', seed: 4601, w: 168, pools: 0,
+      ambient: 0.1, dark: 0.5,
+      spawns: [{ type: 'spider', n: 16 }, { type: 'bat', n: 14, air: true },
+               { type: 'wolf', n: 8 }],
+      endAt: '@realmDone', toLabel: 'OUT OF THE WOOD' },
+    { id: 'smother', parts: ['THE SMOTHERED PATH', 'THE ROOTED DARK', 'WHERE IT THINS'],
+      hazards: 11, name: 'THE SMOTHERED PATH', seed: 4602, w: 176, pools: 0,
+      ambient: 0.08, dark: 0.58,
+      spawns: [{ type: 'spider', n: 18 }, { type: 'bat', n: 18, air: true },
+               { type: 'wolf', n: 12 }],
+      endAt: '@realmDone', toLabel: 'OUT OF THE DARK' },
+    { id: 'watched', parts: ['THE WATCHED WOOD', 'THE LAST OF THE TREES', 'THE CORRIDOR MOUTH'],
+      hazards: 13, name: 'THE WATCHED WOOD', seed: 4603, w: 184, pools: 0,
+      ambient: 0.06, dark: 0.64,
+      spawns: [{ type: 'spider', n: 18 }, { type: 'bat', n: 20, air: true },
+               { type: 'wolf', n: 14 }],
+      endAt: '@theEye', toLabel: 'THE DOOR IN THE HILL' }
+  ];
+  for (const d of gloomRooms) {
+    buildRealmChain(Object.assign({ music: 'trench' }, d), {
+      bg: 'gloom', ground: T_GLOOM, groundTop: T_GLOOMTOP, plat: T_GLOOM,
+      decor: gloomDecor, doorKind: 'cave', bossMusic: 'bossAsh'
+    });
+  }
+
   /* One vault is kept ready.  Falling through a patch rebuilds it from that
      patch's own seed, so every patch has a vault of its own. */
   World.rooms.vault = buildVault(5501, 'sand');
@@ -2090,7 +2131,21 @@ World.LEVELS = [
   { name: 'THE SUN TOMB', taker: 'THE TOMB TAKES', sub: 'THE PHARAOH', theme: 'waste', enemyHp: 24,
     coinScale: 72, coinBonus: 24, bossHp: 24,
     rooms: ['suntomb', 'suntomb2', 'suntomb3', 'suntomb4', 'suntomb5', 'suntombEnd'],
-    start: 'suntomb', boss: 'suntombEnd', node: { x: 310, y: 148 } }
+    start: 'suntomb', boss: 'suntombEnd', node: { x: 310, y: 148 } },
+
+  /* THE WATCHED WOOD.  Two realms with nothing at the end of them, and a
+     third that ends at a door in a hill.  Only the third has a guardian,
+     and it is the last one there is. */
+  { name: 'THE BLACKWOOD', taker: 'THE WOOD TAKES', sub: 'NOTHING GUARDS IT', theme: 'gloom',
+    enemyHp: 26, coinScale: 80, coinBonus: 26, noBoss: true,
+    rooms: ['black', 'black2', 'black3'], start: 'black', node: { x: 76, y: 152 } },
+  { name: 'THE SMOTHERED PATH', taker: 'THE DARK TAKES', sub: 'NOR THIS', theme: 'gloom',
+    enemyHp: 28, coinScale: 88, coinBonus: 28, noBoss: true,
+    rooms: ['smother', 'smother2', 'smother3'], start: 'smother', node: { x: 194, y: 74 } },
+  { name: 'THE WATCHED WOOD', taker: 'IT TAKES', sub: 'THE LAST GUARDIAN', theme: 'gloom',
+    enemyHp: 30, coinScale: 96, coinBonus: 30,
+    rooms: ['watched', 'watched2', 'watched3'], start: 'watched', boss: 'eyehall',
+    node: { x: 310, y: 148 } }
 ];
 
 /* ============================================================
@@ -2127,7 +2182,13 @@ World.CODES = [
   { code: 'RIDDLE18000', kind: 'coins', amount: 18000, level: 13 },
   { code: 'SPHINXUPGRADE', kind: 'ticket', amount: 5, level: 13 },
   { code: 'PHARAOH25000', kind: 'coins', amount: 25000, level: 14 },
-  { code: 'TOMBUPGRADE', kind: 'ticket', amount: 6, level: 14 }
+  { code: 'TOMBUPGRADE', kind: 'ticket', amount: 6, level: 14 },
+  { code: 'BLACKWOOD30000', kind: 'coins', amount: 30000, level: 15 },
+  { code: 'BLACKUPGRADE', kind: 'ticket', amount: 6, level: 15 },
+  { code: 'SMOTHER36000', kind: 'coins', amount: 36000, level: 16 },
+  { code: 'SMOTHERUPGRADE', kind: 'ticket', amount: 6, level: 16 },
+  { code: 'WATCHED42000', kind: 'coins', amount: 42000, level: 17 },
+  { code: 'WATCHEDUPGRADE', kind: 'ticket', amount: 7, level: 17 }
 ];
 World.codeByName = function (name) {
   const n = String(name || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -2143,7 +2204,8 @@ World.CHAPTERS = [
   { name: 'CHAPTER TWO', sub: 'THE SUNKEN DEPTHS', levels: [3, 4, 5] },
   { name: 'CHAPTER THREE', sub: 'THE ASHEN REACH', levels: [6, 7, 8] },
   { name: 'CHAPTER FOUR', sub: 'THE WHITE SILENCE', levels: [9, 10, 11] },
-  { name: 'CHAPTER FIVE', sub: 'THE GOLDEN WASTE', levels: [12, 13, 14] }
+  { name: 'CHAPTER FIVE', sub: 'THE GOLDEN WASTE', levels: [12, 13, 14] },
+  { name: 'CHAPTER SIX', sub: 'THE WATCHED WOOD', levels: [15, 16, 17] }
 ];
 /* The last page of the map holds one realm and no levels yet.  Chains hold
    it shut.  It sits after every chapter. */

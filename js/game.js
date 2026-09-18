@@ -260,7 +260,7 @@ function applySave(d) {
    three chapters, the two papers hidden in each of them, and every upgrade
    level at its full nine-realm cap, relics included. */
 function slotTally(d) {
-  const realms = World.LEVELS.length;              /* five chapters, three realms each */
+  const realms = World.LEVELS.length;              /* six chapters, three realms each */
   const papers = World.CODES.length;               /* two in every realm */
   let cap = 0, have = 0;
   for (const it of SHOP_ITEMS) {
@@ -389,6 +389,8 @@ G.redeem = function (raw) {
     G.archipelago = G.archipelago || newArchipelago();
     G.archipelago.open = true;
     G.eyeUnlocked = true;
+    /* every realm of every chapter, the watched wood included */
+    G.cleared = G.cleared || [];
     const p = G.player;
     G.unlocked = World.LEVELS.length;
     for (const it of SHOP_ITEMS) {
@@ -1928,6 +1930,23 @@ function checkExits() {
       G.isleNext();
       return;
     }
+    /* A REALM THAT ENDS AT NOTHING.  Two realms of the watched wood have
+       no guardian at the end of them: the way out is the end of them, and
+       walking through it is what takes the realm. */
+    if (ex.to === '@realmDone') {
+      G.nearExit = ex; G.nearExitLocked = false;
+      if (!enterPressed(ex)) continue;
+      G.finishRealm();
+      return;
+    }
+    /* and the third ends at a door in a hill, which is the corridor's */
+    if (ex.to === '@theEye') {
+      G.nearExit = ex; G.nearExitLocked = false;
+      if (!enterPressed(ex)) continue;
+      Snd.door(); G.flash(0.5);
+      G.trans = { t: 0, phase: 'out', dur: 0.6, eyeStart: true };
+      return;
+    }
     /* The door at the end of the corridor.  It has not been opened in a
        long time, and it says so on the way. */
     if (ex.to === '@eyeviaduct') {
@@ -1995,6 +2014,46 @@ function respawn() {
   G.flash(0.6);
   if (lost > 0) G.texts.push(new FloatText(p.cx, p.cy - 20, '-' + lost + ' COINS', '#ff9a8a'));
 }
+
+/* TAKING A REALM THAT HAS NO GUARDIAN.
+   Everything a guardian's death does to a realm, without the guardian:
+   the realm is marked, the next one opens, and a chapter that opens with
+   it gets its fanfare.  It is the one path through this that is not a
+   kill, so it is written once and both of the wood's first two realms use
+   it. */
+/* The realm is taken: it is marked, the next one opens, and a chapter that
+   opens with it gets its fanfare.  Every way of taking a realm ends here -
+   a guardian's death, a door at the end of a wood that has none, and the
+   eye. */
+G.markRealmTaken = function () {
+  const bt = clamp(G.buffTier | 0, 0, PRESTIGE_MAX);
+  if (bt > 0) {
+    G.buffDone = G.buffDone || {};
+    G.buffDone[buffKey(bt, G.level)] = true;
+    delete G.levelState[G.level];
+    G.newlyUnlocked = false;
+    writeSlot(G.slot, packSave());
+    return true;                       /* a buffed run, and nothing more */
+  }
+  G.cleared[G.level] = true;
+  delete G.levelState[G.level];
+  const next = G.level + 1;
+  G.newlyUnlocked = (next < World.LEVELS.length && G.unlocked <= next);
+  if (G.newlyUnlocked) {
+    G.unlocked = next + 1;
+    if (World.chapterOf(next) !== World.chapterOf(G.level)) G.pendingUnlock = World.chapterOf(next);
+  }
+  writeSlot(G.slot, packSave());
+  return false;
+};
+G.finishRealm = function (banner) {
+  if (G.state !== 'play') return;
+  G.state = 'victory'; G.victoryT = 0;
+  const buffed = G.markRealmTaken();
+  Snd.play('victory'); Snd.musicLevel(0.4, 1.5);
+  G.banner(buffed ? 'THE ' + PRESTIGE_NAME[clamp(G.buffTier | 0, 0, PRESTIGE_MAX)] + ' RUN IS YOURS'
+                  : (banner || 'YOU ARE THROUGH IT'), 3);
+};
 
 G.onBossDead = function () {
   /* a guardian pays far more experience than anything that walks a realm */
@@ -2292,6 +2351,8 @@ G.onEyeDead = function () {
   if (!w || w.phase === 'won') return;
   w.phase = 'won'; w.wonT = 0;
   G.eyeSlain = true;
+  /* it is the guardian of a realm now, and taking it takes the realm */
+  G.markRealmTaken();
   if (!G.wardrobe) G.wardrobe = { owned: {} };
   G.wardrobe.owned.eyerobe = 1;
   const p = G.player;
@@ -2331,10 +2392,12 @@ G.leaveEye = function (won) {
   p.stam = p.stamMax; p.stamRest = 0;
   G.boss = null; G.bossFight = false;
   G.projectiles.length = 0; G.particles.length = 0; G.texts.length = 0;
-  G.state = 'archipelago';
   Snd.musicLevel(0.34, 0.8);
-  openArchipelago('pentagon');
-  if (!won) { G.archMsg = 'THE EYE LETS YOU GO'; G.archMsgT = 3; }
+  /* back to the chart of the chapters, because the corridor belongs to one
+     now rather than to the archipelago */
+  G.state = 'map';
+  openMap(false);
+  if (!won) G.banner('THE EYE LETS YOU GO', 3);
 };
 
 /* what the body does once the eye has finished with it */
@@ -2919,7 +2982,7 @@ function drawEyeEnd() {
     ctx.save();
     ctx.globalAlpha = a;
     drawText(ctx, 'THE LAST GUARDIAN', VW / 2, 52, '#c9403a', 2, 'center', '#1a0000');
-    drawText(ctx, 'OF THE ARCHIPELAGO', VW / 2, 68, '#6d7994', 1, 'center', '#000000');
+    drawText(ctx, 'OF THE WATCHED WOOD', VW / 2, 68, '#6d7994', 1, 'center', '#000000');
     ctx.restore();
     drawEndRoad(a * 0.9);
   }
@@ -3247,31 +3310,10 @@ const ARCH_BACK = { x: 6, y: VH - 22, w: 54, h: 16 };
 const ARCH_FORGE = { x: VW - 92, y: VH - 22, w: 86, h: 16 };
 /* the pass sits directly over the smithing table, not beside it */
 const ARCH_PASS = { x: VW - 92, y: VH - 42, w: 86, h: 16 };
-/* THE EYE ON THE CHART.  It sits in the middle of the pentagon, and it is
-   drawn at eighty four pixels against the islands' forty eight, so nobody
-   mistakes it for one of them. */
-const EYE_NODE = 84;
-function eyeNodeRect() {
-  return { x: VW / 2 - EYE_NODE / 2, y: VH / 2 + 6 - EYE_NODE / 2,
-           w: EYE_NODE, h: EYE_NODE, cx: VW / 2, cy: VH / 2 + 6 };
-}
-/* The eye opens to anyone who has taken the keeper of every spoke at least
-   once.  CHEESE2 opens it outright, for anyone who would rather not. */
-G.eyeOpened = function () {
-  if (G.eyeUnlocked) return true;
-  const a = archi();
-  for (const t of ISLE_TYPES) {
-    let any = false;
-    for (let i = 0; i < ISLES_PER_TYPE && !any; i++) if (a.cleared[t.key + ':' + i]) any = true;
-    if (!any) return false;
-  }
-  return true;
-};
-
 /* the five kinds, set out as a pentagon about the middle of the chart */
 function archNodeRect(k) {
   const a = -Math.PI / 2 + k / 5 * TAU;
-  const cx = VW / 2 + Math.cos(a) * 108, cy = VH / 2 + 6 + Math.sin(a) * 62;
+  const cx = VW / 2 + Math.cos(a) * 100, cy = VH / 2 + 6 + Math.sin(a) * 54;
   return { x: cx - 24, y: cy - 24, w: 48, h: 48, cx: cx, cy: cy };
 }
 /* The fifty islands of a spoke lie in one long row.  You scroll along it:
@@ -3336,20 +3378,6 @@ function updateArchipelago(dt) {
 
   if (G.archView === 'pentagon') {
     G.archSel = -1;
-    /* the eye first, since it sits over the middle of the pentagon */
-    const er = eyeNodeRect();
-    G.eyeHot = Math.hypot(Input.mx - er.cx, Input.my - er.cy) < EYE_NODE / 2 - 4;
-    if (Input.tap(er) && G.eyeHot) {
-      if (!G.eyeOpened()) {
-        Snd.uiBad();
-        G.archMsg = 'TAKE ONE KEEPER OF EVERY KIND FIRST'; G.archMsgT = 2.6;
-      } else {
-        Snd.eyeOpen(); G.flash(0.6); G.shake(6);
-        G.trans = { t: 0, phase: 'out', dur: 0.6, eyeStart: true };
-        G.state = 'play';
-      }
-      return;
-    }
     let pick = -1;
     for (let k = 0; k < ISLE_TYPES.length; k++) {
       const r = archNodeRect(k);
@@ -3650,31 +3678,7 @@ function drawArchipelago() {
       const p1 = archNodeRect(k), p2 = archNodeRect((k + 1) % 5);
       drawChainLine(p1.cx, p1.cy, p2.cx, p2.cy);
     }
-    /* and the eye in the middle of them, which is bigger than all five */
-    {
-      const er = eyeNodeRect(), open = G.eyeOpened(), hot = G.eyeHot && open;
-      const bob = Math.sin(G.archT * 0.9) * 2;
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = (open ? 0.16 : 0.07) + Math.sin(G.archT * 2.4) * 0.05;
-      ctx.fillStyle = open ? '#c9403a' : '#3a3d44';
-      ctx.beginPath(); ctx.arc(er.cx, er.cy + bob, 46 + (hot ? 6 : 0), 0, TAU); ctx.fill();
-      ctx.restore();
-      ctx.save();
-      if (!open) ctx.globalAlpha = 0.34;
-      ctx.drawImage(Art.eye.node, Math.round(er.x), Math.round(er.y + bob));
-      ctx.restore();
-      if (!open) ctx.drawImage(Art.map.lock, Math.round(er.cx - 8), Math.round(er.cy + bob - 8));
-      const label = open ? 'THE LAST GUARDIAN' : 'SEALED';
-      const lw = textWidth(label) + 10;
-      const ly = er.cy + 27 + bob;
-      ctx.fillStyle = 'rgba(8,4,8,0.94)';
-      ctx.fillRect(Math.round(er.cx - lw / 2), Math.round(ly - 2), Math.round(lw), 11);
-      ctx.fillStyle = open ? '#5a1a18' : '#2b2d33';
-      ctx.fillRect(Math.round(er.cx - lw / 2), Math.round(ly - 2), Math.round(lw), 1);
-      drawText(ctx, label, er.cx, ly,
-               open ? (hot ? '#ff8b7a' : '#c9403a') : '#6d7994', 1, 'center');
-    }
+
     for (let k = 0; k < 5; k++) {
       const t = ISLE_TYPES[k], r = archNodeRect(k), hot = G.archSel === k;
       const bob = Math.sin(G.archT * 1.5 + k) * 1.6;
@@ -6110,6 +6114,33 @@ function tileX(c2, img, x, y, w) {
 
 function drawBackground(camX, camY) {
   const room = G.room;
+  if (room.bg === 'gloom') {
+    /* THE WATCHED WOOD.  The artist's own leaves, three deep: the far mat
+       almost black and barely moving, the near one darker still and moving
+       with you, so the wood closes rather than opens as you walk. */
+    ctx.fillStyle = '#07080a'; ctx.fillRect(0, 0, VW, VH);
+    const f = Art.bg.foliage;
+    if (f) {
+      const layers = [[0.05, 0.62, 1.0, -10], [0.14, 0.42, 0.78, 30], [0.34, 0.30, 0.56, 96]];
+      for (const [par, alpha, sc, oy] of layers) {
+        const w = Math.round(f.width * sc), h = Math.round(f.height * sc);
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        let sx = -(((camX * par) % w) + w) % w;
+        let sy = -(((camY * par * 0.5 - oy) % h) + h) % h;
+        for (let y = sy; y < VH; y += h)
+          for (let x = sx; x < VW; x += w) ctx.drawImage(f, Math.round(x), Math.round(y), w, h);
+        ctx.restore();
+      }
+    }
+    /* and the dark that sits over all of it */
+    const g2 = ctx.createLinearGradient(0, 0, 0, VH);
+    g2.addColorStop(0, 'rgba(4,5,7,0.62)');
+    g2.addColorStop(0.55, 'rgba(4,5,7,0.30)');
+    g2.addColorStop(1, 'rgba(4,5,7,0.70)');
+    ctx.fillStyle = g2; ctx.fillRect(0, 0, VW, VH);
+    return;
+  }
   if (room.bg === 'eyehall') {
     /* the corridor has no view: only the dark past the torchlight */
     ctx.fillStyle = '#05060a'; ctx.fillRect(0, 0, VW, VH);
@@ -6562,6 +6593,8 @@ function drawTiles(camX, camY) {
       case T_EYEWALL: img = Art.tile.eyeStone[v]; break;
       case T_VIA: img = Art.tile.via[v]; break;
       case T_VIATOP: img = Art.tile.viaTop[v]; break;
+      case T_GLOOM: img = Art.tile.gloom[v]; break;
+      case T_GLOOMTOP: img = Art.tile.gloomTop[v]; break;
     }
     if (!img) continue;
     if (t === T_WATER && !room.wet(tx, ty - 1) && !room.solid(tx, ty - 1)) {
@@ -6668,23 +6701,26 @@ function drawBowArc(c2) {
 function drawDecor(layer, camX, camY) {
   const room = G.room;
   const wind = G.t * 1.15;
+  /* the watched wood draws the same trees it always had, put out */
+  const dk = room.bg === 'gloom';
+  const P = (name) => (dk && Art.prop[name + 'Dark']) ? Art.prop[name + 'Dark'] : Art.prop[name];
   for (const d of room.decor) {
     if (d.layer !== layer) continue;
     if (d.x < camX - 130 || d.x > camX + VW + 130) continue;
     if (d.y < camY - 160 || d.y > camY + VH + 160) continue;
     switch (d.kind) {
       case 'tree': {
-        const t = propAt(Art.prop.trees, d.idx);
+        const t = propAt(P('trees'), d.idx);
         blitSway(ctx, t.c, d.x, d.y, d.sway, wind * 0.6 + d.phase, t.ax, t.ay, 10, d.scale || 1, d.alpha);
         break;
       }
       case 'giant': {
-        const t = propAt(Art.prop.giant, d.idx);
+        const t = propAt(P('giant'), d.idx);
         blitSway(ctx, t.c, d.x, d.y, d.sway, wind * 0.45 + d.phase, t.ax, t.ay, 18, d.scale || 1, d.alpha);
         break;
       }
-      case 'fern': { const s = propAt(Art.prop.fern, d.idx); blitSway(ctx, s.c, d.x, d.y, d.sway, wind * 1.1 + d.phase, s.ax, s.ay, 6, 1, d.alpha); break; }
-      case 'pine': { const s = propAt(Art.prop.pine, d.idx); blitSway(ctx, s.c, d.x, d.y, d.sway * 0.6, wind * 0.5 + d.phase, s.ax, s.ay, 10, d.scale || 1, d.alpha); break; }
+      case 'fern': { const s = propAt(P('fern'), d.idx); blitSway(ctx, s.c, d.x, d.y, d.sway, wind * 1.1 + d.phase, s.ax, s.ay, 6, 1, d.alpha); break; }
+      case 'pine': { const s = propAt(P('pine'), d.idx); blitSway(ctx, s.c, d.x, d.y, d.sway * 0.6, wind * 0.5 + d.phase, s.ax, s.ay, 10, d.scale || 1, d.alpha); break; }
       case 'cactus': { const s = propAt(Art.prop.cactus, d.idx); blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
       case 'palm': { const s = Art.prop.palm[d.idx || 0]; blitSway(ctx, s.c, d.x, d.y, d.sway, wind * 0.5 + d.phase, s.ax, s.ay, 10); break; }
       case 'house': { const s = propAt(Art.prop.house, d.idx); blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
@@ -6761,7 +6797,7 @@ function drawDecor(layer, camX, camY) {
       case 'flower': { const s = propAt(Art.prop.flower, d.idx); blitSway(ctx, s.c, d.x, d.y, d.sway, wind * 1.2 + d.phase, s.ax, s.ay, 6); break; }
       case 'reed': { const s = propAt(Art.prop.reed, d.idx); blitSway(ctx, s.c, d.x, d.y, d.sway, wind * 1.5 + d.phase, s.ax, s.ay, 7); break; }
       case 'mushroom': { const s = propAt(Art.prop.mushroom, d.idx); blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
-      case 'rock': { const s = propAt(Art.prop.rock, d.idx); blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
+      case 'rock': { const s = propAt(P('rock'), d.idx); blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
       case 'stal': { const s = propAt(Art.prop.stal, d.idx); blit(ctx, s.c, d.x, d.y, s.ax, s.ay); break; }
       case 'crystal': {
         const s = propAt(Art.prop.crystal, d.idx);
@@ -10104,7 +10140,7 @@ function drawTitle() {
   drawText(ctx, 'EMBERWOOD', VW / 2, 26 + bob, '#2a1a10', 5, 'center');
   drawText(ctx, 'EMBERWOOD', VW / 2 - 1, 24 + bob, '#f0c93a', 5, 'center');
   drawText(ctx, 'EMBERWOOD', VW / 2 - 1, 23 + bob, '#ffeec0', 5, 'center');
-  drawText(ctx, 'FIVE CHAPTERS, FIFTEEN REALMS', VW / 2, 64 + bob, '#f6ecd0', 1, 'center', '#2a1a10');
+  drawText(ctx, 'SIX CHAPTERS, EIGHTEEN REALMS', VW / 2, 64 + bob, '#f6ecd0', 1, 'center', '#2a1a10');
 
   /* start button */
   if (T.phase !== 'boom') {
